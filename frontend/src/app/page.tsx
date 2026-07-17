@@ -9,6 +9,9 @@ import { toast } from "sonner";
 import axios from "axios";
 import { Loader2, ShieldCheck } from "lucide-react";
 import { api } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth-store";
+import type { AuthUser } from "@/types/auth";
+import { GuestGuard } from "@/components/auth/auth-guard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,8 +24,9 @@ const loginSchema = z.object({
 
 type LoginValues = z.infer<typeof loginSchema>;
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const setUser = useAuthStore((s) => s.setUser);
   const [submitting, setSubmitting] = useState(false);
   const {
     register,
@@ -33,7 +37,8 @@ export default function LoginPage() {
   async function onSubmit(values: LoginValues) {
     setSubmitting(true);
     try {
-      await api.post("/auth/login", values);
+      const { data } = await api.post<{ user: AuthUser }>("/auth/login", values);
+      setUser(data.user);
       toast.success("Access granted");
       router.push("/dashboard");
     } catch (err) {
@@ -112,5 +117,13 @@ export default function LoginPage() {
         </div>
       </CornerFrame>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <GuestGuard>
+      <LoginForm />
+    </GuestGuard>
   );
 }

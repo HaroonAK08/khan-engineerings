@@ -36,8 +36,31 @@ function logout(req, res) {
   res.status(204).send();
 }
 
-function me(req, res) {
-  res.json({ user: req.user });
+async function me(req, res, next) {
+  try {
+    const user = await authService.getById(req.user.sub);
+    res.json({ user: toPublicUser(user) });
+  } catch (err) {
+    next(err);
+  }
 }
 
-module.exports = { register, login, logout, me };
+async function updateProfile(req, res, next) {
+  try {
+    const user = await authService.updateProfile(req.user.sub, req.body);
+    res.json({ user: toPublicUser(user) });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function changePassword(req, res, next) {
+  try {
+    await authService.changePassword(req.user.sub, req.body);
+    res.json({ message: "Password updated" });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { register, login, logout, me, updateProfile, changePassword };

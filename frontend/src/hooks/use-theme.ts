@@ -14,10 +14,18 @@ function applyTheme(theme: Theme) {
 }
 
 export function useTheme() {
-  const [theme, setTheme] = useState<Theme>("dark");
+  const [theme, setTheme] = useState<Theme>("light");
 
   useEffect(() => {
-    setTheme(document.documentElement.classList.contains("dark") ? "dark" : "light");
+    // Prefer stored theme; migrate previous default dark → light once
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored !== "light" && stored !== "dark") {
+      applyTheme("light");
+      setTheme("light");
+    } else {
+      setTheme(stored);
+      applyTheme(stored);
+    }
     function onChange(event: Event) {
       setTheme((event as CustomEvent<Theme>).detail);
     }
@@ -29,5 +37,9 @@ export function useTheme() {
     applyTheme(theme === "dark" ? "light" : "dark");
   }
 
-  return { theme, toggleTheme };
+  function setThemeValue(next: Theme) {
+    applyTheme(next);
+  }
+
+  return { theme, toggleTheme, setTheme: setThemeValue };
 }

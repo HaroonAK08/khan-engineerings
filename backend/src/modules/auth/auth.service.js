@@ -3,6 +3,7 @@ const jwt = require("jsonwebtoken");
 const User = require("./auth.model");
 
 const TOKEN_TTL = "7d";
+const ALLOWED_ROLES = ["admin", "manager", "staff"];
 
 function signToken(user) {
   return jwt.sign({ sub: user._id.toString(), role: user.role }, process.env.JWT_SECRET, {
@@ -10,20 +11,59 @@ function signToken(user) {
   });
 }
 
-async function register({ name, email, password, role }) {
-  const existing = await User.findOne({ email });
+function assertEmail(email) {
+  if (!email || typeof email !== "string" || !email.includes("@")) {
+    const err = new Error("A valid email is required");
+    err.statusCode = 400;
+    throw err;
+  }
+}
+
+function assertPassword(password, label = "Password") {
+  if (!password || typeof password !== "string" || password.length < 6) {
+    const err = new Error(`${label} must be at least 6 characters`);
+    err.statusCode = 400;
+    throw err;
+  }
+}
+
+async function register({ name, email, password, role = "staff" }) {
+  if (!name || typeof name !== "string" || !name.trim()) {
+    const err = new Error("Name is required");
+    err.statusCode = 400;
+    throw err;
+  }
+  assertEmail(email);
+  assertPassword(password);
+
+  const normalizedRole = ALLOWED_ROLES.includes(role) ? role : "staff";
+
+  const existing = await User.findOne({ email: email.toLowerCase().trim() });
   if (existing) {
     const err = new Error("Email already in use");
     err.statusCode = 409;
     throw err;
   }
+
   const passwordHash = await bcrypt.hash(password, 10);
-  const user = await User.create({ name, email, passwordHash, role });
+  const user = await User.create({
+    name: name.trim(),
+    email: email.toLowerCase().trim(),
+    passwordHash,
+    role: normalizedRole,
+  });
   return { user, token: signToken(user) };
 }
 
 async function login({ email, password }) {
-  const user = await User.findOne({ email });
+  assertEmail(email);
+  if (!password) {
+    const err = new Error("Password is required");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const user = await User.findOne({ email: email.toLowerCase().trim() });
   if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
     const err = new Error("Invalid email or password");
     err.statusCode = 401;
@@ -32,4 +72,75 @@ async function login({ email, password }) {
   return { user, token: signToken(user) };
 }
 
-module.exports = { register, login };
+async function getById(userId) {
+  const user = await User.findById(userId).select("-passwordHash");
+  if (!user) {
+    const err = new Error("User not found");
+    err.statusCode = 404;
+    throw err;
+  }
+  return user;
+}
+
+async function updateProfile(userId, { name, email }) {
+  const user = await User.findById(userId);
+  if (!user) {
+    const err = new Error("User not found");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  if (name !== undefined) {
+    if (!name || typeof name !== "string" || !name.trim()) {
+      const err = new Error("Name is required");
+      err.statusCode = 400;
+      throw err;
+    }
+    user.name = name.trim();
+  }
+
+  if (email !== undefined) {
+    assertEmail(email);
+    const normalized = email.toLowerCase().trim();
+    if (normalized !== user.email) {
+      const taken = await User.findOne({ email: normalized, _id: { $ne: userId } });
+      if (taken) {
+        const err = new Error("Email already in use");
+        err.statusCode = 409;
+        throw err;
+      }
+      user.email = normalized;
+    }
+  }
+
+  await user.save();
+  return user;
+}
+
+async function changePassword(userId, { currentPassword, newPassword }) {
+  if (!currentPassword) {
+    const err = new Error("Current password is required");
+    err.statusCode = 400;
+    throw err;
+  }
+  assertPassword(newPassword, "New password");
+
+  const user = await User.findById(userId);
+  if (!user) {
+    const err = new Error("User not found");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  if (!(await bcrypt.compare(currentPassword, user.passwordHash))) {
+    const err = new Error("Current password is incorrect");
+    err.statusCode = 401;
+    throw err;
+  }
+
+  user.passwordHash = await bcrypt.hash(newPassword, 10);
+  await user.save();
+  return user;
+}
+
+module.exports = { register, login, getById, updateProfile, changePassword };
