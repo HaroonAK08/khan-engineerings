@@ -88,6 +88,8 @@ export type DashboardData = {
 };
 
 export async function getDashboard() {
-  const { data } = await api.get<{ dashboard: DashboardData }>("/dashboard");
+  const { data } = await api.get<{ dashboard: DashboardData }>("/dashboard", {
+    timeout: 30_000,
+  });
   return data.dashboard;
 }

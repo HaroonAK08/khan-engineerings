@@ -132,43 +132,6 @@
 }
 
 @layer utilities {
-  /* Soft wash + barely-there grid — no heavy black lines */
-  .bg-blueprint-grid {
-    background-color: var(--background);
-    background-image:
-      radial-gradient(
-        ellipse 80% 50% at 50% -10%,
-        color-mix(in oklch, var(--primary) 8%, transparent),
-        transparent 55%
-      ),
-      linear-gradient(
-        to right,
-        color-mix(in oklch, var(--border) 55%, transparent) 1px,
-        transparent 1px
-      ),
-      linear-gradient(
-        to bottom,
-        color-mix(in oklch, var(--border) 55%, transparent) 1px,
-        transparent 1px
-      );
-    background-size: auto, 32px 32px, 32px 32px;
-  }
-
-  .bg-blueprint-grid-fine {
-    background-image:
-      linear-gradient(
-        to right,
-        color-mix(in oklch, var(--border) 40%, transparent) 1px,
-        transparent 1px
-      ),
-      linear-gradient(
-        to bottom,
-        color-mix(in oklch, var(--border) 40%, transparent) 1px,
-        transparent 1px
-      );
-    background-size: 12px 12px;
-  }
-
   .text-nameplate {
     font-family: var(--font-heading);
     letter-spacing: 0.06em;
@@ -179,6 +142,20 @@
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
   }
+}
+
+html.locale-ur body {
+  font-family: var(--font-urdu), var(--font-plex-sans), sans-serif;
+}
+
+html.locale-ur .text-nameplate {
+  font-family: var(--font-urdu), var(--font-heading), sans-serif;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+html.locale-ur .font-data {
+  font-family: var(--font-mono), var(--font-urdu), monospace;
 }
 
 @keyframes status-pulse {

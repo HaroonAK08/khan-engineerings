@@ -34,6 +34,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useI18n } from "@/hooks/use-i18n";
 
 const supplierSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -47,6 +48,7 @@ const supplierSchema = z.object({
 type SupplierForm = z.infer<typeof supplierSchema>;
 
 export default function SuppliersPage() {
+  const { t } = useI18n();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -146,13 +148,13 @@ export default function SuppliersPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
-            Phase 2 · Raw material inbound
+            {t("sup.eyebrow")}
           </p>
-          <h1 className="text-nameplate text-xl">Suppliers</h1>
+          <h1 className="text-nameplate text-xl">{t("sup.title")}</h1>
         </div>
         <Button onClick={openCreate} className="gap-2">
           <Plus className="size-4" />
-          Add supplier
+          {t("sup.add")}
         </Button>
       </div>
 
@@ -163,7 +165,7 @@ export default function SuppliersPage() {
               <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 className="pl-8"
-                placeholder="Search name, phone, email…"
+                placeholder={t("sup.search")}
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
               />
@@ -171,11 +173,11 @@ export default function SuppliersPage() {
             <div className="flex gap-1">
               {(
                 [
-                  ["all", "All"],
-                  ["true", "Active"],
-                  ["false", "Inactive"],
+                  ["all", "sup.all"],
+                  ["true", "sup.active"],
+                  ["false", "sup.inactive"],
                 ] as const
-              ).map(([value, label]) => (
+              ).map(([value, labelKey]) => (
                 <Button
                   key={value}
                   type="button"
@@ -183,7 +185,7 @@ export default function SuppliersPage() {
                   variant={activeFilter === value ? "default" : "outline"}
                   onClick={() => setActiveFilter(value)}
                 >
-                  {label}
+                  {t(labelKey)}
                 </Button>
               ))}
             </div>
@@ -197,17 +199,17 @@ export default function SuppliersPage() {
           ) : suppliers.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
               <Truck className="size-8 opacity-40" />
-              <p className="text-sm">No suppliers yet</p>
+              <p className="text-sm">{t("sup.empty")}</p>
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Phone</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>{t("sup.col.name")}</TableHead>
+                  <TableHead>{t("sup.col.phone")}</TableHead>
+                  <TableHead>{t("sup.col.email")}</TableHead>
+                  <TableHead>{t("sup.col.status")}</TableHead>
+                  <TableHead className="text-right">{t("sup.col.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -225,22 +227,22 @@ export default function SuppliersPage() {
                     <TableCell className="font-data text-xs">{s.email || "—"}</TableCell>
                     <TableCell>
                       <Badge variant={s.isActive ? "secondary" : "outline"} className="font-data text-[10px]">
-                        {s.isActive ? "ACTIVE" : "INACTIVE"}
+                        {s.isActive ? t("sup.status.active") : t("sup.status.inactive")}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
                         <Button size="sm" variant="ghost" onClick={() => openEdit(s)}>
-                          Edit
+                          {t("sup.edit")}
                         </Button>
                         <Button size="sm" variant="ghost" onClick={() => toggleActive(s)}>
-                          {s.isActive ? "Deactivate" : "Activate"}
+                          {s.isActive ? t("sup.deactivate") : t("sup.activate")}
                         </Button>
                         <Link
                           href={`/dashboard/suppliers/${s._id}`}
                           className="inline-flex h-7 items-center rounded-lg border border-border px-2.5 text-[0.8rem] hover:bg-muted"
                         >
-                          Ledger
+                          {t("sup.ledger")}
                         </Link>
                       </div>
                     </TableCell>
@@ -256,43 +258,43 @@ export default function SuppliersPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-nameplate text-base">
-              {editing ? "Edit supplier" : "Add supplier"}
+              {editing ? t("sup.dialog.edit") : t("sup.dialog.add")}
             </DialogTitle>
           </DialogHeader>
           <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="name">Name</Label>
+              <Label htmlFor="name">{t("sup.col.name")}</Label>
               <Input id="name" {...form.register("name")} />
               {form.formState.errors.name && (
                 <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
               )}
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="phone">Phone</Label>
+              <Label htmlFor="phone">{t("sup.col.phone")}</Label>
               <Input id="phone" {...form.register("phone")} />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t("sup.col.email")}</Label>
               <Input id="email" type="email" {...form.register("email")} />
               {form.formState.errors.email && (
                 <p className="text-xs text-destructive">{form.formState.errors.email.message}</p>
               )}
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="address">Address</Label>
+              <Label htmlFor="address">{t("sup.address")}</Label>
               <Input id="address" {...form.register("address")} />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="notes">Notes</Label>
+              <Label htmlFor="notes">{t("sup.notes")}</Label>
               <Input id="notes" {...form.register("notes")} />
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                Cancel
+                {t("sup.cancel")}
               </Button>
               <Button type="submit" disabled={saving} className="gap-2">
                 {saving && <Loader2 className="size-4 animate-spin" />}
-                Save
+                {t("sup.save")}
               </Button>
             </DialogFooter>
           </form>

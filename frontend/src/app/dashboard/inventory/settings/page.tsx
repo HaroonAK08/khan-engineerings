@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Loader2, Plus } from "lucide-react";
 import { InventorySubnav } from "@/components/layout/inventory-subnav";
+import { useI18n } from "@/hooks/use-i18n";
 import { apiError } from "@/lib/materials-api";
 import {
   createCategory,
@@ -33,6 +34,7 @@ import {
 type Kind = "categories" | "sizes" | "warehouses";
 
 export default function InventorySettingsPage() {
+  const { t } = useI18n();
   const [categories, setCategories] = useState<CatalogItem[]>([]);
   const [sizes, setSizes] = useState<CatalogItem[]>([]);
   const [warehouses, setWarehouses] = useState<CatalogItem[]>([]);
@@ -163,7 +165,7 @@ export default function InventorySettingsPage() {
     <div className="flex flex-col gap-6">
       <InventorySubnav />
       <div>
-        <h1 className="text-nameplate text-xl">Inventory settings</h1>
+        <h1 className="text-nameplate text-xl">{t("invSettings.title")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Product categories, sizes, and warehouses.
         </p>

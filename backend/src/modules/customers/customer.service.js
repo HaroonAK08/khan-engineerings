@@ -15,6 +15,7 @@ async function create(data) {
     name,
     phone: data.phone?.trim() || "",
     email: data.email?.trim().toLowerCase() || "",
+    city: data.city?.trim() || "",
     address: data.address?.trim() || "",
     notes: data.notes?.trim() || "",
     isActive: data.isActive !== undefined ? Boolean(data.isActive) : true,
@@ -83,6 +84,7 @@ async function update(id, data) {
   }
   if (data.phone !== undefined) customer.phone = data.phone.trim();
   if (data.email !== undefined) customer.email = data.email.trim().toLowerCase();
+  if (data.city !== undefined) customer.city = data.city.trim();
   if (data.address !== undefined) customer.address = data.address.trim();
   if (data.notes !== undefined) customer.notes = data.notes.trim();
   if (data.isActive !== undefined) customer.isActive = Boolean(data.isActive);

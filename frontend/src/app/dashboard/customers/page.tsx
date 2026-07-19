@@ -29,6 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useI18n } from "@/hooks/use-i18n";
 
 const schema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -42,6 +43,7 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 export default function CustomersPage() {
+  const { t } = useI18n();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -120,20 +122,20 @@ export default function CustomersPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
-            Sales · receivables
+            {t("cus.eyebrow")}
           </p>
-          <h1 className="text-nameplate text-xl">Customers</h1>
+          <h1 className="text-nameplate text-xl">{t("cus.title")}</h1>
         </div>
         <div className="flex gap-2">
           <Link
             href="/dashboard/orders/reports"
             className="inline-flex h-8 items-center rounded-lg border border-border px-3 text-sm hover:bg-muted"
           >
-            Outstanding
+            {t("cus.outstanding")}
           </Link>
           <Button onClick={openCreate} className="gap-2">
             <Plus className="size-4" />
-            Add customer
+            {t("cus.add")}
           </Button>
         </div>
       </div>
@@ -144,7 +146,7 @@ export default function CustomersPage() {
             <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               className="pl-8"
-              placeholder="Search name, phone, email…"
+              placeholder={t("cus.search")}
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
@@ -156,16 +158,16 @@ export default function CustomersPage() {
               <Loader2 className="size-6 animate-spin text-primary" />
             </div>
           ) : customers.length === 0 ? (
-            <p className="py-10 text-center text-sm text-muted-foreground">No customers yet</p>
+            <p className="py-10 text-center text-sm text-muted-foreground">{t("cus.empty")}</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Phone</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>{t("cus.col.name")}</TableHead>
+                  <TableHead>{t("cus.col.phone")}</TableHead>
+                  <TableHead>{t("cus.col.email")}</TableHead>
+                  <TableHead>{t("cus.col.status")}</TableHead>
+                  <TableHead className="text-right">{t("cus.col.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -186,12 +188,12 @@ export default function CustomersPage() {
                         variant={c.isActive ? "secondary" : "outline"}
                         className="font-data text-[10px]"
                       >
-                        {c.isActive ? "ACTIVE" : "INACTIVE"}
+                        {c.isActive ? t("cus.status.active") : t("cus.status.inactive")}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
                       <Button size="sm" variant="ghost" onClick={() => openEdit(c)}>
-                        Edit
+                        {t("cus.edit")}
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -206,37 +208,37 @@ export default function CustomersPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-nameplate text-base">
-              {editing ? "Edit customer" : "Add customer"}
+              {editing ? t("cus.dialog.edit") : t("cus.dialog.add")}
             </DialogTitle>
           </DialogHeader>
           <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label>Name</Label>
+              <Label>{t("cus.col.name")}</Label>
               <Input {...form.register("name")} />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label>Phone</Label>
+              <Label>{t("cus.col.phone")}</Label>
               <Input {...form.register("phone")} />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label>Email</Label>
+              <Label>{t("cus.col.email")}</Label>
               <Input type="email" {...form.register("email")} />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label>Address</Label>
+              <Label>{t("cus.address")}</Label>
               <Input {...form.register("address")} />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label>Notes</Label>
+              <Label>{t("cus.notes")}</Label>
               <Input {...form.register("notes")} />
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                Cancel
+                {t("cus.cancel")}
               </Button>
               <Button type="submit" disabled={saving} className="gap-2">
                 {saving && <Loader2 className="size-4 animate-spin" />}
-                Save
+                {t("cus.save")}
               </Button>
             </DialogFooter>
           </form>

@@ -123,7 +123,20 @@ Complete reporting system:
 
 Routes: `/dashboard/reports` (+ sales, purchases, production, costs, inventory, statements, finance)
 
-## Local development
+## Manufacturing ERP — Phases A–G
+
+Spec: `docs/MANUFACTURING_ERP_TECH_SPEC.md`.
+
+- **A** Domain foundation (scrap/daig, products, stock types) ✓
+- **B–C** Production batch + furnace WIP workflow ✓
+- **D** Reusable inventory ✓
+- **E** Claims & returns ✓
+- **F** Sales polish (city, bilty, salesman) ✓
+- **G** Quick entry dashboard ✓
+
+**Not included:** Employees, Departments, Attendance.
+
+### Local development
 
 ### Backend
 
@@ -132,6 +145,7 @@ cd backend
 cp .env.example .env   # set MONGODB_URI and JWT_SECRET
 npm install
 npm run seed           # creates admin@khanengineerings.com / admin123
+npm run migrate:mfg    # one-time Phase A data migration (after deploy/pull)
 npm run dev            # http://localhost:5000
 ```
 

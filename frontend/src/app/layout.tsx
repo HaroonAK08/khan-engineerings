@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Big_Shoulders, IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
+import { Big_Shoulders, IBM_Plex_Sans, IBM_Plex_Mono, Noto_Nastaliq_Urdu } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toaster";
 import { AppProviders } from "@/providers/app-providers";
@@ -23,6 +23,12 @@ const plexMono = IBM_Plex_Mono({
   weight: ["400", "500"],
 });
 
+const notoNastaliq = Noto_Nastaliq_Urdu({
+  variable: "--font-urdu",
+  subsets: ["arabic"],
+  weight: ["400", "500", "600", "700"],
+});
+
 export const metadata: Metadata = {
   title: "Khan Engineerings",
   description: "Factory operations & management system",
@@ -38,6 +44,11 @@ const THEME_INIT_SCRIPT = `
     var stored = localStorage.getItem("ke-theme");
     var theme = stored === "dark" ? "dark" : "light";
     document.documentElement.classList.toggle("dark", theme === "dark");
+
+    var locale = localStorage.getItem("ke-locale") === "ur" ? "ur" : "en";
+    document.documentElement.lang = locale === "ur" ? "ur" : "en";
+    document.documentElement.dir = locale === "ur" ? "rtl" : "ltr";
+    document.documentElement.classList.toggle("locale-ur", locale === "ur");
   } catch (e) {}
 })();
 `;
@@ -53,7 +64,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body
-        className={`${bigShoulders.variable} ${plexSans.variable} ${plexMono.variable} antialiased`}
+        className={`${bigShoulders.variable} ${plexSans.variable} ${plexMono.variable} ${notoNastaliq.variable} antialiased`}
       >
         <AppProviders>
           <TooltipProvider delay={200}>{children}</TooltipProvider>

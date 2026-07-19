@@ -47,7 +47,7 @@ async function remove(req, res, next) {
 
 async function stock(req, res, next) {
   try {
-    const stock = await purchaseService.getStock();
+    const stock = await purchaseService.getStock(req.query);
     res.json({ stock });
   } catch (err) {
     next(err);

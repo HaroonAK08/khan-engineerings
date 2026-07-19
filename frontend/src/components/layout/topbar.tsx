@@ -8,6 +8,8 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { getInitials } from "@/lib/utils-user";
 import { useAuthStore } from "@/stores/auth-store";
+import { useI18n } from "@/hooks/use-i18n";
+import type { MessageKey } from "@/lib/i18n/messages";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,21 +28,31 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { ThemeToggle } from "./theme-toggle";
+import { LanguageToggle } from "./language-toggle";
 import { NAV_ITEMS } from "./nav-items";
 import { SidebarBrand, SidebarNav } from "./sidebar";
 
-function currentTitle(pathname: string | null) {
-  if (!pathname) return "Dashboard";
-  const match = [...NAV_ITEMS]
-    .filter((item) => item.ready !== false)
-    .reverse()
-    .find((item) => pathname.startsWith(item.href));
-  return match?.label ?? "Dashboard";
+function currentTitleKey(pathname: string | null): MessageKey {
+  if (!pathname) return "nav.dashboard";
+
+  for (const item of [...NAV_ITEMS].filter((i) => i.ready !== false).reverse()) {
+    if (item.children?.length) {
+      const child = [...item.children]
+        .reverse()
+        .find((c) => pathname === c.href || pathname.startsWith(`${c.href}/`));
+      if (child) return child.labelKey;
+    }
+    if (item.href === "/dashboard" ? pathname === item.href : pathname.startsWith(item.href)) {
+      return item.labelKey;
+    }
+  }
+  return "nav.dashboard";
 }
 
 export function Topbar() {
   const pathname = usePathname();
   const router = useRouter();
+  const { t, isUrdu } = useI18n();
   const user = useAuthStore((s) => s.user);
   const clear = useAuthStore((s) => s.clear);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -55,7 +67,7 @@ export function Topbar() {
     } finally {
       clear();
       setLoggingOut(false);
-      toast.success("Signed out");
+      toast.success(t("topbar.signedOut"));
       router.replace("/");
     }
   }
@@ -68,16 +80,16 @@ export function Topbar() {
           size="icon-sm"
           className="text-sidebar-foreground md:hidden"
           onClick={() => setMobileOpen(true)}
-          aria-label="Open navigation"
+          aria-label={t("topbar.openNav")}
         >
           <Menu className="size-4" />
         </Button>
         <div className="min-w-0">
           <p className="font-data text-[10px] tracking-[0.2em] text-sidebar-foreground/50">
-            KHAN ENGINEERINGS / OPS
+            {t("topbar.ops")}
           </p>
           <h2 className="text-nameplate truncate text-base leading-tight">
-            {currentTitle(pathname)}
+            {t(currentTitleKey(pathname))}
           </h2>
         </div>
       </div>
@@ -91,6 +103,7 @@ export function Topbar() {
             {user.role}
           </Badge>
         )}
+        <LanguageToggle />
         <ThemeToggle />
 
         <DropdownMenu>
@@ -107,7 +120,7 @@ export function Topbar() {
           <DropdownMenuContent align="end" className="min-w-52">
             <DropdownMenuLabel className="font-normal">
               <p className="truncate text-sm font-medium text-foreground">
-                {user?.name ?? "Account"}
+                {user?.name ?? t("topbar.account")}
               </p>
               <p className="font-data truncate text-[11px] text-muted-foreground">
                 {user?.email}
@@ -119,7 +132,7 @@ export function Topbar() {
               className="cursor-pointer gap-2"
             >
               <UserRound className="size-4" />
-              Profile
+              {t("topbar.profile")}
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={handleLogout}
@@ -128,7 +141,7 @@ export function Topbar() {
               className="cursor-pointer gap-2"
             >
               <LogOut className="size-4" />
-              Sign out
+              {t("topbar.signOut")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -136,12 +149,12 @@ export function Topbar() {
 
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent
-          side="left"
+          side={isUrdu ? "right" : "left"}
           className="w-72 gap-0 border-sidebar-border bg-sidebar p-0 text-sidebar-foreground"
           showCloseButton
         >
           <SheetHeader className="sr-only">
-            <SheetTitle>Navigation</SheetTitle>
+            <SheetTitle>{t("topbar.openNav")}</SheetTitle>
           </SheetHeader>
           <SidebarBrand />
           <SidebarNav onNavigate={() => setMobileOpen(false)} />
@@ -151,7 +164,7 @@ export function Topbar() {
               onClick={() => setMobileOpen(false)}
               className="font-data text-[10px] tracking-widest text-sidebar-foreground/40 hover:text-sidebar-foreground/70"
             >
-              BUILD v0.1.0 · PHASE 1
+              {t("brand.build")}
             </Link>
           </div>
         </SheetContent>

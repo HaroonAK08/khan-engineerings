@@ -9,43 +9,25 @@ import { apiError } from "@/lib/materials-api";
 import { globalSearch, type GlobalSearchResult } from "@/lib/reports-api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { useI18n } from "@/hooks/use-i18n";
+import type { MessageKey } from "@/hooks/use-i18n";
 
-const MODULES = [
-  {
-    href: "/dashboard/reports/sales",
-    title: "Sales reports",
-    desc: "Revenue, outstanding invoices, top customers — Excel & PDF.",
-  },
+const MODULES: Array<{ href: string; titleKey: MessageKey; descKey: MessageKey }> = [
+  { href: "/dashboard/reports/sales", titleKey: "rep.salesTitle", descKey: "rep.salesDesc" },
   {
     href: "/dashboard/reports/purchases",
-    title: "Purchase reports",
-    desc: "Scrap purchases by supplier, rates, and spend.",
+    titleKey: "rep.purchaseTitle",
+    descKey: "rep.purchaseDesc",
   },
   {
     href: "/dashboard/reports/production",
-    title: "Production reports",
-    desc: "Yield, scrap use, good vs rejected units.",
+    titleKey: "rep.prodTitle",
+    descKey: "rep.prodDesc",
   },
-  {
-    href: "/dashboard/reports/costs",
-    title: "Expense reports",
-    desc: "Stage and category manufacturing costs.",
-  },
-  {
-    href: "/dashboard/reports/inventory",
-    title: "Inventory reports",
-    desc: "Raw scrap, finished goods, and low stock.",
-  },
-  {
-    href: "/dashboard/reports/statements",
-    title: "Statements",
-    desc: "Customer and supplier ledger statements.",
-  },
-  {
-    href: "/dashboard/reports/finance",
-    title: "Finance & P&L",
-    desc: "Profit, cash flow, product profitability.",
-  },
+  { href: "/dashboard/reports/costs", titleKey: "rep.expTitle", descKey: "rep.expDesc" },
+  { href: "/dashboard/reports/inventory", titleKey: "rep.invTitle", descKey: "rep.invDesc" },
+  { href: "/dashboard/reports/statements", titleKey: "rep.stmtTitle", descKey: "rep.stmtDesc" },
+  { href: "/dashboard/reports/finance", titleKey: "rep.finTitle", descKey: "rep.finDesc" },
 ];
 
 const GROUPS: Array<{ key: keyof GlobalSearchResult["results"]; label: string }> = [
@@ -58,6 +40,7 @@ const GROUPS: Array<{ key: keyof GlobalSearchResult["results"]; label: string }>
 ];
 
 export default function ReportsHubPage() {
+  const { t } = useI18n();
   const [q, setQ] = useState("");
   const [searching, setSearching] = useState(false);
   const [result, setResult] = useState<GlobalSearchResult | null>(null);
@@ -92,27 +75,23 @@ export default function ReportsHubPage() {
 
       <div>
         <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
-          Phase 9 · Reports
+          {t("rep.eyebrow")}
         </p>
-        <h1 className="text-nameplate text-xl">Reports & search</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Find historical records, filter by date, and export Excel or PDF.
-        </p>
+        <h1 className="text-nameplate text-xl">{t("rep.title")}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{t("rep.subtitle")}</p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-nameplate text-sm">Advanced search</CardTitle>
-          <CardDescription>
-            Search customers, suppliers, orders, purchases, batches, and products.
-          </CardDescription>
+          <CardTitle className="text-nameplate text-sm">{t("rep.advanced")}</CardTitle>
+          <CardDescription>{t("rep.searchPh")}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="relative">
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               className="pl-9"
-              placeholder="Type at least 2 characters…"
+              placeholder={t("rep.typeHint")}
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
@@ -166,8 +145,8 @@ export default function ReportsHubPage() {
           <Link key={m.href} href={m.href}>
             <Card className="h-full transition-colors hover:border-primary/40">
               <CardHeader>
-                <CardTitle className="text-nameplate text-sm">{m.title}</CardTitle>
-                <CardDescription>{m.desc}</CardDescription>
+                <CardTitle className="text-nameplate text-sm">{t(m.titleKey)}</CardTitle>
+                <CardDescription>{t(m.descKey)}</CardDescription>
               </CardHeader>
             </Card>
           </Link>

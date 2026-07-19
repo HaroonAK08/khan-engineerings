@@ -7,6 +7,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { InventorySubnav } from "@/components/layout/inventory-subnav";
+import { useI18n } from "@/hooks/use-i18n";
 import { apiError, formatDate } from "@/lib/materials-api";
 import { listProducts } from "@/lib/production-api";
 import {
@@ -32,7 +33,7 @@ import {
 } from "@/components/ui/table";
 
 const adjustSchema = z.object({
-  itemType: z.enum(["raw_scrap", "finished_good"]),
+  itemType: z.enum(["raw_scrap", "raw_daig", "reusable", "finished_good"]),
   direction: z.enum(["in", "out"]),
   quantity: z.number().positive("Quantity must be greater than 0"),
   product: z.string().optional(),
@@ -48,6 +49,7 @@ function todayInput() {
 }
 
 export default function MovementsPage() {
+  const { t } = useI18n();
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [warehouses, setWarehouses] = useState<CatalogItem[]>([]);
@@ -128,16 +130,14 @@ export default function MovementsPage() {
     <div className="flex flex-col gap-6">
       <InventorySubnav />
       <div>
-        <h1 className="text-nameplate text-xl">Stock movements</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Automatic (purchases / production) and manual adjustments.
-        </p>
+        <h1 className="text-nameplate text-xl">{t("movements.title")}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{t("movements.subtitle")}</p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-nameplate text-sm">Manual adjustment</CardTitle>
-          <CardDescription>Correct counts or record outbound finished goods.</CardDescription>
+          <CardTitle className="text-nameplate text-sm">{t("movements.manualTitle")}</CardTitle>
+          <CardDescription>{t("movements.manualDesc")}</CardDescription>
         </CardHeader>
         <CardContent>
           <form
@@ -151,7 +151,9 @@ export default function MovementsPage() {
                 {...form.register("itemType")}
               >
                 <option value="finished_good">Finished good</option>
-                <option value="raw_scrap">Raw scrap</option>
+                <option value="raw_scrap">Scrap</option>
+                <option value="raw_daig">Daig</option>
+                <option value="reusable">Reusable</option>
               </select>
             </div>
             <div className="flex flex-col gap-1.5">
@@ -228,7 +230,9 @@ export default function MovementsPage() {
             onChange={(e) => setItemType(e.target.value)}
           >
             <option value="">All item types</option>
-            <option value="raw_scrap">Raw scrap</option>
+            <option value="raw_scrap">Scrap</option>
+            <option value="raw_daig">Daig</option>
+            <option value="reusable">Reusable</option>
             <option value="finished_good">Finished goods</option>
           </select>
         </CardHeader>
@@ -264,7 +268,14 @@ export default function MovementsPage() {
                     </TableCell>
                     <TableCell className="font-data text-xs">{m.reason}</TableCell>
                     <TableCell className="text-sm">
-                      {m.product?.name || (m.itemType === "raw_scrap" ? "Scrap" : "—")}
+                      {m.product?.name ||
+                        (m.itemType === "raw_scrap"
+                          ? "Scrap"
+                          : m.itemType === "raw_daig"
+                            ? "Daig"
+                            : m.itemType === "reusable"
+                              ? "Reusable"
+                              : "—")}
                     </TableCell>
                     <TableCell className="text-sm">{m.warehouse?.name || "—"}</TableCell>
                     <TableCell

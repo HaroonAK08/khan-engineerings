@@ -8,6 +8,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { BarChart3, Loader2, Trash2 } from "lucide-react";
 import { InventorySubnav } from "@/components/layout/inventory-subnav";
+import { useI18n } from "@/hooks/use-i18n";
 import {
   apiError,
   createPurchase,
@@ -37,8 +38,14 @@ import {
 
 const purchaseSchema = z.object({
   supplier: z.string().min(1, "Supplier is required"),
-  quantityKg: z.number().positive("Quantity must be greater than 0"),
-  ratePerKg: z.number().positive("Rate must be greater than 0"),
+  materialType: z.enum(["scrap", "daig"]),
+  quantityKg: z
+    .number()
+    .positive("Quantity must be greater than 0")
+    .refine((n) => Number.isInteger(n), "Quantity must be whole kilograms (no grams)"),
+  ratePerKg: z.number().positive("Enter rate per kg, or total amount"),
+  totalAmount: z.number().positive("Enter total amount, or rate per kg"),
+  vehicleNo: z.string().optional(),
   purchaseDate: z.string().min(1, "Date is required"),
   invoiceNo: z.string().optional(),
   notes: z.string().optional(),
@@ -50,7 +57,16 @@ function todayInput() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function roundMoney(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
+function roundRate(n: number) {
+  return Math.round(n * 10000) / 10000;
+}
+
 export default function InventoryPage() {
+  const { t } = useI18n();
   const [stock, setStock] = useState<StockSummary | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -60,13 +76,18 @@ export default function InventoryPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [q, setQ] = useState("");
+  /** Which money field the user last typed — drives auto-calc direction */
+  const [priceEdit, setPriceEdit] = useState<"rate" | "total">("rate");
 
   const form = useForm<PurchaseForm>({
     resolver: zodResolver(purchaseSchema),
     defaultValues: {
       supplier: "",
+      materialType: "scrap",
       quantityKg: 0,
       ratePerKg: 0,
+      totalAmount: 0,
+      vehicleNo: "",
       purchaseDate: todayInput(),
       invoiceNo: "",
       notes: "",
@@ -75,12 +96,40 @@ export default function InventoryPage() {
 
   const qty = form.watch("quantityKg");
   const rate = form.watch("ratePerKg");
-  const estimatedTotal = useMemo(() => {
-    const qn = Number(qty);
-    const rn = Number(rate);
-    if (!Number.isFinite(qn) || !Number.isFinite(rn) || qn <= 0 || rn <= 0) return 0;
-    return Math.round(qn * rn * 100) / 100;
-  }, [qty, rate]);
+  const total = form.watch("totalAmount");
+
+  function syncFromQty(nextQty: number) {
+    if (!Number.isFinite(nextQty) || nextQty <= 0) return;
+    if (priceEdit === "total") {
+      const t = Number(form.getValues("totalAmount"));
+      if (Number.isFinite(t) && t > 0) {
+        form.setValue("ratePerKg", roundRate(t / nextQty), { shouldValidate: true });
+      }
+    } else {
+      const r = Number(form.getValues("ratePerKg"));
+      if (Number.isFinite(r) && r > 0) {
+        form.setValue("totalAmount", roundMoney(nextQty * r), { shouldValidate: true });
+      }
+    }
+  }
+
+  function onRateChange(value: number) {
+    setPriceEdit("rate");
+    form.setValue("ratePerKg", value, { shouldValidate: true });
+    const qn = Number(form.getValues("quantityKg"));
+    if (Number.isFinite(qn) && qn > 0 && Number.isFinite(value) && value > 0) {
+      form.setValue("totalAmount", roundMoney(qn * value), { shouldValidate: true });
+    }
+  }
+
+  function onTotalChange(value: number) {
+    setPriceEdit("total");
+    form.setValue("totalAmount", value, { shouldValidate: true });
+    const qn = Number(form.getValues("quantityKg"));
+    if (Number.isFinite(qn) && qn > 0 && Number.isFinite(value) && value > 0) {
+      form.setValue("ratePerKg", roundRate(value / qn), { shouldValidate: true });
+    }
+  }
 
   const activeSuppliers = useMemo(
     () => suppliers.filter((s) => s.isActive),
@@ -124,16 +173,37 @@ export default function InventoryPage() {
   async function onSubmit(values: PurchaseForm) {
     setSaving(true);
     try {
-      await createPurchase(values);
-      toast.success("Purchase recorded");
+      const purchase = await createPurchase({
+        supplier: values.supplier,
+        materialType: values.materialType,
+        quantityKg: values.quantityKg,
+        ratePerKg: values.ratePerKg,
+        totalAmount: values.totalAmount,
+        purchaseDate: values.purchaseDate,
+        invoiceNo: values.invoiceNo,
+        notes: values.notes,
+        vehicleNo: values.vehicleNo,
+        // Purchase is recorded as unpaid; clear later from Suppliers → ledger
+        freightAmount: 0,
+        amountPaid: 0,
+      });
+      toast.success(
+        purchase.invoiceNo
+          ? `Purchase saved (${purchase.invoiceNo}) — due on supplier ledger`
+          : "Purchase recorded — amount due on supplier ledger"
+      );
       form.reset({
         supplier: values.supplier,
+        materialType: values.materialType,
         quantityKg: 0,
         ratePerKg: 0,
+        totalAmount: 0,
+        vehicleNo: "",
         purchaseDate: todayInput(),
         invoiceNo: "",
         notes: "",
       });
+      setPriceEdit("rate");
       await load();
     } catch (err) {
       toast.error(apiError(err, "Failed to record purchase"));
@@ -159,45 +229,59 @@ export default function InventoryPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
-            Scrap · kilograms
+            {t("purchases.eyebrow")}
           </p>
-          <h1 className="text-nameplate text-xl">Raw material purchases</h1>
+          <h1 className="text-nameplate text-xl">{t("purchases.title")}</h1>
         </div>
         <Link
           href="/dashboard/inventory/reports"
           className="inline-flex h-8 items-center gap-2 rounded-lg border border-border px-3 text-sm hover:bg-muted"
         >
           <BarChart3 className="size-4" />
-          Reports
+          {t("purchases.reports")}
         </Link>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[
           {
-            label: "Available scrap",
-            value: stock ? `${formatKg(stock.totalKg)} kg` : "—",
-            hint: stock?.consumedKg
-              ? `${formatKg(stock.purchasedKg ?? 0)} purchased − ${formatKg(stock.consumedKg)} used`
-              : "after production consumption",
+            label: t("purchases.availableScrap"),
+            value: stock
+              ? `${formatKg(stock.byMaterial?.scrap?.availableKg ?? stock.totalKg)} kg`
+              : "—",
+            hint: stock?.byMaterial?.scrap?.consumedKg
+              ? `${formatKg(stock.byMaterial.scrap.purchasedKg ?? 0)} purchased − ${formatKg(stock.byMaterial.scrap.consumedKg)} used`
+              : t("purchases.afterConsumption"),
             accent: "bg-chart-1",
           },
           {
-            label: "Total spend",
-            value: stock ? formatMoney(stock.totalSpend) : "—",
-            hint: "all purchases",
+            label: t("purchases.availableDaig"),
+            value: stock?.byMaterial?.daig
+              ? `${formatKg(stock.byMaterial.daig.availableKg ?? stock.byMaterial.daig.totalKg)} kg`
+              : "—",
+            hint: t("purchases.daigOnHand"),
             accent: "bg-chart-2",
           },
           {
-            label: "Purchases",
-            value: stock ? String(stock.purchaseCount) : "—",
-            hint: "entries recorded",
+            label: t("purchases.totalSpend"),
+            value: stock
+              ? formatMoney(
+                  (stock.byMaterial?.scrap?.totalSpend ?? stock.totalSpend) +
+                    (stock.byMaterial?.daig?.totalSpend ?? 0)
+                )
+              : "—",
+            hint: t("purchases.allRecorded"),
             accent: "bg-chart-3",
           },
           {
-            label: "Avg rate",
-            value: stock ? `${formatMoney(stock.avgRate)} / kg` : "—",
-            hint: "weighted by entries",
+            label: t("purchases.count"),
+            value: stock
+              ? String(
+                  (stock.byMaterial?.scrap?.purchaseCount ?? stock.purchaseCount) +
+                    (stock.byMaterial?.daig?.purchaseCount ?? 0)
+                )
+              : "—",
+            hint: t("purchases.entriesRecorded"),
             accent: "bg-chart-4",
           },
         ].map((stat) => (
@@ -216,9 +300,10 @@ export default function InventoryPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-nameplate text-sm">Record scrap purchase</CardTitle>
+          <CardTitle className="text-nameplate text-sm">{t("purchases.recordTitle")}</CardTitle>
           <CardDescription>
-            Every kilogram entering the factory. Posts to supplier ledger automatically.
+            Enter kg and either rate or total — the other calculates automatically. This adds
+            stock and what you owe the supplier. Pay later from Suppliers (not at purchase time).
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -247,13 +332,38 @@ export default function InventoryPage() {
               )}
             </div>
             <div className="flex flex-col gap-1.5">
+              <Label htmlFor="materialType">Material</Label>
+              <select
+                id="materialType"
+                className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
+                {...form.register("materialType")}
+              >
+                <option value="scrap">Scrap</option>
+                <option value="daig">Daig</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
               <Label htmlFor="quantityKg">Quantity (kg)</Label>
               <Input
                 id="quantityKg"
                 type="number"
-                step="0.001"
-                {...form.register("quantityKg", { valueAsNumber: true })}
+                min={1}
+                step={1}
+                inputMode="numeric"
+                placeholder="e.g. 100"
+                value={Number.isFinite(qty) && qty > 0 ? qty : ""}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  if (raw === "") {
+                    form.setValue("quantityKg", 0, { shouldValidate: true });
+                    return;
+                  }
+                  const v = Math.round(Number(raw));
+                  form.setValue("quantityKg", Number.isFinite(v) ? v : 0, { shouldValidate: true });
+                  if (Number.isFinite(v) && v > 0) syncFromQty(v);
+                }}
               />
+              <p className="text-[11px] text-muted-foreground">Whole kilograms only (e.g. 100, not 0.001).</p>
               {form.formState.errors.quantityKg && (
                 <p className="text-xs text-destructive">
                   {form.formState.errors.quantityKg.message}
@@ -266,11 +376,39 @@ export default function InventoryPage() {
                 id="ratePerKg"
                 type="number"
                 step="0.01"
-                {...form.register("ratePerKg", { valueAsNumber: true })}
+                value={Number.isFinite(rate) && rate > 0 ? rate : rate === 0 ? "" : ""}
+                onChange={(e) => {
+                  const v = e.target.valueAsNumber;
+                  onRateChange(Number.isFinite(v) ? v : 0);
+                }}
               />
+              <p className="text-[11px] text-muted-foreground">
+                Know the price per kg? Enter here → total fills in.
+              </p>
               {form.formState.errors.ratePerKg && (
                 <p className="text-xs text-destructive">
                   {form.formState.errors.ratePerKg.message}
+                </p>
+              )}
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="totalAmount">Total amount</Label>
+              <Input
+                id="totalAmount"
+                type="number"
+                step="0.01"
+                value={Number.isFinite(total) && total > 0 ? total : total === 0 ? "" : ""}
+                onChange={(e) => {
+                  const v = e.target.valueAsNumber;
+                  onTotalChange(Number.isFinite(v) ? v : 0);
+                }}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Know the full bill (include truck if any)? Enter here → rate per kg fills in.
+              </p>
+              {form.formState.errors.totalAmount && (
+                <p className="text-xs text-destructive">
+                  {form.formState.errors.totalAmount.message}
                 </p>
               )}
             </div>
@@ -279,16 +417,29 @@ export default function InventoryPage() {
               <Input id="purchaseDate" type="date" {...form.register("purchaseDate")} />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="invoiceNo">Invoice No.</Label>
-              <Input id="invoiceNo" {...form.register("invoiceNo")} />
+              <Label htmlFor="vehicleNo">Vehicle / bilty</Label>
+              <Input id="vehicleNo" {...form.register("vehicleNo")} />
             </div>
             <div className="flex flex-col gap-1.5">
+              <Label htmlFor="invoiceNo">Invoice No. (optional)</Label>
+              <Input
+                id="invoiceNo"
+                placeholder="Supplier bill no. — or leave blank"
+                {...form.register("invoiceNo")}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                If empty, system creates one (e.g. PUR-20260718-001).
+              </p>
+            </div>
+            <div className="flex flex-col gap-1.5 md:col-span-2 xl:col-span-3">
               <Label htmlFor="notes">Notes</Label>
               <Input id="notes" {...form.register("notes")} />
             </div>
-            <div className="flex items-end gap-3 md:col-span-2 xl:col-span-3">
+            <div className="flex flex-col gap-2 md:col-span-2 xl:col-span-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="font-data text-sm text-muted-foreground">
-                Total: <span className="text-foreground">{formatMoney(estimatedTotal)}</span>
+                Amount due to supplier:{" "}
+                <span className="text-foreground">{formatMoney(Number(total) || 0)}</span>
+                <span className="ml-2 text-xs">(pay later from Suppliers)</span>
               </p>
               <Button type="submit" disabled={saving} className="gap-2">
                 {saving && <Loader2 className="size-4 animate-spin" />}
@@ -301,8 +452,10 @@ export default function InventoryPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-nameplate text-sm">Purchase history</CardTitle>
-          <CardDescription>Search and filter inbound scrap entries.</CardDescription>
+          <CardTitle className="text-nameplate text-sm">{t("purchases.history")}</CardTitle>
+          <CardDescription>
+            Search inbound scrap / daig. Balance = still owed to supplier.
+          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -348,10 +501,12 @@ export default function InventoryPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Date</TableHead>
+                  <TableHead>Material</TableHead>
                   <TableHead>Supplier</TableHead>
                   <TableHead className="text-right">Qty (kg)</TableHead>
                   <TableHead className="text-right">Rate</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead className="text-right">Payable</TableHead>
+                  <TableHead className="text-right">Balance</TableHead>
                   <TableHead>Invoice</TableHead>
                   <TableHead />
                 </TableRow>
@@ -361,6 +516,11 @@ export default function InventoryPage() {
                   <TableRow key={p._id}>
                     <TableCell className="font-data text-xs">
                       {formatDate(p.purchaseDate)}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="font-data text-[10px] uppercase">
+                        {p.materialType || "scrap"}
+                      </Badge>
                     </TableCell>
                     <TableCell>
                       {typeof p.supplier === "object" && p.supplier?._id ? (
@@ -381,7 +541,12 @@ export default function InventoryPage() {
                       {formatMoney(p.ratePerKg)}
                     </TableCell>
                     <TableCell className="font-data text-right text-xs">
-                      {formatMoney(p.totalAmount)}
+                      {formatMoney(
+                        p.payable ?? p.totalAmount + (p.freightAmount || 0)
+                      )}
+                    </TableCell>
+                    <TableCell className="font-data text-right text-xs">
+                      {formatMoney(p.balance ?? 0)}
                     </TableCell>
                     <TableCell className="font-data text-xs">
                       {p.invoiceNo || "—"}

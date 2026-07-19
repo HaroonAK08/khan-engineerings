@@ -5,6 +5,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { InventorySubnav } from "@/components/layout/inventory-subnav";
+import { useI18n } from "@/hooks/use-i18n";
 import { apiError, formatDate, formatKg, formatMoney, getPurchaseReport } from "@/lib/materials-api";
 import { getLiveInventoryReport, type InventoryReport } from "@/lib/inventory-api";
 import type { PurchaseReport } from "@/types/materials";
@@ -21,6 +22,7 @@ import {
 } from "@/components/ui/table";
 
 export default function InventoryReportsPage() {
+  const { t } = useI18n();
   const [report, setReport] = useState<InventoryReport | null>(null);
   const [purchaseReport, setPurchaseReport] = useState<PurchaseReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,7 +57,7 @@ export default function InventoryReportsPage() {
     <div className="flex flex-col gap-6">
       <InventorySubnav />
       <div>
-        <h1 className="text-nameplate text-xl">Inventory reports</h1>
+        <h1 className="text-nameplate text-xl">{t("invReports.title")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Stock on hand, low items, and what was produced this period.
         </p>

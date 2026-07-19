@@ -14,6 +14,12 @@ router.get("/reports", controller.report);
 router.get("/", controller.list);
 router.post("/", controller.create);
 
+router.post("/:id/furnace", controller.furnace);
+router.post("/:id/turning", controller.turning);
+router.post("/:id/advance", controller.advance);
+router.post("/:id/finish", controller.finish);
+router.post("/:id/cancel", controller.cancel);
+
 router.get("/:id/expenses", expenseController.list);
 router.post("/:id/expenses", expenseController.create);
 router.patch("/:id/expenses/:expenseId", expenseController.update);

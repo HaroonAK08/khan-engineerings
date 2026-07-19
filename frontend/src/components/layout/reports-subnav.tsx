@@ -3,20 +3,23 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/hooks/use-i18n";
+import type { MessageKey } from "@/hooks/use-i18n";
 
-const LINKS = [
-  { href: "/dashboard/reports", label: "Hub", exact: true },
-  { href: "/dashboard/reports/sales", label: "Sales" },
-  { href: "/dashboard/reports/purchases", label: "Purchases" },
-  { href: "/dashboard/reports/production", label: "Production" },
-  { href: "/dashboard/reports/costs", label: "Expenses" },
-  { href: "/dashboard/reports/inventory", label: "Inventory" },
-  { href: "/dashboard/reports/statements", label: "Statements" },
-  { href: "/dashboard/reports/finance", label: "Finance" },
+const LINKS: Array<{ href: string; labelKey: MessageKey; exact?: boolean }> = [
+  { href: "/dashboard/reports", labelKey: "rep.nav.hub", exact: true },
+  { href: "/dashboard/reports/sales", labelKey: "rep.nav.sales" },
+  { href: "/dashboard/reports/purchases", labelKey: "rep.nav.purchases" },
+  { href: "/dashboard/reports/production", labelKey: "rep.nav.production" },
+  { href: "/dashboard/reports/costs", labelKey: "rep.nav.expenses" },
+  { href: "/dashboard/reports/inventory", labelKey: "rep.nav.inventory" },
+  { href: "/dashboard/reports/statements", labelKey: "rep.nav.statements" },
+  { href: "/dashboard/reports/finance", labelKey: "rep.nav.finance" },
 ];
 
 export function ReportsSubnav() {
   const pathname = usePathname();
+  const { t } = useI18n();
 
   return (
     <nav className="flex flex-wrap gap-1 border-b border-border pb-3">
@@ -35,7 +38,7 @@ export function ReportsSubnav() {
                 : "text-muted-foreground hover:bg-muted hover:text-foreground"
             )}
           >
-            {link.label}
+            {t(link.labelKey)}
           </Link>
         );
       })}

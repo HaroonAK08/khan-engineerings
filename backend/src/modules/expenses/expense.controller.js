@@ -62,4 +62,32 @@ async function costReport(req, res, next) {
   }
 }
 
-module.exports = { meta, list, create, update, remove, costs, costReport };
+async function listOverhead(req, res, next) {
+  try {
+    const expenses = await expenseService.listOverhead(req.query);
+    res.json({ expenses });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function createOverhead(req, res, next) {
+  try {
+    const expense = await expenseService.createOverhead(req.body);
+    res.status(201).json({ expense });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = {
+  meta,
+  list,
+  create,
+  listOverhead,
+  createOverhead,
+  update,
+  remove,
+  costs,
+  costReport,
+};

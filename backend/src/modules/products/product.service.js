@@ -1,4 +1,5 @@
 const Product = require("./product.model");
+const { PRODUCT_FAMILY_IDS } = require("../domain/mfg.constants");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -17,15 +18,31 @@ function optionalId(value) {
   return value;
 }
 
+function optionalNonNeg(value, label) {
+  if (value === undefined || value === null || value === "") return undefined;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) throw httpError(`${label} must be 0 or greater`, 400);
+  return n;
+}
+
 async function create(data) {
   const name = data.name?.trim();
   if (!name) throw httpError("Name is required", 400);
+
+  const family = data.family || "hub";
+  if (!PRODUCT_FAMILY_IDS.includes(family)) {
+    throw httpError("Family must be hub or drum", 400);
+  }
 
   const product = await Product.create({
     name,
     sku: data.sku?.trim() || "",
     description: data.description?.trim() || "",
     unitLabel: data.unitLabel?.trim() || "pcs",
+    family,
+    weightKg: optionalNonNeg(data.weightKg, "Weight") ?? null,
+    standardCost: optionalNonNeg(data.standardCost, "Standard cost") ?? 0,
+    sellingPrice: optionalNonNeg(data.sellingPrice, "Selling price") ?? 0,
     category: optionalId(data.category),
     size: optionalId(data.size),
     defaultWarehouse: optionalId(data.defaultWarehouse),
@@ -36,12 +53,13 @@ async function create(data) {
   return Product.findById(product._id).populate(POPULATE);
 }
 
-async function list({ q, active, category, size } = {}) {
+async function list({ q, active, category, size, family } = {}) {
   const filter = {};
   if (active === "true" || active === true) filter.isActive = true;
   if (active === "false" || active === false) filter.isActive = false;
   if (category) filter.category = category;
   if (size) filter.size = size;
+  if (family && PRODUCT_FAMILY_IDS.includes(family)) filter.family = family;
   if (q?.trim()) {
     const term = q.trim();
     filter.$or = [{ name: new RegExp(term, "i") }, { sku: new RegExp(term, "i") }];
@@ -67,6 +85,23 @@ async function update(id, data) {
   if (data.sku !== undefined) product.sku = data.sku.trim();
   if (data.description !== undefined) product.description = data.description.trim();
   if (data.unitLabel !== undefined) product.unitLabel = data.unitLabel.trim() || "pcs";
+  if (data.family !== undefined) {
+    if (!PRODUCT_FAMILY_IDS.includes(data.family)) {
+      throw httpError("Family must be hub or drum", 400);
+    }
+    product.family = data.family;
+  }
+  if (data.weightKg !== undefined) {
+    product.weightKg = data.weightKg === null || data.weightKg === ""
+      ? null
+      : optionalNonNeg(data.weightKg, "Weight");
+  }
+  if (data.standardCost !== undefined) {
+    product.standardCost = optionalNonNeg(data.standardCost, "Standard cost") ?? 0;
+  }
+  if (data.sellingPrice !== undefined) {
+    product.sellingPrice = optionalNonNeg(data.sellingPrice, "Selling price") ?? 0;
+  }
   if (data.category !== undefined) product.category = optionalId(data.category);
   if (data.size !== undefined) product.size = optionalId(data.size);
   if (data.defaultWarehouse !== undefined) {

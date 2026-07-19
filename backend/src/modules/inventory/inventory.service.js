@@ -5,6 +5,10 @@ const Warehouse = require("./warehouse.model");
 const Product = require("../products/product.model");
 const purchaseService = require("../purchases/purchase.service");
 const ProductionBatch = require("../production/production.model");
+const {
+  STOCK_ITEM_TYPE_IDS,
+  materialTypeToItemType,
+} = require("../domain/mfg.constants");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -46,7 +50,9 @@ async function recordMovement(data) {
     direction: data.direction,
     reason: data.reason,
     quantity: roundQty(quantity),
-    unit: data.unit || (data.itemType === "raw_scrap" ? "kg" : "pcs"),
+    unit:
+      data.unit ||
+      (data.itemType === "finished_good" ? "pcs" : "kg"),
     product: data.product || null,
     warehouse: data.warehouse || null,
     refType: data.refType || "",
@@ -60,11 +66,13 @@ async function deleteMovementsByRef(refType, refId) {
   await StockMovement.deleteMany({ refType, refId });
 }
 
-/** Called when a scrap purchase is created */
+/** Called when a raw material purchase is created */
 async function onPurchaseCreated(purchase) {
   const wh = await getDefaultWarehouse();
+  const materialType = purchase.materialType || "scrap";
+  const itemType = materialTypeToItemType(materialType);
   await recordMovement({
-    itemType: "raw_scrap",
+    itemType,
     direction: "in",
     reason: "purchase",
     quantity: purchase.quantityKg,
@@ -73,15 +81,22 @@ async function onPurchaseCreated(purchase) {
     refType: "purchase",
     refId: purchase._id,
     movementDate: purchase.purchaseDate,
-    notes: purchase.invoiceNo ? `Invoice ${purchase.invoiceNo}` : "Scrap purchase",
+    notes: purchase.invoiceNo
+      ? `Invoice ${purchase.invoiceNo}`
+      : `${materialType} purchase`,
   });
+}
+
+async function onPurchaseUpdated(purchase) {
+  await deleteMovementsByRef("purchase", purchase._id);
+  await onPurchaseCreated(purchase);
 }
 
 async function onPurchaseDeleted(purchaseId) {
   await deleteMovementsByRef("purchase", purchaseId);
 }
 
-/** Called when a production batch is created */
+/** Called when a production batch is created (legacy one-shot batches) */
 async function onBatchCreated(batch) {
   const wh =
     (batch.product?.defaultWarehouse && { _id: batch.product.defaultWarehouse }) ||
@@ -105,11 +120,6 @@ async function onBatchCreated(batch) {
     });
   }
 
-  if (batch.returnedScrapKg > 0) {
-    // Returned is already netted in consume; optional explicit return movement for audit.
-    // We use net consume only to avoid double-counting against purchase-based stock.
-  }
-
   if (batch.goodUnits > 0) {
     await recordMovement({
       itemType: "finished_good",
@@ -125,6 +135,92 @@ async function onBatchCreated(batch) {
       notes: `Batch ${batch.batchNo} good units`,
     });
   }
+}
+
+/** Phase B: consume furnace inputs when batch starts */
+async function onBatchInputsConsumed(batch) {
+  const wh = await getDefaultWarehouse();
+  for (const inp of batch.inputs || []) {
+    if (!inp.quantityKg || inp.quantityKg <= 0) continue;
+    await recordMovement({
+      itemType: materialTypeToItemType(inp.materialType),
+      direction: "out",
+      reason: inp.materialType === "reusable" ? "rework_consume" : "production_consume",
+      quantity: inp.quantityKg,
+      unit: "kg",
+      warehouse: wh._id,
+      refType: "production",
+      refId: batch._id,
+      movementDate: batch.productionDate,
+      notes: `Batch ${batch.batchNo} ${inp.materialType} input`,
+    });
+  }
+}
+
+async function onHandRecovery(batch, handKg) {
+  if (!handKg) return;
+  const wh = await getDefaultWarehouse();
+  await recordMovement({
+    itemType: "reusable",
+    direction: "in",
+    reason: "hand_recovery",
+    quantity: handKg,
+    unit: "kg",
+    warehouse: wh._id,
+    refType: "production",
+    refId: batch._id,
+    movementDate: batch.productionDate,
+    notes: `Batch ${batch.batchNo} hand`,
+  });
+}
+
+async function onTurningBreakage(batch, brokenKg) {
+  if (!brokenKg) return;
+  const wh = await getDefaultWarehouse();
+  await recordMovement({
+    itemType: "reusable",
+    direction: "in",
+    reason: "turning_breakage",
+    quantity: brokenKg,
+    unit: "kg",
+    warehouse: wh._id,
+    refType: "production",
+    refId: batch._id,
+    movementDate: new Date(),
+    notes: `Batch ${batch.batchNo} turning breakage`,
+  });
+}
+
+async function onBatchFinished(batch) {
+  const wh = await getDefaultWarehouse();
+  for (const p of batch.outputProgress || []) {
+    const qty = p.finishedQty || p.goodAfterTurning || 0;
+    if (qty <= 0) continue;
+    const product = await Product.findById(p.product);
+    const warehouseId = product?.defaultWarehouse || wh._id;
+    await recordMovement({
+      itemType: "finished_good",
+      direction: "in",
+      reason: "production_output",
+      quantity: qty,
+      unit: "pcs",
+      product: p.product,
+      warehouse: warehouseId,
+      refType: "production",
+      refId: batch._id,
+      movementDate: batch.productionDate || new Date(),
+      notes: `Batch ${batch.batchNo} finished`,
+    });
+  }
+}
+
+async function getReusableStock() {
+  const productionService = require("../production/production.service");
+  const availableKg = await productionService.getReusableBalanceKg();
+  const movements = await StockMovement.find({ itemType: "reusable" })
+    .sort({ movementDate: -1, createdAt: -1 })
+    .limit(50);
+  return { availableKg, unit: "kg", movements };
 }
 
 async function onBatchDeleted(batchId) {
@@ -357,17 +453,30 @@ async function getAlerts() {
   const { items } = await getFinishedStock();
   const alerts = items.filter((i) => i.isLow);
   const raw = await purchaseService.getStock();
-  const rawLow = (raw.availableKg ?? raw.totalKg) <= 0;
+  const scrap = raw.byMaterial?.scrap || raw;
+  const daig = raw.byMaterial?.daig;
+  const scrapLow = (scrap.availableKg ?? scrap.totalKg) <= 0;
+  const daigLow = daig ? (daig.availableKg ?? daig.totalKg) <= 0 : false;
+  const rawAlerts = [];
+  if (scrapLow) {
+    rawAlerts.push({
+      material: "scrap",
+      availableKg: scrap.availableKg ?? scrap.totalKg,
+      message: "Raw scrap stock is empty or depleted",
+    });
+  }
+  if (daigLow) {
+    rawAlerts.push({
+      material: "daig",
+      availableKg: daig.availableKg ?? daig.totalKg,
+      message: "Raw daig stock is empty or depleted",
+    });
+  }
   return {
     finished: alerts,
-    raw: rawLow
-      ? {
-          material: "scrap",
-          availableKg: raw.availableKg ?? raw.totalKg,
-          message: "Raw scrap stock is empty or depleted",
-        }
-      : null,
-    count: alerts.length + (rawLow ? 1 : 0),
+    raw: rawAlerts[0] || null,
+    rawMaterials: rawAlerts,
+    count: alerts.length + rawAlerts.length,
   };
 }
 
@@ -402,7 +511,7 @@ async function createAdjustment(data) {
   if (!["in", "out"].includes(data.direction)) {
     throw httpError("Direction must be in or out", 400);
   }
-  if (!["raw_scrap", "finished_good"].includes(data.itemType)) {
+  if (!STOCK_ITEM_TYPE_IDS.includes(data.itemType)) {
     throw httpError("Invalid item type", 400);
   }
   if (data.itemType === "finished_good" && !data.product) {
@@ -425,10 +534,18 @@ async function createAdjustment(data) {
   }
 
   if (data.itemType === "raw_scrap" && data.direction === "out") {
-    const raw = await purchaseService.getStock();
+    const raw = await purchaseService.getStock({ materialType: "scrap" });
     const available = raw.availableKg ?? raw.totalKg;
     if (quantity > available + 1e-9) {
       throw httpError(`Insufficient scrap stock. Available ${available} kg`, 400);
+    }
+  }
+
+  if (data.itemType === "raw_daig" && data.direction === "out") {
+    const raw = await purchaseService.getStock({ materialType: "daig" });
+    const available = raw.availableKg ?? raw.totalKg;
+    if (quantity > available + 1e-9) {
+      throw httpError(`Insufficient daig stock. Available ${available} kg`, 400);
     }
   }
 
@@ -437,7 +554,7 @@ async function createAdjustment(data) {
     direction: data.direction,
     reason: data.reason === "transfer_in" || data.reason === "transfer_out" ? data.reason : "adjustment",
     quantity,
-    unit: data.itemType === "raw_scrap" ? "kg" : "pcs",
+    unit: data.itemType === "finished_good" ? "pcs" : "kg",
     product: data.product || null,
     warehouse: warehouseId,
     movementDate: data.movementDate || new Date(),
@@ -573,9 +690,15 @@ module.exports = {
   getDefaultWarehouse,
   recordMovement,
   onPurchaseCreated,
+  onPurchaseUpdated,
   onPurchaseDeleted,
   onBatchCreated,
+  onBatchInputsConsumed,
+  onHandRecovery,
+  onTurningBreakage,
+  onBatchFinished,
   onBatchDeleted,
+  getReusableStock,
   crudList,
   createCategory,
   updateCategory,

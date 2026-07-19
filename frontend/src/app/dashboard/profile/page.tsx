@@ -18,6 +18,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { useI18n } from "@/hooks/use-i18n";
 
 const profileSchema = z.object({
   name: z.string().min(1, "Name is required").max(80),
@@ -45,6 +46,7 @@ function apiError(err: unknown, fallback: string) {
 }
 
 export default function ProfilePage() {
+  const { t } = useI18n();
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
   const [savingProfile, setSavingProfile] = useState(false);
@@ -122,9 +124,9 @@ export default function ProfilePage() {
         <CardHeader>
           <div className="flex items-center gap-2">
             <UserRound className="size-4 text-primary" />
-            <CardTitle className="text-nameplate text-sm">Account details</CardTitle>
+            <CardTitle className="text-nameplate text-sm">{t("profile.account")}</CardTitle>
           </div>
-          <CardDescription>Update your display name and email.</CardDescription>
+          <CardDescription>{t("profile.accountDesc")}</CardDescription>
         </CardHeader>
         <CardContent>
           <form
@@ -132,7 +134,7 @@ export default function ProfilePage() {
             className="flex flex-col gap-4"
           >
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="name">Name</Label>
+              <Label htmlFor="name">{t("profile.name")}</Label>
               <Input id="name" {...profileForm.register("name")} />
               {profileForm.formState.errors.name && (
                 <p className="text-xs text-destructive">
@@ -141,7 +143,7 @@ export default function ProfilePage() {
               )}
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="profile-email">Email</Label>
+              <Label htmlFor="profile-email">{t("profile.email")}</Label>
               <Input id="profile-email" type="email" {...profileForm.register("email")} />
               {profileForm.formState.errors.email && (
                 <p className="text-xs text-destructive">
@@ -150,15 +152,13 @@ export default function ProfilePage() {
               )}
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label>Role</Label>
+              <Label>{t("profile.role")}</Label>
               <Input value={user.role} disabled className="capitalize" />
-              <p className="text-xs text-muted-foreground">
-                Roles are assigned by an administrator. Future phases will expand RBAC.
-              </p>
+              <p className="text-xs text-muted-foreground">{t("profile.roleHint")}</p>
             </div>
             <Button type="submit" disabled={savingProfile} className="w-fit gap-2">
               {savingProfile && <Loader2 className="size-4 animate-spin" />}
-              Save changes
+              {t("profile.save")}
             </Button>
           </form>
         </CardContent>
@@ -168,9 +168,9 @@ export default function ProfilePage() {
         <CardHeader>
           <div className="flex items-center gap-2">
             <KeyRound className="size-4 text-primary" />
-            <CardTitle className="text-nameplate text-sm">Change password</CardTitle>
+            <CardTitle className="text-nameplate text-sm">{t("profile.password")}</CardTitle>
           </div>
-          <CardDescription>Use a strong password you do not reuse elsewhere.</CardDescription>
+          <CardDescription>{t("profile.passwordDesc")}</CardDescription>
         </CardHeader>
         <CardContent>
           <form
@@ -178,7 +178,7 @@ export default function ProfilePage() {
             className="flex flex-col gap-4"
           >
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="currentPassword">Current password</Label>
+              <Label htmlFor="currentPassword">{t("profile.currentPassword")}</Label>
               <Input
                 id="currentPassword"
                 type="password"
@@ -193,7 +193,7 @@ export default function ProfilePage() {
             </div>
             <Separator />
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="newPassword">New password</Label>
+              <Label htmlFor="newPassword">{t("profile.newPassword")}</Label>
               <Input
                 id="newPassword"
                 type="password"
@@ -207,7 +207,7 @@ export default function ProfilePage() {
               )}
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="confirmPassword">Confirm new password</Label>
+              <Label htmlFor="confirmPassword">{t("profile.confirmPassword")}</Label>
               <Input
                 id="confirmPassword"
                 type="password"
@@ -222,7 +222,7 @@ export default function ProfilePage() {
             </div>
             <Button type="submit" disabled={savingPassword} className="w-fit gap-2">
               {savingPassword && <Loader2 className="size-4 animate-spin" />}
-              Update password
+              {t("profile.updatePassword")}
             </Button>
           </form>
         </CardContent>

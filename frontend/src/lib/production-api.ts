@@ -9,7 +9,11 @@ import type {
   ProductionReport,
 } from "@/types/production";
 
-export async function listProducts(params?: { q?: string; active?: string }) {
+export async function listProducts(params?: {
+  q?: string;
+  active?: string;
+  family?: string;
+}) {
   const { data } = await api.get<{ products: Product[] }>("/products", { params });
   return data.products;
 }
@@ -33,6 +37,9 @@ export async function listBatches(params?: {
   dateFrom?: string;
   dateTo?: string;
   q?: string;
+  status?: string;
+  currentStage?: string;
+  family?: string;
 }) {
   const { data } = await api.get<{ batches: ProductionBatch[] }>("/production", { params });
   return data.batches;
@@ -44,17 +51,59 @@ export async function getBatch(id: string) {
 }
 
 export async function createBatch(body: {
-  product: string;
+  family: "hub" | "drum";
+  materialType?: "scrap" | "daig" | "reusable";
   productionDate: string;
-  inputScrapKg: number;
-  materialLossKg: number;
-  returnedScrapKg: number;
-  goodUnits: number;
-  rejectedUnits: number;
   notes?: string;
   batchNo?: string;
+  isRework?: boolean;
 }) {
   const { data } = await api.post<{ batch: ProductionBatch }>("/production", body);
+  return data.batch;
+}
+
+export async function recordFurnace(
+  id: string,
+  body: {
+    outputs: Array<{ product: string; quantity: number }>;
+    handKg: number;
+    wastePercent?: number;
+    chargedKg?: number;
+    notes?: string;
+  }
+) {
+  const { data } = await api.post<{ batch: ProductionBatch }>(`/production/${id}/furnace`, body);
+  return data.batch;
+}
+
+export async function recordTurning(
+  id: string,
+  body: {
+    lines: Array<{
+      product: string;
+      goodUnits: number;
+      brokenUnits: number;
+      brokenKg: number;
+    }>;
+    notes?: string;
+  }
+) {
+  const { data } = await api.post<{ batch: ProductionBatch }>(`/production/${id}/turning`, body);
+  return data.batch;
+}
+
+export async function advanceBatch(id: string) {
+  const { data } = await api.post<{ batch: ProductionBatch }>(`/production/${id}/advance`);
+  return data.batch;
+}
+
+export async function finishBatch(id: string) {
+  const { data } = await api.post<{ batch: ProductionBatch }>(`/production/${id}/finish`);
+  return data.batch;
+}
+
+export async function cancelBatch(id: string) {
+  const { data } = await api.post<{ batch: ProductionBatch }>(`/production/${id}/cancel`);
   return data.batch;
 }
 
@@ -65,7 +114,7 @@ export async function deleteBatch(id: string) {
 export async function getProductionReport(params?: {
   dateFrom?: string;
   dateTo?: string;
-  product?: string;
+  family?: string;
 }) {
   const { data } = await api.get<{ report: ProductionReport }>("/production/reports", { params });
   return data.report;
@@ -79,6 +128,13 @@ export async function getProductionMeta() {
 export async function getBatchCosts(batchId: string) {
   const { data } = await api.get<{ costs: BatchCosts }>(`/production/${batchId}/costs`);
   return data.costs;
+}
+
+export async function listBatchExpenses(batchId: string) {
+  const { data } = await api.get<{ expenses: BatchExpense[] }>(
+    `/production/${batchId}/expenses`
+  );
+  return data.expenses;
 }
 
 export async function createBatchExpense(
@@ -111,8 +167,14 @@ export async function getCostReport(params?: {
   return data.report;
 }
 
-export function productName(product: ProductionBatch["product"]) {
+export function productName(product: Product | string | undefined | null) {
   if (!product) return "—";
   if (typeof product === "string") return product;
   return product.name;
+}
+
+export function productId(product: Product | string | undefined | null) {
+  if (!product) return "";
+  if (typeof product === "string") return product;
+  return product._id;
 }

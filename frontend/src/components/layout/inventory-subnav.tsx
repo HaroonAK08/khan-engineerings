@@ -1,41 +1,68 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState, useTransition } from "react";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/hooks/use-i18n";
+import type { MessageKey } from "@/lib/i18n/messages";
 
-const LINKS = [
-  { href: "/dashboard/inventory", label: "Overview", exact: true },
-  { href: "/dashboard/inventory/purchases", label: "Purchases" },
-  { href: "/dashboard/inventory/finished", label: "Finished goods" },
-  { href: "/dashboard/inventory/movements", label: "Movements" },
-  { href: "/dashboard/inventory/alerts", label: "Alerts" },
-  { href: "/dashboard/inventory/settings", label: "Settings" },
-  { href: "/dashboard/inventory/reports", label: "Reports" },
+const LINKS: Array<{ href: string; labelKey: MessageKey; exact?: boolean }> = [
+  { href: "/dashboard/inventory", labelKey: "inventory.overview", exact: true },
+  { href: "/dashboard/inventory/purchases", labelKey: "inventory.purchases" },
+  { href: "/dashboard/inventory/reusable", labelKey: "inventory.reusable" },
+  { href: "/dashboard/inventory/finished", labelKey: "inventory.finished" },
+  { href: "/dashboard/inventory/movements", labelKey: "inventory.movements" },
+  { href: "/dashboard/inventory/alerts", labelKey: "inventory.alerts" },
+  { href: "/dashboard/inventory/settings", labelKey: "inventory.settings" },
+  { href: "/dashboard/inventory/reports", labelKey: "inventory.reports" },
 ];
 
 export function InventorySubnav() {
   const pathname = usePathname();
+  const router = useRouter();
+  const { t } = useI18n();
+  const [, startTransition] = useTransition();
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+  const activePath = pendingHref ?? pathname;
+
+  useEffect(() => {
+    setPendingHref(null);
+  }, [pathname]);
+
+  useEffect(() => {
+    for (const link of LINKS) {
+      router.prefetch(link.href);
+    }
+  }, [router]);
+
+  function goTo(href: string) {
+    if (href === pathname) return;
+    setPendingHref(href);
+    startTransition(() => {
+      router.push(href);
+    });
+  }
 
   return (
     <nav className="flex flex-wrap gap-1 border-b border-border pb-3">
       {LINKS.map((link) => {
         const active = link.exact
-          ? pathname === link.href
-          : pathname === link.href || pathname?.startsWith(`${link.href}/`);
+          ? activePath === link.href
+          : activePath === link.href || activePath?.startsWith(`${link.href}/`);
         return (
-          <Link
+          <button
             key={link.href}
-            href={link.href}
+            type="button"
+            onClick={() => goTo(link.href)}
             className={cn(
-              "rounded-sm px-3 py-1.5 text-sm transition-colors",
+              "rounded-sm px-3 py-1.5 text-sm",
               active
                 ? "bg-primary/15 text-foreground"
                 : "text-muted-foreground hover:bg-muted hover:text-foreground"
             )}
           >
-            {link.label}
-          </Link>
+            {t(link.labelKey)}
+          </button>
         );
       })}
     </nav>

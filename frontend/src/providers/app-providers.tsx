@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { LocaleBootstrap } from "@/components/layout/locale-bootstrap";
 import { useAuthStore } from "@/stores/auth-store";
 import type { AuthUser } from "@/types/auth";
 
@@ -51,7 +52,9 @@ function AuthBootstrap({ children }: { children: React.ReactNode }) {
 export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthBootstrap>{children}</AuthBootstrap>
+      <LocaleBootstrap>
+        <AuthBootstrap>{children}</AuthBootstrap>
+      </LocaleBootstrap>
     </QueryClientProvider>
   );
 }

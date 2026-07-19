@@ -1,9 +1,15 @@
+export type ProductFamily = "hub" | "drum";
+
 export type Product = {
   _id: string;
   name: string;
   sku: string;
   description: string;
   unitLabel: string;
+  family: ProductFamily;
+  weightKg?: number | null;
+  standardCost?: number;
+  sellingPrice?: number;
   category?: { _id: string; name: string } | string | null;
   size?: { _id: string; name: string; code?: string } | string | null;
   defaultWarehouse?: { _id: string; name: string; code?: string } | string | null;
@@ -12,80 +18,124 @@ export type Product = {
   createdAt?: string;
 };
 
+export type BatchInput = {
+  materialType: "scrap" | "daig" | "reusable";
+  quantityKg: number;
+};
+
+export type BatchOutput = {
+  product: Product | string;
+  quantity: number;
+  family: ProductFamily;
+};
+
+export type BatchStage = {
+  stage: ProductionStageId;
+  status: "pending" | "completed" | "skipped";
+  completedAt?: string | null;
+  goodUnits?: number | null;
+  brokenUnits?: number | null;
+  brokenKg?: number | null;
+  notes?: string;
+};
+
+export type OutputProgress = {
+  product: Product | string;
+  furnaceQty: number;
+  goodAfterTurning: number;
+  brokenAfterTurning: number;
+  finishedQty: number;
+};
+
 export type ProductionBatch = {
   _id: string;
   batchNo: string;
-  product: Product | string;
+  family: ProductFamily;
+  isRework?: boolean;
   productionDate: string;
-  inputScrapKg: number;
-  materialLossKg: number;
-  returnedScrapKg: number;
-  goodUnits: number;
-  rejectedUnits: number;
+  status: "in_progress" | "completed" | "cancelled" | string;
+  currentStage: ProductionStageId | string;
+  inputs: BatchInput[];
+  outputs: BatchOutput[];
+  furnaceWasteKg: number;
+  handKg: number;
+  stages: BatchStage[];
+  outputProgress: OutputProgress[];
   notes: string;
-  status: string;
-  netConsumedKg?: number;
-  totalUnits?: number;
+  // legacy optional
+  product?: Product | string;
+  inputScrapKg?: number;
+  materialLossKg?: number;
+  returnedScrapKg?: number;
+  goodUnits?: number;
+  rejectedUnits?: number;
+  totalInputKg?: number;
+  totalFurnaceUnits?: number;
   createdAt?: string;
 };
 
 export type ProductionReport = {
   totals: {
     batchCount: number;
-    inputScrapKg: number;
-    materialLossKg: number;
-    returnedScrapKg: number;
-    netConsumedKg: number;
+    totalInputKg: number;
+    handKg: number;
+    wasteKg: number;
     goodUnits: number;
-    rejectedUnits: number;
-    totalUnits: number;
-    rejectRate: number;
-    lossRate: number;
+    brokenUnits: number;
+    finishedUnits: number;
+    byFamily?: Record<string, number>;
   };
-  byProduct: Array<{
-    productId: string;
-    name: string;
-    sku: string;
-    batchCount: number;
-    inputScrapKg: number;
-    materialLossKg: number;
-    returnedScrapKg: number;
-    netConsumedKg: number;
-    goodUnits: number;
-    rejectedUnits: number;
-  }>;
 };
 
 export type ProductionStageId =
-  | "melting"
-  | "casting"
+  | "furnace"
+  | "turning"
   | "drilling"
-  | "shaping"
   | "painting"
-  | "finishing";
+  | "polishing"
+  | "finished";
 
-export type ExpenseCategoryId =
-  | "electricity"
-  | "fuel"
-  | "labor"
-  | "paint"
-  | "packaging"
-  | "maintenance"
-  | "other";
+export type ExpenseCategoryId = string;
 
 export type ProductionMeta = {
   stages: Array<{ id: ProductionStageId; label: string; order: number }>;
-  categories: Array<{ id: ExpenseCategoryId; label: string }>;
+  categories: Array<{
+    id: string;
+    label: string;
+    group?: string;
+    groupLabel?: string;
+  }>;
+  categoryGroups?: Array<{
+    id: string;
+    label: string;
+    items: Array<{ id: string; label: string }>;
+  }>;
+  materialTypes?: Array<{ id: string; label: string; typicalOutput?: string }>;
+  productFamilies?: Array<{ id: string; label: string; stages: string[] }>;
+  stockItemTypes?: Array<{ id: string; label: string; unit: string }>;
+  stockReasons?: string[];
 };
 
 export type BatchExpense = {
   _id: string;
-  batch: string;
-  stage: ProductionStageId;
+  batch?: string | null;
+  stage?: ProductionStageId | string;
   category: ExpenseCategoryId;
   amount: number;
   expenseDate: string;
   notes: string;
+  worker?:
+    | string
+    | null
+    | {
+        _id: string;
+        name: string;
+        payType?: string;
+        rate?: number;
+        job?: string;
+      };
+  units?: number | null;
+  payType?: "weekly" | "monthly" | "per_unit" | null;
 };
 
 export type BatchCosts = {

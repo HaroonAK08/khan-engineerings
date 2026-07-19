@@ -11,6 +11,7 @@ import {
   type CatalogItem,
   type FinishedStockItem,
 } from "@/lib/inventory-api";
+import { useI18n } from "@/hooks/use-i18n";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -24,6 +25,7 @@ import {
 } from "@/components/ui/table";
 
 export default function FinishedGoodsPage() {
+  const { t } = useI18n();
   const [items, setItems] = useState<FinishedStockItem[]>([]);
   const [totalUnits, setTotalUnits] = useState(0);
   const [warehouses, setWarehouses] = useState<CatalogItem[]>([]);
@@ -42,15 +44,15 @@ export default function FinishedGoodsPage() {
       setTotalUnits(stock.totalUnits);
       setWarehouses(wh);
     } catch (err) {
-      toast.error(apiError(err, "Failed to load finished stock"));
+      toast.error(apiError(err, t("finished.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, [warehouse, q]);
+  }, [warehouse, q, t]);
 
   useEffect(() => {
-    const t = setTimeout(load, 200);
-    return () => clearTimeout(t);
+    const timer = setTimeout(load, 200);
+    return () => clearTimeout(timer);
   }, [load]);
 
   return (
@@ -58,11 +60,11 @@ export default function FinishedGoodsPage() {
       <InventorySubnav />
       <div>
         <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
-          Warehouse · finished goods
+          {t("finished.eyebrow")}
         </p>
-        <h1 className="text-nameplate text-xl">Finished goods stock</h1>
+        <h1 className="text-nameplate text-xl">{t("finished.title")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {totalUnits} units on hand across {items.length} lines
+          {t("finished.summary", { units: totalUnits, lines: items.length })}
         </p>
       </div>
 
@@ -74,14 +76,18 @@ export default function FinishedGoodsPage() {
               value={warehouse}
               onChange={(e) => setWarehouse(e.target.value)}
             >
-              <option value="">All warehouses</option>
+              <option value="">{t("finished.allWarehouses")}</option>
               {warehouses.map((w) => (
                 <option key={w._id} value={w._id}>
                   {w.name}
                 </option>
               ))}
             </select>
-            <Input placeholder="Search product…" value={q} onChange={(e) => setQ(e.target.value)} />
+            <Input
+              placeholder={t("finished.search")}
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
           </div>
         </CardHeader>
         <CardContent>
@@ -91,18 +97,18 @@ export default function FinishedGoodsPage() {
             </div>
           ) : items.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">
-              No finished stock yet. Produce a batch or sync history.
+              {t("finished.empty")}
             </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Product</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Size</TableHead>
-                  <TableHead>Warehouse</TableHead>
-                  <TableHead className="text-right">Qty</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>{t("finished.col.product")}</TableHead>
+                  <TableHead>{t("finished.col.category")}</TableHead>
+                  <TableHead>{t("finished.col.size")}</TableHead>
+                  <TableHead>{t("finished.col.warehouse")}</TableHead>
+                  <TableHead className="text-end">{t("finished.col.qty")}</TableHead>
+                  <TableHead>{t("finished.col.status")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -119,17 +125,17 @@ export default function FinishedGoodsPage() {
                       {item.size?.code || item.size?.name || "—"}
                     </TableCell>
                     <TableCell className="text-sm">{item.warehouseName}</TableCell>
-                    <TableCell className="font-data text-right text-xs">
+                    <TableCell className="font-data text-end text-xs">
                       {item.quantity} {item.unitLabel}
                     </TableCell>
                     <TableCell>
                       {item.isLow ? (
                         <Badge variant="destructive" className="font-data text-[10px]">
-                          LOW ≤ {item.lowStockThreshold}
+                          {t("finished.status.low", { threshold: item.lowStockThreshold })}
                         </Badge>
                       ) : (
                         <Badge variant="secondary" className="font-data text-[10px]">
-                          OK
+                          {t("finished.status.ok")}
                         </Badge>
                       )}
                     </TableCell>

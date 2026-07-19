@@ -45,8 +45,13 @@ export async function listPurchases(params?: {
 
 export async function createPurchase(body: {
   supplier: string;
+  materialType?: "scrap" | "daig";
   quantityKg: number;
-  ratePerKg: number;
+  ratePerKg?: number;
+  totalAmount?: number;
+  freightAmount?: number;
+  amountPaid?: number;
+  vehicleNo?: string;
   purchaseDate: string;
   invoiceNo?: string;
   notes?: string;

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Loader2, Plus } from "lucide-react";
+import { useI18n } from "@/hooks/use-i18n";
 import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
 import { customerName, listOrders, type SalesOrder } from "@/lib/sales-api";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +20,7 @@ import {
 } from "@/components/ui/table";
 
 export default function OrdersPage() {
+  const { t } = useI18n();
   const [orders, setOrders] = useState<SalesOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -48,23 +50,23 @@ export default function OrdersPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
-            Sales orders · invoices
+            {t("orders.eyebrow")}
           </p>
-          <h1 className="text-nameplate text-xl">Orders</h1>
+          <h1 className="text-nameplate text-xl">{t("orders.title")}</h1>
         </div>
         <div className="flex gap-2">
           <Link
             href="/dashboard/orders/reports"
             className="inline-flex h-8 items-center rounded-lg border border-border px-3 text-sm hover:bg-muted"
           >
-            Reports
+            {t("orders.reports")}
           </Link>
           <Link
             href="/dashboard/orders/new"
             className="inline-flex h-8 items-center gap-2 rounded-lg bg-primary px-3 text-sm text-primary-foreground"
           >
             <Plus className="size-4" />
-            New order
+            {t("orders.new")}
           </Link>
         </div>
       </div>
@@ -73,7 +75,7 @@ export default function OrdersPage() {
         <CardHeader className="pb-3">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Input
-              placeholder="Search order / invoice no…"
+              placeholder={t("orders.search")}
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
@@ -82,10 +84,10 @@ export default function OrdersPage() {
               value={paymentStatus}
               onChange={(e) => setPaymentStatus(e.target.value)}
             >
-              <option value="">All payment statuses</option>
-              <option value="unpaid">Unpaid</option>
-              <option value="partial">Partial</option>
-              <option value="paid">Paid</option>
+              <option value="">{t("orders.allPayments")}</option>
+              <option value="unpaid">{t("orders.unpaid")}</option>
+              <option value="partial">{t("orders.partial")}</option>
+              <option value="paid">{t("orders.paid")}</option>
             </select>
           </div>
         </CardHeader>
@@ -95,18 +97,18 @@ export default function OrdersPage() {
               <Loader2 className="size-6 animate-spin text-primary" />
             </div>
           ) : orders.length === 0 ? (
-            <p className="py-10 text-center text-sm text-muted-foreground">No orders yet</p>
+            <p className="py-10 text-center text-sm text-muted-foreground">{t("orders.empty")}</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Order / Invoice</TableHead>
-                  <TableHead>Customer</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                  <TableHead className="text-right">Balance</TableHead>
-                  <TableHead>Payment</TableHead>
-                  <TableHead>Dispatch</TableHead>
+                  <TableHead>{t("orders.col.order")}</TableHead>
+                  <TableHead>{t("orders.col.customer")}</TableHead>
+                  <TableHead>{t("orders.col.date")}</TableHead>
+                  <TableHead className="text-right">{t("orders.col.total")}</TableHead>
+                  <TableHead className="text-right">{t("orders.col.balance")}</TableHead>
+                  <TableHead>{t("orders.col.payment")}</TableHead>
+                  <TableHead>{t("orders.col.dispatch")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

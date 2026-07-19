@@ -109,6 +109,7 @@ async function recentActivity(limit = 12) {
       .lean(),
     ProductionBatch.find()
       .populate("product", "name")
+      .populate("outputs.product", "name")
       .sort({ createdAt: -1 })
       .limit(8)
       .lean(),
@@ -147,10 +148,18 @@ async function recentActivity(limit = 12) {
     });
   }
   for (const b of batches) {
+    const productLabel =
+      b.product?.name ||
+      (Array.isArray(b.outputs) && b.outputs.length
+        ? `${b.outputs.length} product(s)`
+        : b.family || "Batch");
+    const units =
+      b.goodUnits ||
+      (b.outputProgress || []).reduce((s, p) => s + (p.goodAfterTurning || p.finishedQty || 0), 0);
     events.push({
       at: b.createdAt || b.productionDate,
       type: "production",
-      message: `Batch · ${b.product?.name || "Product"} · ${b.goodUnits} good units`,
+      message: `Batch ${b.batchNo || ""} · ${productLabel} · ${units} good units`.trim(),
       href: `/dashboard/production/${b._id}`,
     });
   }

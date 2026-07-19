@@ -109,6 +109,7 @@ export default function PurchaseReportsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Supplier</TableHead>
+                    <TableHead>Material</TableHead>
                     <TableHead className="text-right">Count</TableHead>
                     <TableHead className="text-right">Kg</TableHead>
                     <TableHead className="text-right">Spend</TableHead>
@@ -116,9 +117,12 @@ export default function PurchaseReportsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {report.bySupplier.map((s) => (
-                    <TableRow key={String(s.supplierId)}>
+                  {report.bySupplier.map((s, i) => (
+                    <TableRow key={`${String(s.supplierId)}-${s.materialType || "scrap"}-${i}`}>
                       <TableCell>{s.name}</TableCell>
+                      <TableCell className="capitalize text-muted-foreground">
+                        {s.materialType || "scrap"}
+                      </TableCell>
                       <TableCell className="font-data text-right text-xs">
                         {s.purchaseCount}
                       </TableCell>

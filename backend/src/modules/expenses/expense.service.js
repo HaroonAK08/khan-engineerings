@@ -4,9 +4,16 @@ const Purchase = require("../purchases/purchase.model");
 const {
   PRODUCTION_STAGES,
   EXPENSE_CATEGORIES,
+  EXPENSE_CATEGORY_GROUPS,
   STAGE_IDS,
   CATEGORY_IDS,
 } = require("./expense.constants");
+const {
+  MATERIAL_TYPES,
+  PRODUCT_FAMILIES,
+  STOCK_ITEM_TYPES,
+  STOCK_REASONS,
+} = require("../domain/mfg.constants");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -28,6 +35,11 @@ function getMeta() {
   return {
     stages: PRODUCTION_STAGES,
     categories: EXPENSE_CATEGORIES,
+    categoryGroups: EXPENSE_CATEGORY_GROUPS,
+    materialTypes: MATERIAL_TYPES,
+    productFamilies: PRODUCT_FAMILIES,
+    stockItemTypes: STOCK_ITEM_TYPES,
+    stockReasons: STOCK_REASONS,
   };
 }
 
@@ -37,15 +49,17 @@ async function assertBatch(batchId) {
   return batch;
 }
 
-function validateExpenseBody(data) {
-  if (!STAGE_IDS.includes(data.stage)) throw httpError("Invalid production stage", 400);
+function validateExpenseBody(data, { requireStage = true } = {}) {
+  if (requireStage || data.stage) {
+    if (!STAGE_IDS.includes(data.stage)) throw httpError("Invalid production stage", 400);
+  }
   if (!CATEGORY_IDS.includes(data.category)) throw httpError("Invalid expense category", 400);
   const amount = Number(data.amount);
   if (!Number.isFinite(amount) || amount <= 0) {
     throw httpError("Amount must be greater than 0", 400);
   }
   return {
-    stage: data.stage,
+    stage: data.stage || undefined,
     category: data.category,
     amount: roundMoney(amount),
     expenseDate: parseDate(data.expenseDate || new Date(), "Expense date"),
@@ -64,6 +78,42 @@ async function create(batchId, data) {
   return BatchExpense.create({ batch: batchId, ...fields });
 }
 
+/** Factory overhead — labour, utilities, paint, etc. not tied to a production batch. */
+async function listOverhead({ dateFrom, dateTo, category } = {}) {
+  const match = {
+    $or: [{ batch: null }, { batch: { $exists: false } }],
+  };
+  if (category) {
+    if (!CATEGORY_IDS.includes(category)) throw httpError("Invalid expense category", 400);
+    match.category = category;
+  }
+  if (dateFrom || dateTo) {
+    match.expenseDate = {};
+    if (dateFrom) match.expenseDate.$gte = parseDate(dateFrom, "dateFrom");
+    if (dateTo) {
+      const end = parseDate(dateTo, "dateTo");
+      end.setHours(23, 59, 59, 999);
+      match.expenseDate.$lte = end;
+    }
+  }
+  return BatchExpense.find(match)
+    .populate("worker", "name payType rate job")
+    .sort({ expenseDate: -1, createdAt: -1 });
+}
+
+async function createOverhead(data) {
+  const fields = validateExpenseBody(data, { requireStage: false });
+  const doc = {
+    batch: null,
+    category: fields.category,
+    amount: fields.amount,
+    expenseDate: fields.expenseDate,
+    notes: fields.notes,
+  };
+  if (fields.stage) doc.stage = fields.stage;
+  return BatchExpense.create(doc);
+}
+
 async function update(expenseId, data) {
   const expense = await BatchExpense.findById(expenseId);
   if (!expense) throw httpError("Expense not found", 404);
@@ -75,8 +125,10 @@ async function update(expenseId, data) {
     expenseDate: data.expenseDate ?? expense.expenseDate,
     notes: data.notes !== undefined ? data.notes : expense.notes,
   };
-  const fields = validateExpenseBody(merged);
+  const requireStage = Boolean(expense.batch);
+  const fields = validateExpenseBody(merged, { requireStage });
   Object.assign(expense, fields);
+  if (!fields.stage) expense.stage = undefined;
   await expense.save();
   return expense;
 }
@@ -89,15 +141,47 @@ async function remove(expenseId) {
 }
 
 async function estimateMaterialCost(batch) {
-  const rateResult = await Purchase.aggregate([
-    { $group: { _id: null, avgRate: { $avg: "$ratePerKg" } } },
-  ]);
-  const avgRate = rateResult[0]?.avgRate || 0;
-  const netConsumed = Math.max(0, batch.inputScrapKg - batch.returnedScrapKg);
+  let materialCost = 0;
+  let netConsumed = 0;
+  let avgRatePerKg = 0;
+
+  if (Array.isArray(batch.inputs) && batch.inputs.length > 0) {
+    let weighted = 0;
+    for (const inp of batch.inputs) {
+      if (inp.materialType === "reusable") {
+        netConsumed += inp.quantityKg || 0;
+        continue;
+      }
+      const rateResult = await Purchase.aggregate([
+        { $match: { materialType: inp.materialType } },
+        {
+          $group: {
+            _id: null,
+            spend: { $sum: { $add: ["$totalAmount", { $ifNull: ["$freightAmount", 0] }] } },
+            kg: { $sum: "$quantityKg" },
+          },
+        },
+      ]);
+      const kg = rateResult[0]?.kg || 0;
+      const avg = kg > 0 ? (rateResult[0].spend || 0) / kg : 0;
+      materialCost += (inp.quantityKg || 0) * avg;
+      netConsumed += inp.quantityKg || 0;
+      weighted += avg * (inp.quantityKg || 0);
+    }
+    avgRatePerKg = netConsumed > 0 ? weighted / netConsumed : 0;
+  } else {
+    const rateResult = await Purchase.aggregate([
+      { $group: { _id: null, avgRate: { $avg: "$ratePerKg" } } },
+    ]);
+    avgRatePerKg = rateResult[0]?.avgRate || 0;
+    netConsumed = Math.max(0, (batch.inputScrapKg || 0) - (batch.returnedScrapKg || 0));
+    materialCost = netConsumed * avgRatePerKg;
+  }
+
   return {
-    avgRatePerKg: roundMoney(avgRate),
+    avgRatePerKg: roundMoney(avgRatePerKg),
     netConsumedKg: Math.round(netConsumed * 1000) / 1000,
-    materialCost: roundMoney(netConsumed * avgRate),
+    materialCost: roundMoney(materialCost),
   };
 }
 
@@ -117,7 +201,10 @@ async function getBatchCosts(batchId) {
 
   const material = await estimateMaterialCost(batch);
   const totalCost = roundMoney(operatingCost + material.materialCost);
-  const goodUnits = batch.goodUnits || 0;
+  const goodUnits =
+    (batch.outputProgress || []).reduce((s, p) => s + (p.finishedQty || p.goodAfterTurning || 0), 0) ||
+    batch.goodUnits ||
+    0;
   const costPerGoodUnit = goodUnits > 0 ? roundMoney(totalCost / goodUnits) : null;
   const operatingPerGoodUnit = goodUnits > 0 ? roundMoney(operatingCost / goodUnits) : null;
 
@@ -198,7 +285,7 @@ async function getCostReport({ dateFrom, dateTo, batch } = {}) {
   ]);
 
   const byBatch = await BatchExpense.aggregate([
-    { $match: match },
+    { $match: { ...match, batch: { $ne: null } } },
     {
       $group: {
         _id: "$batch",
@@ -324,6 +411,8 @@ module.exports = {
   getMeta,
   listByBatch,
   create,
+  listOverhead,
+  createOverhead,
   update,
   remove,
   getBatchCosts,

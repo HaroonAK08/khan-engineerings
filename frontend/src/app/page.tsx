@@ -52,7 +52,7 @@ function LoginForm() {
   }
 
   return (
-    <div className="bg-blueprint-grid flex min-h-svh items-center justify-center bg-background p-6">
+    <div className="flex min-h-svh items-center justify-center bg-background p-6">
       <CornerFrame className="w-full max-w-sm">
         <div className="relative overflow-hidden border border-border bg-card p-8 shadow-sm">
           <div className="absolute inset-x-0 top-0 h-0.5 w-1/2 animate-scan-sweep bg-gradient-to-r from-transparent via-primary to-transparent" />

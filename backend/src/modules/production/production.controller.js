@@ -54,4 +54,61 @@ async function report(req, res, next) {
   }
 }
 
-module.exports = { create, list, getOne, update, remove, report };
+async function furnace(req, res, next) {
+  try {
+    const batch = await productionService.recordFurnace(req.params.id, req.body);
+    res.json({ batch });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function turning(req, res, next) {
+  try {
+    const batch = await productionService.recordTurning(req.params.id, req.body);
+    res.json({ batch });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function advance(req, res, next) {
+  try {
+    const batch = await productionService.advanceStage(req.params.id);
+    res.json({ batch });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function finish(req, res, next) {
+  try {
+    const batch = await productionService.finishBatch(req.params.id);
+    res.json({ batch });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function cancel(req, res, next) {
+  try {
+    const batch = await productionService.cancelBatch(req.params.id);
+    res.json({ batch });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = {
+  create,
+  list,
+  getOne,
+  update,
+  remove,
+  report,
+  furnace,
+  turning,
+  advance,
+  finish,
+  cancel,
+};

@@ -16,6 +16,10 @@ const dispatchSchema = new mongoose.Schema(
     warehouse: { type: mongoose.Schema.Types.ObjectId, ref: "Warehouse", default: null },
     items: { type: [dispatchItemSchema], default: [] },
     dispatchDate: { type: Date, required: true, index: true },
+    biltyNo: { type: String, trim: true, default: "" },
+    transporter: { type: String, trim: true, default: "" },
+    vehicleNo: { type: String, trim: true, default: "" },
+    freightAmount: { type: Number, min: 0, default: 0 },
     notes: { type: String, trim: true, default: "" },
   },
   { timestamps: true }

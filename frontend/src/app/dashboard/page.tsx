@@ -11,14 +11,18 @@ import {
   Loader2,
   Plus,
   RefreshCw,
+  RotateCcw,
   TrendingDown,
   TrendingUp,
   Truck,
   Users,
   Wallet,
+  Banknote,
 } from "lucide-react";
 import { apiError, formatDate, formatKg, formatMoney } from "@/lib/materials-api";
 import { getDashboard, type DashboardData } from "@/lib/dashboard-api";
+import { useI18n } from "@/hooks/use-i18n";
+import type { MessageKey } from "@/lib/i18n/messages";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -64,16 +68,32 @@ function MiniBars({
   );
 }
 
-const QUICK_ACTIONS = [
-  { href: "/dashboard/orders/new", label: "New order", icon: Plus },
-  { href: "/dashboard/inventory/purchases", label: "Log purchase", icon: Truck },
-  { href: "/dashboard/production", label: "Production", icon: Factory },
-  { href: "/dashboard/customers", label: "Customers", icon: Users },
-  { href: "/dashboard/reports", label: "Reports", icon: Wallet },
-  { href: "/dashboard/inventory/alerts", label: "Stock alerts", icon: AlertTriangle },
+const ACTIVITY_TYPE_KEYS: Record<string, MessageKey> = {
+  expense: "dash.activity.expense",
+  purchase: "dash.activity.purchase",
+  production: "dash.activity.production",
+  sale: "dash.activity.sale",
+  payment: "dash.activity.payment",
+};
+
+function activityTypeLabel(type: string, t: (key: MessageKey) => string) {
+  const key = ACTIVITY_TYPE_KEYS[type];
+  return key ? t(key) : type.replace("_", " ");
+}
+
+const QUICK_ACTIONS: Array<{ href: string; labelKey: MessageKey; icon: typeof Truck }> = [
+  { href: "/dashboard/inventory/purchases", labelKey: "dash.qa.purchase", icon: Truck },
+  { href: "/dashboard/production", labelKey: "dash.qa.batch", icon: Factory },
+  { href: "/dashboard/orders/new", labelKey: "dash.qa.order", icon: Plus },
+  { href: "/dashboard/customers", labelKey: "dash.qa.payment", icon: Banknote },
+  { href: "/dashboard/claims", labelKey: "dash.qa.claim", icon: RotateCcw },
+  { href: "/dashboard/inventory/reusable", labelKey: "dash.qa.reusable", icon: Boxes },
+  { href: "/dashboard/reports", labelKey: "dash.qa.reports", icon: Wallet },
+  { href: "/dashboard/inventory/alerts", labelKey: "dash.qa.alerts", icon: AlertTriangle },
 ];
 
 export default function DashboardPage() {
+  const { t } = useI18n();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -82,11 +102,11 @@ export default function DashboardPage() {
     try {
       setData(await getDashboard());
     } catch (err) {
-      toast.error(apiError(err, "Failed to load dashboard"));
+      toast.error(apiError(err, t("dash.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void load();
@@ -103,10 +123,10 @@ export default function DashboardPage() {
   if (!data) {
     return (
       <div className="flex flex-col items-center gap-3 py-16">
-        <p className="text-sm text-muted-foreground">Could not load business summary.</p>
+        <p className="text-sm text-muted-foreground">{t("dash.loadError")}</p>
         <Button onClick={() => void load()} variant="outline" className="gap-2">
           <RefreshCw className="size-4" />
-          Retry
+          {t("dash.retry")}
         </Button>
       </div>
     );
@@ -116,69 +136,69 @@ export default function DashboardPage() {
 
   const kpiCards = [
     {
-      label: "Today's sales",
+      label: t("dash.salesToday"),
       value: formatMoney(kpis.salesToday),
-      hint: `${kpis.salesTodayCount} order(s)`,
+      hint: t("dash.ordersCount", { count: kpis.salesTodayCount }),
       accent: "bg-chart-1",
     },
     {
-      label: "Monthly sales",
+      label: t("dash.salesMonth"),
       value: formatMoney(kpis.salesMonth),
-      hint: "Invoices + other income",
+      hint: t("dash.invoicesIncome"),
       accent: "bg-chart-2",
     },
     {
-      label: "Monthly profit",
+      label: t("dash.profitMonth"),
       value: formatMoney(kpis.profitMonth),
       hint:
         kpis.marginPct != null
-          ? `Margin ${kpis.marginPct}%`
+          ? t("dash.margin", { pct: kpis.marginPct })
           : kpis.profitIsPositive
-            ? "In the black"
-            : "In the red",
+            ? t("dash.inBlack")
+            : t("dash.inRed"),
       accent: kpis.profitIsPositive ? "bg-chart-3" : "bg-destructive",
       icon: kpis.profitIsPositive ? TrendingUp : TrendingDown,
     },
     {
-      label: "Cash balance",
+      label: t("dash.cashBalance"),
       value: formatMoney(kpis.cashBalance),
-      hint: `Month cash flow ${formatMoney(kpis.cashFlowMonth)}`,
+      hint: t("dash.cashFlow", { amount: formatMoney(kpis.cashFlowMonth) }),
       accent: "bg-chart-4",
     },
     {
-      label: "Outstanding",
+      label: t("dash.outstanding"),
       value: formatMoney(kpis.outstandingPayments),
-      hint: "Customer receivables",
+      hint: t("dash.receivables"),
       accent: "bg-chart-5",
     },
     {
-      label: "Raw scrap stock",
+      label: t("dash.rawScrap"),
       value: `${formatKg(kpis.rawMaterialKg)} kg`,
-      hint: "Available on hand",
+      hint: t("dash.onHand"),
       accent: "bg-chart-1",
     },
     {
-      label: "Finished goods",
+      label: t("dash.finishedGoods"),
       value: String(Math.round(kpis.finishedGoodsUnits)),
-      hint: "Units in warehouse",
+      hint: t("dash.unitsWarehouse"),
       accent: "bg-chart-2",
     },
     {
-      label: "Production today",
+      label: t("dash.productionToday"),
       value: String(kpis.productionToday),
-      hint: `${kpis.productionTodayBatches} batch(es)`,
+      hint: t("dash.batches", { count: kpis.productionTodayBatches }),
       accent: "bg-chart-3",
     },
     {
-      label: "Expenses today",
+      label: t("dash.expensesToday"),
       value: formatMoney(kpis.expensesToday),
-      hint: "Ops + manual",
+      hint: t("dash.opsManual"),
       accent: "bg-chart-4",
     },
     {
-      label: "Pending orders",
+      label: t("dash.pendingOrders"),
       value: String(kpis.pendingOrders),
-      hint: "Awaiting / partial dispatch",
+      hint: t("dash.awaitingDispatch"),
       accent: "bg-chart-5",
     },
   ];
@@ -188,16 +208,14 @@ export default function DashboardPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
-            Phase 8 · Business intelligence
+            {t("dash.eyebrow")}
           </p>
-          <h1 className="text-nameplate text-xl">Factory overview</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            One screen for sales, stock, production, and money.
-          </p>
+          <h1 className="text-nameplate text-xl">{t("dash.title")}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t("dash.subtitle")}</p>
         </div>
         <div className="flex items-center gap-2">
           <span className="font-data text-[10px] text-muted-foreground">
-            Updated {new Date(data.generatedAt).toLocaleTimeString()}
+            {t("dash.updated", { time: new Date(data.generatedAt).toLocaleTimeString() })}
           </span>
           <Button
             variant="outline"
@@ -207,7 +225,7 @@ export default function DashboardPage() {
             disabled={loading}
           >
             {loading ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
-            Refresh
+            {t("dash.refresh")}
           </Button>
         </div>
       </div>
@@ -235,7 +253,7 @@ export default function DashboardPage() {
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-nameplate text-sm">Quick actions</CardTitle>
+          <CardTitle className="text-nameplate text-sm">{t("dash.quickEntry")}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
           {QUICK_ACTIONS.map((a) => {
@@ -247,7 +265,7 @@ export default function DashboardPage() {
                 className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1.5")}
               >
                 <Icon className="size-3.5" />
-                {a.label}
+                {t(a.labelKey)}
               </Link>
             );
           })}
@@ -257,8 +275,8 @@ export default function DashboardPage() {
       <div className="grid gap-6 lg:grid-cols-3">
         <Card>
           <CardHeader>
-            <CardTitle className="text-nameplate text-sm">Sales (6 mo)</CardTitle>
-            <CardDescription>Invoiced revenue by month</CardDescription>
+            <CardTitle className="text-nameplate text-sm">{t("dash.sales6mo")}</CardTitle>
+            <CardDescription>{t("dash.sales6moDesc")}</CardDescription>
           </CardHeader>
           <CardContent>
             <MiniBars data={data.charts.sales} colorClass="bg-chart-1/85" />
@@ -266,8 +284,8 @@ export default function DashboardPage() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle className="text-nameplate text-sm">Expenses (6 mo)</CardTitle>
-            <CardDescription>Purchases + manufacturing + other</CardDescription>
+            <CardTitle className="text-nameplate text-sm">{t("dash.expenses6mo")}</CardTitle>
+            <CardDescription>{t("dash.expenses6moDesc")}</CardDescription>
           </CardHeader>
           <CardContent>
             <MiniBars data={data.charts.expenses} colorClass="bg-chart-2/85" />
@@ -275,8 +293,8 @@ export default function DashboardPage() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle className="text-nameplate text-sm">Production (6 mo)</CardTitle>
-            <CardDescription>Good units produced</CardDescription>
+            <CardTitle className="text-nameplate text-sm">{t("dash.production6mo")}</CardTitle>
+            <CardDescription>{t("dash.production6moDesc")}</CardDescription>
           </CardHeader>
           <CardContent>
             <MiniBars
@@ -295,26 +313,26 @@ export default function DashboardPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
-              <CardTitle className="text-nameplate text-sm">Outstanding payments</CardTitle>
-              <CardDescription>Who still owes you</CardDescription>
+              <CardTitle className="text-nameplate text-sm">{t("dash.outstandingPayments")}</CardTitle>
+              <CardDescription>{t("dash.whoOwes")}</CardDescription>
             </div>
             <Link
               href="/dashboard/orders/reports"
               className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
             >
-              All →
+              {t("dash.viewAll")}
             </Link>
           </CardHeader>
           <CardContent className="px-0">
             {data.outstanding.length === 0 ? (
-              <p className="px-6 py-6 text-sm text-muted-foreground">All caught up</p>
+              <p className="px-6 py-6 text-sm text-muted-foreground">{t("dash.allCaughtUp")}</p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Invoice</TableHead>
-                    <TableHead>Customer</TableHead>
-                    <TableHead className="text-right">Balance</TableHead>
+                    <TableHead>{t("dash.invoice")}</TableHead>
+                    <TableHead>{t("dash.customer")}</TableHead>
+                    <TableHead className="text-right">{t("dash.balance")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -343,11 +361,11 @@ export default function DashboardPage() {
         <Card className={data.lowStock.count > 0 ? "border-destructive/30" : undefined}>
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
-              <CardTitle className="text-nameplate text-sm">Low stock alerts</CardTitle>
+              <CardTitle className="text-nameplate text-sm">{t("dash.lowStockAlerts")}</CardTitle>
               <CardDescription>
                 {data.lowStock.count === 0
-                  ? "Stock levels look healthy"
-                  : `${data.lowStock.count} alert(s)`}
+                  ? t("dash.stockHealthy")
+                  : t("dash.alertsCount", { count: data.lowStock.count })}
               </CardDescription>
             </div>
             <Link
@@ -359,7 +377,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             {data.lowStock.count === 0 ? (
-              <p className="text-sm text-muted-foreground">No low-stock items right now.</p>
+              <p className="text-sm text-muted-foreground">{t("dash.noLowStock")}</p>
             ) : (
               <ul className="flex flex-col gap-2 text-sm">
                 {data.lowStock.raw && (
@@ -388,12 +406,12 @@ export default function DashboardPage() {
       <div className="grid gap-6 lg:grid-cols-3">
         <Card>
           <CardHeader>
-            <CardTitle className="text-nameplate text-sm">Top customers</CardTitle>
-            <CardDescription>This month by sales</CardDescription>
+            <CardTitle className="text-nameplate text-sm">{t("dash.topCustomers")}</CardTitle>
+            <CardDescription>{t("dash.topCustomersDesc")}</CardDescription>
           </CardHeader>
           <CardContent>
             {data.topCustomers.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No sales yet</p>
+              <p className="text-sm text-muted-foreground">{t("dash.noSales")}</p>
             ) : (
               <ul className="flex flex-col gap-2 text-sm">
                 {data.topCustomers.map((c, i) => (
@@ -419,12 +437,12 @@ export default function DashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-nameplate text-sm">Top suppliers</CardTitle>
-            <CardDescription>This month by purchase spend</CardDescription>
+            <CardTitle className="text-nameplate text-sm">{t("dash.topSuppliers")}</CardTitle>
+            <CardDescription>{t("dash.topSuppliersDesc")}</CardDescription>
           </CardHeader>
           <CardContent>
             {data.topSuppliers.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No purchases yet</p>
+              <p className="text-sm text-muted-foreground">{t("dash.noPurchases")}</p>
             ) : (
               <ul className="flex flex-col gap-2 text-sm">
                 {data.topSuppliers.map((s) => (
@@ -445,29 +463,33 @@ export default function DashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-nameplate text-sm">Production summary</CardTitle>
-            <CardDescription>Today vs this month</CardDescription>
+            <CardTitle className="text-nameplate text-sm">{t("dash.prodSummary")}</CardTitle>
+            <CardDescription>{t("dash.prodSummaryDesc")}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 text-sm">
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <p className="font-data text-[10px] tracking-wider text-muted-foreground uppercase">
-                  Today
+                  {t("dash.today")}
                 </p>
                 <p className="font-data mt-1 text-lg">{data.productionSummary.today.goodUnits}</p>
                 <p className="text-xs text-muted-foreground">
-                  {data.productionSummary.today.batches} batches · reject{" "}
-                  {data.productionSummary.today.rejectRate}%
+                  {t("dash.todayBatches", {
+                    batches: data.productionSummary.today.batches,
+                    rate: data.productionSummary.today.rejectRate,
+                  })}
                 </p>
               </div>
               <div>
                 <p className="font-data text-[10px] tracking-wider text-muted-foreground uppercase">
-                  Month
+                  {t("dash.month")}
                 </p>
                 <p className="font-data mt-1 text-lg">{data.productionSummary.month.goodUnits}</p>
                 <p className="text-xs text-muted-foreground">
-                  {data.productionSummary.month.batches} batches ·{" "}
-                  {formatKg(data.productionSummary.month.netConsumedKg)} kg scrap
+                  {t("dash.monthBatches", {
+                    batches: data.productionSummary.month.batches,
+                    kg: formatKg(data.productionSummary.month.netConsumedKg),
+                  })}
                 </p>
               </div>
             </div>
@@ -476,7 +498,7 @@ export default function DashboardPage() {
               className={cn(buttonVariants({ variant: "outline", size: "sm" }), "w-fit gap-1.5")}
             >
               <ClipboardList className="size-3.5" />
-              Yield reports
+              {t("dash.yieldReports")}
             </Link>
           </CardContent>
         </Card>
@@ -485,16 +507,16 @@ export default function DashboardPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle className="text-nameplate text-sm">Recent activity</CardTitle>
-            <CardDescription>Latest sales, payments, purchases, production</CardDescription>
+            <CardTitle className="text-nameplate text-sm">{t("dash.recentActivity")}</CardTitle>
+            <CardDescription>{t("dash.recentActivityDesc")}</CardDescription>
           </div>
           <Badge variant="secondary" className="font-data text-[10px]">
-            LIVE
+            {t("dash.live")}
           </Badge>
         </CardHeader>
         <CardContent>
           {data.recentActivity.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No activity recorded yet</p>
+            <p className="text-sm text-muted-foreground">{t("dash.noActivity")}</p>
           ) : (
             <ul className="flex flex-col gap-1">
               {data.recentActivity.map((e, i) => (
@@ -507,7 +529,7 @@ export default function DashboardPage() {
                       {formatDate(e.at)}
                     </span>
                     <Badge variant="outline" className="font-data shrink-0 text-[9px] uppercase">
-                      {e.type.replace("_", " ")}
+                      {activityTypeLabel(e.type, t)}
                     </Badge>
                     <span className="min-w-0 truncate">{e.message}</span>
                   </Link>

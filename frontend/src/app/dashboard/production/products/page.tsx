@@ -37,6 +37,9 @@ const productSchema = z.object({
   sku: z.string().optional(),
   description: z.string().optional(),
   unitLabel: z.string().optional(),
+  family: z.enum(["hub", "drum"]),
+  weightKg: z.number().min(0).optional().nullable(),
+  sellingPrice: z.number().min(0).optional(),
   category: z.string().optional(),
   size: z.string().optional(),
   defaultWarehouse: z.string().optional(),
@@ -76,6 +79,9 @@ export default function ProductsPage() {
       sku: "",
       description: "",
       unitLabel: "pcs",
+      family: "hub",
+      weightKg: undefined,
+      sellingPrice: 0,
       category: "",
       size: "",
       defaultWarehouse: "",
@@ -116,6 +122,9 @@ export default function ProductsPage() {
       sku: "",
       description: "",
       unitLabel: "pcs",
+      family: "hub",
+      weightKg: undefined,
+      sellingPrice: 0,
       category: "",
       size: "",
       defaultWarehouse: "",
@@ -132,6 +141,9 @@ export default function ProductsPage() {
       sku: product.sku || "",
       description: product.description || "",
       unitLabel: product.unitLabel || "pcs",
+      family: product.family || "hub",
+      weightKg: product.weightKg ?? undefined,
+      sellingPrice: product.sellingPrice ?? 0,
       category: refId(product.category),
       size: refId(product.size),
       defaultWarehouse: refId(product.defaultWarehouse),
@@ -189,7 +201,7 @@ export default function ProductsPage() {
           </Link>
           <h1 className="text-nameplate text-xl">Products</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Finished goods with category, size, warehouse, and low-stock threshold.
+            Finished goods — hub or drum — with weight, default price, and low-stock threshold.
           </p>
         </div>
         <Button onClick={openCreate} className="gap-2">
@@ -218,6 +230,7 @@ export default function ProductsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
+                  <TableHead>Family</TableHead>
                   <TableHead>Category</TableHead>
                   <TableHead>Size</TableHead>
                   <TableHead className="text-right">Low stock</TableHead>
@@ -233,6 +246,11 @@ export default function ProductsPage() {
                       <div className="font-data text-[10px] text-muted-foreground">
                         {p.sku || "—"}
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="font-data text-[10px] uppercase">
+                        {p.family || "hub"}
+                      </Badge>
                     </TableCell>
                     <TableCell className="text-sm">{refName(p.category)}</TableCell>
                     <TableCell className="font-data text-xs">{refName(p.size)}</TableCell>
@@ -277,9 +295,42 @@ export default function ProductsPage() {
               <Label htmlFor="name">Name</Label>
               <Input id="name" {...form.register("name")} />
             </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="sku">SKU</Label>
-              <Input id="sku" {...form.register("sku")} />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="sku">SKU</Label>
+                <Input id="sku" {...form.register("sku")} />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="family">Family</Label>
+                <select
+                  id="family"
+                  className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
+                  {...form.register("family")}
+                >
+                  <option value="hub">Hub</option>
+                  <option value="drum">Drum</option>
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="weightKg">Weight (kg)</Label>
+                <Input
+                  id="weightKg"
+                  type="number"
+                  step="0.001"
+                  {...form.register("weightKg", { valueAsNumber: true })}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="sellingPrice">Selling price</Label>
+                <Input
+                  id="sellingPrice"
+                  type="number"
+                  step="0.01"
+                  {...form.register("sellingPrice", { valueAsNumber: true })}
+                />
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">

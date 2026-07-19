@@ -10,16 +10,24 @@ export type Supplier = {
   updatedAt?: string;
 };
 
+export type MaterialType = "scrap" | "daig";
+
 export type Purchase = {
   _id: string;
   supplier: Supplier | string;
+  materialType: MaterialType;
   quantityKg: number;
   ratePerKg: number;
   totalAmount: number;
+  freightAmount: number;
+  amountPaid: number;
+  balance: number;
+  payable?: number;
+  effectiveRatePerKg?: number;
+  vehicleNo: string;
   purchaseDate: string;
   invoiceNo: string;
   notes: string;
-  material: string;
   createdAt?: string;
 };
 
@@ -34,10 +42,10 @@ export type LedgerEntry = {
   notes: string;
 };
 
-export type StockSummary = {
+export type MaterialStockSummary = {
   material: string;
+  materialType?: MaterialType;
   unit: string;
-  /** Available scrap after production consumption */
   totalKg: number;
   availableKg?: number;
   purchasedKg?: number;
@@ -45,6 +53,13 @@ export type StockSummary = {
   totalSpend: number;
   purchaseCount: number;
   avgRate: number;
+};
+
+export type StockSummary = MaterialStockSummary & {
+  byMaterial?: {
+    scrap: MaterialStockSummary;
+    daig: MaterialStockSummary;
+  };
 };
 
 export type PurchaseReport = {
@@ -56,6 +71,7 @@ export type PurchaseReport = {
   };
   bySupplier: Array<{
     supplierId: string;
+    materialType?: MaterialType;
     name: string;
     totalKg: number;
     totalSpend: number;
@@ -63,6 +79,13 @@ export type PurchaseReport = {
     avgRate: number;
     minRate: number;
     maxRate: number;
+  }>;
+  byMaterialType?: Array<{
+    materialType: MaterialType | string;
+    totalKg: number;
+    totalSpend: number;
+    purchaseCount: number;
+    avgRate: number;
   }>;
   bestRateSupplier: {
     supplierId: string;

@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { STOCK_ITEM_TYPE_IDS, STOCK_REASONS } = require("../domain/mfg.constants");
 
 /**
  * Stock movement ledger.
@@ -6,20 +7,11 @@ const mongoose = require("mongoose");
  */
 const stockMovementSchema = new mongoose.Schema(
   {
-    itemType: { type: String, enum: ["raw_scrap", "finished_good"], required: true, index: true },
+    itemType: { type: String, enum: STOCK_ITEM_TYPE_IDS, required: true, index: true },
     direction: { type: String, enum: ["in", "out"], required: true },
     reason: {
       type: String,
-      enum: [
-        "purchase",
-        "production_consume",
-        "production_return",
-        "production_output",
-        "adjustment",
-        "sale",
-        "transfer_in",
-        "transfer_out",
-      ],
+      enum: STOCK_REASONS,
       required: true,
       index: true,
     },

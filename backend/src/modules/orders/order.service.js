@@ -96,6 +96,9 @@ async function createOrder(data) {
     customer: data.customer,
     orderDate: parseDate(data.orderDate || new Date(), "Order date"),
     dueDate: data.dueDate ? parseDate(data.dueDate, "Due date") : null,
+    city: data.city?.trim() || "",
+    salesman: data.salesman?.trim() || "",
+    commissionAmount: Math.max(0, Number(data.commissionAmount) || 0),
     items,
     totalAmount,
     amountPaid: 0,
@@ -302,6 +305,10 @@ async function createDispatch(data) {
     warehouse,
     items: dispatchItems,
     dispatchDate: parseDate(data.dispatchDate || new Date(), "Dispatch date"),
+    biltyNo: data.biltyNo?.trim() || "",
+    transporter: data.transporter?.trim() || "",
+    vehicleNo: data.vehicleNo?.trim() || "",
+    freightAmount: Math.max(0, Number(data.freightAmount) || 0),
     notes: data.notes?.trim() || "",
   });
 

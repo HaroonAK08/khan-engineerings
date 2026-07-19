@@ -1,38 +1,60 @@
 import type { LucideIcon } from "lucide-react";
 import {
   LayoutDashboard,
-  Users,
-  Building2,
   Boxes,
   Factory,
   ClipboardList,
   Truck,
   Contact,
-  CalendarCheck,
   BarChart3,
   Settings,
   UserRound,
+  RotateCcw,
+  Wallet,
+  Banknote,
+  Zap,
+  MoreHorizontal,
+  Receipt,
 } from "lucide-react";
+import type { MessageKey } from "@/lib/i18n/messages";
 
-export type NavItem = {
-  label: string;
+export type NavChild = {
+  labelKey: MessageKey;
   href: string;
-  icon: LucideIcon;
-  /** When false, link is shown as coming soon (Phase 1 modules not built yet) */
-  ready?: boolean;
+  icon?: LucideIcon;
 };
 
+export type NavItem = {
+  labelKey: MessageKey;
+  href: string;
+  icon: LucideIcon;
+  ready?: boolean;
+  children?: NavChild[];
+};
+
+export const EXPENSES_CHILDREN: NavChild[] = [
+  { labelKey: "nav.expenses.salaries", href: "/dashboard/expenses/salaries", icon: Banknote },
+  { labelKey: "nav.expenses.electricity", href: "/dashboard/expenses/electricity", icon: Zap },
+  { labelKey: "nav.expenses.taxes", href: "/dashboard/expenses/taxes", icon: Receipt },
+  { labelKey: "nav.expenses.other", href: "/dashboard/expenses/other", icon: MoreHorizontal },
+];
+
 export const NAV_ITEMS: NavItem[] = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, ready: true },
-  { label: "Employees", href: "/dashboard/employees", icon: Users, ready: false },
-  { label: "Departments", href: "/dashboard/departments", icon: Building2, ready: false },
-  { label: "Inventory", href: "/dashboard/inventory", icon: Boxes, ready: true },
-  { label: "Production", href: "/dashboard/production", icon: Factory, ready: true },
-  { label: "Orders", href: "/dashboard/orders", icon: ClipboardList, ready: true },
-  { label: "Suppliers", href: "/dashboard/suppliers", icon: Truck, ready: true },
-  { label: "Customers", href: "/dashboard/customers", icon: Contact, ready: true },
-  { label: "Attendance", href: "/dashboard/attendance", icon: CalendarCheck, ready: false },
-  { label: "Reports", href: "/dashboard/reports", icon: BarChart3, ready: true },
-  { label: "Profile", href: "/dashboard/profile", icon: UserRound, ready: true },
-  { label: "Settings", href: "/dashboard/settings", icon: Settings, ready: true },
+  { labelKey: "nav.dashboard", href: "/dashboard", icon: LayoutDashboard, ready: true },
+  { labelKey: "nav.inventory", href: "/dashboard/inventory", icon: Boxes, ready: true },
+  { labelKey: "nav.production", href: "/dashboard/production", icon: Factory, ready: true },
+  { labelKey: "nav.orders", href: "/dashboard/orders", icon: ClipboardList, ready: true },
+  { labelKey: "nav.claims", href: "/dashboard/claims", icon: RotateCcw, ready: true },
+  {
+    labelKey: "nav.expenses",
+    href: "/dashboard/expenses",
+    icon: Wallet,
+    ready: true,
+    children: EXPENSES_CHILDREN,
+  },
+  { labelKey: "nav.suppliers", href: "/dashboard/suppliers", icon: Truck, ready: true },
+  { labelKey: "nav.customers", href: "/dashboard/customers", icon: Contact, ready: true },
+  { labelKey: "nav.reports", href: "/dashboard/reports", icon: BarChart3, ready: true },
+  { labelKey: "nav.profile", href: "/dashboard/profile", icon: UserRound, ready: true },
+  { labelKey: "nav.settings", href: "/dashboard/settings", icon: Settings, ready: true },
 ];

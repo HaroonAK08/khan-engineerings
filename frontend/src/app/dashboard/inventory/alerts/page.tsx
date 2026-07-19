@@ -5,6 +5,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { InventorySubnav } from "@/components/layout/inventory-subnav";
+import { useI18n } from "@/hooks/use-i18n";
 import { apiError, formatKg } from "@/lib/materials-api";
 import { getInventoryAlerts, type FinishedStockItem } from "@/lib/inventory-api";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +20,7 @@ import {
 } from "@/components/ui/table";
 
 export default function InventoryAlertsPage() {
+  const { t } = useI18n();
   const [finished, setFinished] = useState<FinishedStockItem[]>([]);
   const [raw, setRaw] = useState<{ material: string; availableKg: number; message: string } | null>(
     null
@@ -46,10 +48,8 @@ export default function InventoryAlertsPage() {
     <div className="flex flex-col gap-6">
       <InventorySubnav />
       <div>
-        <h1 className="text-nameplate text-xl">Low stock alerts</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Products at or below their threshold, plus empty scrap stock.
-        </p>
+        <h1 className="text-nameplate text-xl">{t("alerts.title")}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{t("alerts.subtitle")}</p>
       </div>
 
       {loading ? (
@@ -79,7 +79,7 @@ export default function InventoryAlertsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-nameplate text-sm">Finished goods</CardTitle>
+              <CardTitle className="text-nameplate text-sm">{t("alerts.finished")}</CardTitle>
             </CardHeader>
             <CardContent>
               {finished.length === 0 ? (
