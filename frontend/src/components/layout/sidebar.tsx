@@ -93,7 +93,7 @@ export function SidebarNav({ onNavigate, className }: SidebarNavProps) {
             return (
               <div
                 key={item.href}
-                className="flex items-center gap-3 rounded-sm border-s-2 border-transparent px-3 py-2 text-sm text-sidebar-foreground/35"
+                className="flex items-center gap-3 rounded-sm border-s-2 border-transparent px-3 py-2.5 text-base text-sidebar-foreground/35"
                 title={t("common.comingSoon")}
               >
                 <Icon className="size-4 shrink-0 opacity-50" />
@@ -114,7 +114,7 @@ export function SidebarNav({ onNavigate, className }: SidebarNavProps) {
               <div key={item.href} className="flex flex-col gap-0.5">
                 <div
                   className={cn(
-                    "group flex w-full items-center gap-1 rounded-sm border-s-2 border-transparent text-sm",
+                    "group flex w-full items-center gap-1 rounded-sm border-s-2 border-transparent text-base",
                     active
                       ? "border-primary bg-sidebar-accent text-sidebar-accent-foreground"
                       : "text-sidebar-foreground/70 hover:border-sidebar-foreground/20 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
@@ -123,7 +123,7 @@ export function SidebarNav({ onNavigate, className }: SidebarNavProps) {
                   <button
                     type="button"
                     onClick={() => goTo(defaultChildHref)}
-                    className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2 text-start"
+                    className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-start"
                   >
                     <Icon
                       className={cn(
@@ -160,7 +160,7 @@ export function SidebarNav({ onNavigate, className }: SidebarNavProps) {
                           type="button"
                           onClick={() => goTo(child.href)}
                           className={cn(
-                            "flex items-center gap-2 rounded-sm px-3 py-1.5 text-start text-sm",
+                            "flex items-center gap-2 rounded-sm px-3 py-2 text-start text-base",
                             childActive
                               ? "bg-sidebar-accent text-sidebar-accent-foreground"
                               : "text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
@@ -190,7 +190,7 @@ export function SidebarNav({ onNavigate, className }: SidebarNavProps) {
               type="button"
               onClick={() => goTo(item.href)}
               className={cn(
-                "group flex w-full items-center gap-3 rounded-sm border-s-2 border-transparent px-3 py-2 text-start text-sm",
+                "group flex w-full items-center gap-3 rounded-sm border-s-2 border-transparent px-3 py-2.5 text-start text-base",
                 active
                   ? "border-primary bg-sidebar-accent text-sidebar-accent-foreground"
                   : "text-sidebar-foreground/70 hover:border-sidebar-foreground/20 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
@@ -241,7 +241,7 @@ export function Sidebar() {
   const { t } = useI18n();
 
   return (
-    <aside className="hidden h-svh w-64 shrink-0 flex-col border-e border-sidebar-border bg-sidebar text-sidebar-foreground shadow-[4px_0_24px_-12px_rgba(0,0,0,0.08)] md:flex">
+    <aside className="hidden h-svh w-72 shrink-0 flex-col border-e border-sidebar-border bg-sidebar text-sidebar-foreground shadow-[4px_0_24px_-12px_rgba(0,0,0,0.08)] md:flex">
       <SidebarBrand />
       <SidebarNav />
       <div className="border-t border-sidebar-border px-5 py-3">

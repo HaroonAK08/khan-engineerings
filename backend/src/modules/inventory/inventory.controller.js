@@ -10,15 +10,6 @@ async function overview(req, res, next) {
   }
 }
 
-async function reusable(req, res, next) {
-  try {
-    const stock = await inventoryService.getReusableStock();
-    res.json({ stock });
-  } catch (err) {
-    next(err);
-  }
-}
-
 async function finished(req, res, next) {
   try {
     const stock = await inventoryService.getFinishedStock(req.query);
@@ -187,7 +178,6 @@ async function syncHistory(req, res, next) {
 module.exports = {
   overview,
   finished,
-  reusable,
   alerts,
   movements,
   adjust,

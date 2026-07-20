@@ -73,7 +73,7 @@ export function Topbar() {
   }
 
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between border-b border-sidebar-border bg-sidebar px-4 text-sidebar-foreground sm:px-6">
+    <header className="flex h-[4.25rem] shrink-0 items-center justify-between border-b border-sidebar-border bg-sidebar px-4 text-sidebar-foreground sm:px-6">
       <div className="flex min-w-0 items-center gap-3">
         <Button
           variant="ghost"
@@ -88,7 +88,7 @@ export function Topbar() {
           <p className="font-data text-[10px] tracking-[0.2em] text-sidebar-foreground/50">
             {t("topbar.ops")}
           </p>
-          <h2 className="text-nameplate truncate text-base leading-tight">
+          <h2 className="text-nameplate truncate text-lg leading-tight">
             {t(currentTitleKey(pathname))}
           </h2>
         </div>

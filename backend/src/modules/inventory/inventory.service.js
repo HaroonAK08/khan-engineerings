@@ -6,7 +6,7 @@ const Product = require("../products/product.model");
 const purchaseService = require("../purchases/purchase.service");
 const ProductionBatch = require("../production/production.model");
 const {
-  STOCK_ITEM_TYPE_IDS,
+  ACTIVE_STOCK_ITEM_TYPE_IDS,
   materialTypeToItemType,
 } = require("../domain/mfg.constants");
 
@@ -142,53 +142,24 @@ async function onBatchInputsConsumed(batch) {
   const wh = await getDefaultWarehouse();
   for (const inp of batch.inputs || []) {
     if (!inp.quantityKg || inp.quantityKg <= 0) continue;
+    const materialType = inp.materialType === "daig" ? "daig" : "scrap";
     await recordMovement({
-      itemType: materialTypeToItemType(inp.materialType),
+      itemType: materialTypeToItemType(materialType),
       direction: "out",
-      reason: inp.materialType === "reusable" ? "rework_consume" : "production_consume",
+      reason: "production_consume",
       quantity: inp.quantityKg,
       unit: "kg",
       warehouse: wh._id,
       refType: "production",
       refId: batch._id,
       movementDate: batch.productionDate,
-      notes: `Batch ${batch.batchNo} ${inp.materialType} input`,
+      notes: `Batch ${batch.batchNo} ${materialType} input`,
     });
   }
 }
 
-async function onHandRecovery(batch, handKg) {
-  if (!handKg) return;
-  const wh = await getDefaultWarehouse();
-  await recordMovement({
-    itemType: "reusable",
-    direction: "in",
-    reason: "hand_recovery",
-    quantity: handKg,
-    unit: "kg",
-    warehouse: wh._id,
-    refType: "production",
-    refId: batch._id,
-    movementDate: batch.productionDate,
-    notes: `Batch ${batch.batchNo} hand`,
-  });
-}
-
-async function onTurningBreakage(batch, brokenKg) {
-  if (!brokenKg) return;
-  const wh = await getDefaultWarehouse();
-  await recordMovement({
-    itemType: "reusable",
-    direction: "in",
-    reason: "turning_breakage",
-    quantity: brokenKg,
-    unit: "kg",
-    warehouse: wh._id,
-    refType: "production",
-    refId: batch._id,
-    movementDate: new Date(),
-    notes: `Batch ${batch.batchNo} turning breakage`,
-  });
+async function onTurningBreakage() {
+  // Breakage no longer returns to a reusable pool.
 }
 
 async function onBatchFinished(batch) {
@@ -212,15 +183,6 @@ async function onBatchFinished(batch) {
       notes: `Batch ${batch.batchNo} finished`,
     });
   }
-}
-
-async function getReusableStock() {
-  const productionService = require("../production/production.service");
-  const availableKg = await productionService.getReusableBalanceKg();
-  const movements = await StockMovement.find({ itemType: "reusable" })
-    .sort({ movementDate: -1, createdAt: -1 })
-    .limit(50);
-  return { availableKg, unit: "kg", movements };
 }
 
 async function onBatchDeleted(batchId) {
@@ -511,7 +473,7 @@ async function createAdjustment(data) {
   if (!["in", "out"].includes(data.direction)) {
     throw httpError("Direction must be in or out", 400);
   }
-  if (!STOCK_ITEM_TYPE_IDS.includes(data.itemType)) {
+  if (!ACTIVE_STOCK_ITEM_TYPE_IDS.includes(data.itemType)) {
     throw httpError("Invalid item type", 400);
   }
   if (data.itemType === "finished_good" && !data.product) {
@@ -694,11 +656,9 @@ module.exports = {
   onPurchaseDeleted,
   onBatchCreated,
   onBatchInputsConsumed,
-  onHandRecovery,
   onTurningBreakage,
   onBatchFinished,
   onBatchDeleted,
-  getReusableStock,
   crudList,
   createCategory,
   updateCategory,

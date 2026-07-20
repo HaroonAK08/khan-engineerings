@@ -43,6 +43,12 @@ const OTHER_CATEGORIES: Array<{ id: string; labelKey: MessageKey }> = [
 
 const OTHER_IDS = new Set(OTHER_CATEGORIES.map((c) => c.id));
 
+/** Categories that are usually amount-only (no purchased qty). */
+const AMOUNT_ONLY_CATEGORIES = new Set(["machine", "repairs", "other"]);
+
+const amountOnlyCategory = (id: string) => AMOUNT_ONLY_CATEGORIES.has(id);
+const categoryUsesQuantityByDefault = (id: string) => !amountOnlyCategory(id);
+
 export default function OtherExpensesPage() {
   const { t } = useI18n();
   const defaults = monthDefaults();
@@ -58,9 +64,21 @@ export default function OtherExpensesPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const [category, setCategory] = useState("paint");
+  const [trackQuantity, setTrackQuantity] = useState(true);
+  const [quantity, setQuantity] = useState("");
+  const [quantityUnit, setQuantityUnit] = useState("kg");
   const [amount, setAmount] = useState("");
   const [expenseDate, setExpenseDate] = useState(todayInput());
   const [note, setNote] = useState("");
+
+  function selectCategory(id: string) {
+    setCategory(id);
+    setTrackQuantity(categoryUsesQuantityByDefault(id));
+    if (amountOnlyCategory(id)) {
+      setQuantity("");
+      setQuantityUnit("kg");
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -82,8 +100,8 @@ export default function OtherExpensesPage() {
   }, [dateFrom, dateTo]);
 
   useEffect(() => {
-    const t = setTimeout(() => void load(), 150);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => void load(), 150);
+    return () => clearTimeout(timer);
   }, [load]);
 
   const total = useMemo(() => expenses.reduce((s, e) => s + e.amount, 0), [expenses]);
@@ -94,6 +112,21 @@ export default function OtherExpensesPage() {
       toast.error("Enter the amount");
       return;
     }
+    let qty: number | undefined;
+    let unit: string | undefined;
+    if (trackQuantity) {
+      if (quantity.trim()) {
+        qty = Number(quantity);
+        if (!Number.isFinite(qty) || qty < 0) {
+          toast.error("Enter a valid quantity");
+          return;
+        }
+      } else {
+        toast.error("Enter quantity, or switch to Amount only");
+        return;
+      }
+      unit = quantityUnit.trim() || "kg";
+    }
     setBusyId(category);
     try {
       await createFactoryExpense({
@@ -101,11 +134,17 @@ export default function OtherExpensesPage() {
         amount: value,
         expenseDate,
         notes: note.trim() || undefined,
+        ...(trackQuantity && qty != null
+          ? { quantity: qty, quantityUnit: unit }
+          : {}),
       });
       toast.success("Expense saved");
+      setQuantity("");
+      setQuantityUnit("kg");
       setAmount("");
       setNote("");
       setExpenseDate(todayInput());
+      setTrackQuantity(categoryUsesQuantityByDefault(category));
       await load();
     } catch (err) {
       toast.error(apiError(err, "Save failed"));
@@ -161,7 +200,7 @@ export default function OtherExpensesPage() {
                   type="button"
                   size="sm"
                   variant={category === c.id ? "default" : "outline"}
-                  onClick={() => setCategory(c.id)}
+                  onClick={() => selectCategory(c.id)}
                   className="gap-1.5"
                 >
                   {c.id === "paint" ? <Paintbrush className="size-3.5" /> : null}
@@ -170,6 +209,66 @@ export default function OtherExpensesPage() {
               ))}
             </div>
           </div>
+
+          <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-4">
+            <Label>{t("other.qtyMode")}</Label>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={trackQuantity ? "default" : "outline"}
+                onClick={() => setTrackQuantity(true)}
+              >
+                {t("other.withQty")}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={!trackQuantity ? "default" : "outline"}
+                onClick={() => {
+                  setTrackQuantity(false);
+                  setQuantity("");
+                }}
+              >
+                {t("other.amountOnly")}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">{t("other.qtyModeHint")}</p>
+          </div>
+
+          {trackQuantity ? (
+            <>
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("other.quantity")}</Label>
+                <Input
+                  type="number"
+                  step="any"
+                  min="0"
+                  placeholder={t("other.phQuantity")}
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                  className="h-11 text-base"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("other.unit")}</Label>
+                <select
+                  className="h-11 rounded-lg border border-input bg-transparent px-2.5 text-base dark:bg-input/30"
+                  value={quantityUnit}
+                  onChange={(e) => setQuantityUnit(e.target.value)}
+                >
+                  <option value="kg">kg</option>
+                  <option value="pcs">pcs</option>
+                  <option value="L">L</option>
+                  <option value="m">m</option>
+                  <option value="box">box</option>
+                  <option value="can">can</option>
+                  <option value="set">set</option>
+                </select>
+              </div>
+            </>
+          ) : null}
+
           <div className="flex flex-col gap-1.5">
             <Label>{t("exp.amount")}</Label>
             <Input
@@ -190,7 +289,7 @@ export default function OtherExpensesPage() {
               className="h-11"
             />
           </div>
-          <div className="flex flex-col gap-1.5 sm:col-span-2">
+          <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-4">
             <Label>{t("exp.noteOptional")}</Label>
             <Input
               placeholder={t("other.phDetails")}
@@ -221,7 +320,7 @@ export default function OtherExpensesPage() {
       ) : expenses.length > 0 ? (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-nameplate text-sm">Expense history</CardTitle>
+            <CardTitle className="text-nameplate text-sm">{t("other.history")}</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-2 px-4 pb-4">
             {expenses.map((e) => (
@@ -235,6 +334,12 @@ export default function OtherExpensesPage() {
                   </p>
                   <p className="font-data text-xs text-muted-foreground">
                     {formatDate(e.expenseDate)} · {categoryLabel(e.category)}
+                    {e.quantity != null && e.quantity > 0
+                      ? ` · ${t("other.qtyLabel", {
+                          qty: e.quantity,
+                          unit: e.quantityUnit || "kg",
+                        })}`
+                      : ""}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">

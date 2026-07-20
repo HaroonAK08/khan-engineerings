@@ -8,7 +8,6 @@ router.use(requireAuth);
 
 router.get("/overview", controller.overview);
 router.get("/stock", controller.stock);
-router.get("/reusable", controller.reusable);
 router.get("/finished", controller.finished);
 router.get("/alerts", controller.alerts);
 router.get("/movements", controller.movements);

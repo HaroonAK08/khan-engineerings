@@ -58,12 +58,25 @@ function validateExpenseBody(data, { requireStage = true } = {}) {
   if (!Number.isFinite(amount) || amount <= 0) {
     throw httpError("Amount must be greater than 0", 400);
   }
+  let quantity = null;
+  if (data.quantity != null && data.quantity !== "") {
+    quantity = Number(data.quantity);
+    if (!Number.isFinite(quantity) || quantity < 0) {
+      throw httpError("Quantity must be 0 or greater", 400);
+    }
+  }
+  const quantityUnit =
+    typeof data.quantityUnit === "string" && data.quantityUnit.trim()
+      ? data.quantityUnit.trim().slice(0, 24)
+      : "kg";
   return {
     stage: data.stage || undefined,
     category: data.category,
     amount: roundMoney(amount),
     expenseDate: parseDate(data.expenseDate || new Date(), "Expense date"),
     notes: data.notes?.trim() || "",
+    quantity,
+    quantityUnit,
   };
 }
 
@@ -111,6 +124,13 @@ async function createOverhead(data) {
     notes: fields.notes,
   };
   if (fields.stage) doc.stage = fields.stage;
+  if (fields.quantity != null) {
+    doc.quantity = fields.quantity;
+    doc.quantityUnit = fields.quantityUnit || "kg";
+  } else {
+    doc.quantity = null;
+    doc.quantityUnit = null;
+  }
   return BatchExpense.create(doc);
 }
 
@@ -124,11 +144,16 @@ async function update(expenseId, data) {
     amount: data.amount ?? expense.amount,
     expenseDate: data.expenseDate ?? expense.expenseDate,
     notes: data.notes !== undefined ? data.notes : expense.notes,
+    quantity: data.quantity !== undefined ? data.quantity : expense.quantity,
+    quantityUnit:
+      data.quantityUnit !== undefined ? data.quantityUnit : expense.quantityUnit,
   };
   const requireStage = Boolean(expense.batch);
   const fields = validateExpenseBody(merged, { requireStage });
   Object.assign(expense, fields);
   if (!fields.stage) expense.stage = undefined;
+  if (fields.quantity == null) expense.quantity = null;
+  expense.quantityUnit = fields.quantityUnit || "kg";
   await expense.save();
   return expense;
 }
@@ -148,8 +173,7 @@ async function estimateMaterialCost(batch) {
   if (Array.isArray(batch.inputs) && batch.inputs.length > 0) {
     let weighted = 0;
     for (const inp of batch.inputs) {
-      if (inp.materialType === "reusable") {
-        netConsumed += inp.quantityKg || 0;
+      if (inp.materialType !== "scrap" && inp.materialType !== "daig") {
         continue;
       }
       const rateResult = await Purchase.aggregate([

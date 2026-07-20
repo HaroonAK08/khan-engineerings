@@ -60,13 +60,10 @@ async function create(data) {
       throw httpError("Claim quantity must be greater than 0", 400);
     }
     const disposition = raw.disposition;
-    if (!["reusable", "rework", "scrap_loss", "replacement"].includes(disposition)) {
+    if (!["rework", "scrap_loss", "replacement"].includes(disposition)) {
       throw httpError("Invalid disposition", 400);
     }
-    let weightKg = raw.weightKg != null ? Number(raw.weightKg) : null;
-    if (disposition === "reusable" && (weightKg == null || weightKg <= 0)) {
-      weightKg = (product.weightKg || 0) * quantity;
-    }
+    const weightKg = raw.weightKg != null ? Number(raw.weightKg) : null;
     items.push({
       product: product._id,
       quantity,
@@ -85,26 +82,6 @@ async function create(data) {
     notes: data.notes?.trim() || "",
     status: "open",
   });
-
-  const inventoryService = require("../inventory/inventory.service");
-  const wh = await inventoryService.getDefaultWarehouse();
-  for (const item of items) {
-    if (item.disposition === "reusable" && item.weightKg > 0) {
-      await inventoryService.recordMovement({
-        itemType: "reusable",
-        direction: "in",
-        reason: "claim_return",
-        quantity: item.weightKg,
-        unit: "kg",
-        product: item.product,
-        warehouse: wh._id,
-        refType: "claim",
-        refId: claim._id,
-        movementDate: claim.claimDate,
-        notes: `Claim ${claim.claimNo}`,
-      });
-    }
-  }
 
   return getById(claim._id);
 }

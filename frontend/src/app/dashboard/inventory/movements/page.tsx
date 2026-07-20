@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/table";
 
 const adjustSchema = z.object({
-  itemType: z.enum(["raw_scrap", "raw_daig", "reusable", "finished_good"]),
+  itemType: z.enum(["raw_scrap", "raw_daig", "finished_good"]),
   direction: z.enum(["in", "out"]),
   quantity: z.number().positive("Quantity must be greater than 0"),
   product: z.string().optional(),
@@ -153,7 +153,6 @@ export default function MovementsPage() {
                 <option value="finished_good">Finished good</option>
                 <option value="raw_scrap">Scrap</option>
                 <option value="raw_daig">Daig</option>
-                <option value="reusable">Reusable</option>
               </select>
             </div>
             <div className="flex flex-col gap-1.5">
@@ -232,7 +231,6 @@ export default function MovementsPage() {
             <option value="">All item types</option>
             <option value="raw_scrap">Scrap</option>
             <option value="raw_daig">Daig</option>
-            <option value="reusable">Reusable</option>
             <option value="finished_good">Finished goods</option>
           </select>
         </CardHeader>
@@ -273,9 +271,7 @@ export default function MovementsPage() {
                           ? "Scrap"
                           : m.itemType === "raw_daig"
                             ? "Daig"
-                            : m.itemType === "reusable"
-                              ? "Reusable"
-                              : "—")}
+                            : "—")}
                     </TableCell>
                     <TableCell className="text-sm">{m.warehouse?.name || "—"}</TableCell>
                     <TableCell

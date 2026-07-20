@@ -8,11 +8,8 @@ const MATERIAL_TYPES = [
   { id: "daig", label: "Daig", typicalOutput: "drum" },
 ];
 
-/** Furnace / production input materials (includes reusable pool). */
-const INPUT_MATERIAL_TYPES = [
-  ...MATERIAL_TYPES,
-  { id: "reusable", label: "Reusable" },
-];
+/** Production input materials (scrap / daig only). */
+const INPUT_MATERIAL_TYPES = [...MATERIAL_TYPES];
 
 const PRODUCT_FAMILIES = [
   {
@@ -116,10 +113,10 @@ const EXPENSE_CATEGORIES = EXPENSE_CATEGORY_GROUPS.flatMap((g) =>
 const STOCK_ITEM_TYPES = [
   { id: "raw_scrap", label: "Scrap", unit: "kg" },
   { id: "raw_daig", label: "Daig", unit: "kg" },
-  { id: "reusable", label: "Reusable", unit: "kg" },
   { id: "finished_good", label: "Finished Good", unit: "pcs" },
 ];
 
+/** Active reasons for new movements. Legacy reasons kept so old ledger rows stay valid. */
 const STOCK_REASONS = [
   "purchase",
   "production_consume",
@@ -129,11 +126,16 @@ const STOCK_REASONS = [
   "sale",
   "transfer_in",
   "transfer_out",
-  "hand_recovery",
   "turning_breakage",
   "claim_return",
   "rework_consume",
+  "hand_recovery",
 ];
+
+/** Allowed on new adjustments (excludes removed reusable pool). */
+const ACTIVE_STOCK_ITEM_TYPE_IDS = STOCK_ITEM_TYPES.map((t) => t.id);
+/** Includes legacy "reusable" so historical movement documents stay schema-valid. */
+const STOCK_ITEM_TYPE_IDS = [...ACTIVE_STOCK_ITEM_TYPE_IDS, "reusable"];
 
 const MATERIAL_TYPE_IDS = MATERIAL_TYPES.map((m) => m.id);
 const INPUT_MATERIAL_TYPE_IDS = INPUT_MATERIAL_TYPES.map((m) => m.id);
@@ -143,12 +145,10 @@ const CATEGORY_IDS = [
   ...EXPENSE_CATEGORIES.map((c) => c.id),
   ...LEGACY_EXPENSE_CATEGORY_IDS,
 ];
-const STOCK_ITEM_TYPE_IDS = STOCK_ITEM_TYPES.map((t) => t.id);
 
 /** Map purchase materialType → stock itemType */
 function materialTypeToItemType(materialType) {
   if (materialType === "daig") return "raw_daig";
-  if (materialType === "reusable") return "reusable";
   return "raw_scrap";
 }
 
@@ -193,6 +193,7 @@ module.exports = {
   STAGE_IDS,
   CATEGORY_IDS,
   STOCK_ITEM_TYPE_IDS,
+  ACTIVE_STOCK_ITEM_TYPE_IDS,
   LEGACY_STAGE_MAP,
   LEGACY_CATEGORY_MAP,
   LEGACY_EXPENSE_CATEGORY_IDS,

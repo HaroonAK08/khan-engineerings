@@ -70,7 +70,7 @@ export default function ProductionReportsHubPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-nameplate text-xl">Production reports</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Yield and material use by product.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Material used and pieces produced.</p>
         </div>
         <ExportButtons exporting={exporting} onExport={onExport} />
       </div>
@@ -86,10 +86,19 @@ export default function ProductionReportsHubPage() {
         <>
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             {[
-              { label: "Batches", value: String(report.totals.batchCount) },
-              { label: "Good units", value: String(report.totals.goodUnits) },
-              { label: "Reject %", value: `${report.totals.rejectRate}%` },
-              { label: "Net scrap", value: `${formatKg(report.totals.netConsumedKg)} kg` },
+              { label: "Runs", value: String(report.totals.batchCount) },
+              {
+                label: "Pieces",
+                value: String(report.totals.finishedUnits ?? report.totals.goodUnits),
+              },
+              {
+                label: "Waste %",
+                value: `${report.totals.lossRate ?? 0}%`,
+              },
+              {
+                label: "Material used",
+                value: `${formatKg(report.totals.netConsumedKg ?? report.totals.totalInputKg ?? 0)} kg`,
+              },
             ].map((s) => (
               <Card key={s.label} className="py-0">
                 <CardContent className="p-4">
@@ -110,21 +119,17 @@ export default function ProductionReportsHubPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Product</TableHead>
-                    <TableHead className="text-right">Batches</TableHead>
-                    <TableHead className="text-right">Good</TableHead>
-                    <TableHead className="text-right">Rejected</TableHead>
-                    <TableHead className="text-right">Net kg</TableHead>
+                    <TableHead className="text-right">Runs</TableHead>
+                    <TableHead className="text-right">Pieces</TableHead>
+                    <TableHead className="text-right">Used kg</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {report.byProduct.map((p) => (
+                  {(report.byProduct || []).map((p) => (
                     <TableRow key={String(p.productId)}>
                       <TableCell>{p.name}</TableCell>
                       <TableCell className="font-data text-right text-xs">{p.batchCount}</TableCell>
                       <TableCell className="font-data text-right text-xs">{p.goodUnits}</TableCell>
-                      <TableCell className="font-data text-right text-xs">
-                        {p.rejectedUnits}
-                      </TableCell>
                       <TableCell className="font-data text-right text-xs">
                         {formatKg(p.netConsumedKg)}
                       </TableCell>

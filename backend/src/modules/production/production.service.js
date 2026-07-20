@@ -1,12 +1,10 @@
 const ProductionBatch = require("./production.model");
 const Product = require("../products/product.model");
 const Purchase = require("../purchases/purchase.model");
-const StockMovement = require("../inventory/movement.model");
 const {
   PRODUCT_FAMILY_IDS,
   INPUT_MATERIAL_TYPE_IDS,
   stagesForFamily,
-  materialTypeToItemType,
 } = require("../domain/mfg.constants");
 
 function httpError(message, statusCode) {
@@ -85,27 +83,10 @@ async function sumNetConsumedKg(excludeBatchId = null) {
   return sumNetConsumedForMaterial("scrap", excludeBatchId);
 }
 
-async function getReusableBalanceKg() {
-  const rows = await StockMovement.aggregate([
-    { $match: { itemType: "reusable" } },
-    {
-      $group: {
-        _id: null,
-        inn: {
-          $sum: { $cond: [{ $eq: ["$direction", "in"] }, "$quantity", 0] },
-        },
-        out: {
-          $sum: { $cond: [{ $eq: ["$direction", "out"] }, "$quantity", 0] },
-        },
-      },
-    },
-  ]);
-  const row = rows[0] || { inn: 0, out: 0 };
-  return roundKg((row.inn || 0) - (row.out || 0));
-}
-
 async function getAvailableMaterialKg(materialType, excludeBatchId = null) {
-  if (materialType === "reusable") return getReusableBalanceKg();
+  if (materialType !== "scrap" && materialType !== "daig") {
+    throw httpError("Material must be scrap or daig", 400);
+  }
 
   const purchased = await Purchase.aggregate([
     { $match: { materialType } },
@@ -152,13 +133,129 @@ async function populateBatch(id) {
     .populate("product", "name sku unitLabel");
 }
 
+/**
+ * Simple produce: add finished pcs, deduct scrap/daig by weight + waste %.
+ * No stages, no Hand. Persists a completed ProductionBatch for history/reports.
+ */
+async function produce(data) {
+  const productId = data.productId || data.product;
+  if (!productId) throw httpError("Product is required", 400);
+
+  const product = await Product.findById(productId);
+  if (!product) throw httpError("Product not found", 404);
+  if (product.isActive === false) throw httpError("Product is inactive", 400);
+
+  const weightKg = Number(product.weightKg);
+  if (!Number.isFinite(weightKg) || weightKg <= 0) {
+    throw httpError(
+      `Set weight (kg) on product "${product.name}" first — material use is calculated from piece weight.`,
+      400
+    );
+  }
+
+  const quantity = Math.round(assertNonNeg(data.quantity, "Quantity"));
+  if (quantity <= 0) throw httpError("Quantity must be greater than 0", 400);
+
+  let wastePercent = data.wastePercent;
+  if (wastePercent === undefined || wastePercent === null || wastePercent === "") {
+    wastePercent = 6;
+  }
+  wastePercent = Number(wastePercent);
+  if (!Number.isFinite(wastePercent) || wastePercent < 0 || wastePercent >= 100) {
+    throw httpError("Waste % must be between 0 and 99", 400);
+  }
+
+  const family = product.family;
+  if (!PRODUCT_FAMILY_IDS.includes(family)) {
+    throw httpError("Product family must be hub or drum", 400);
+  }
+
+  let materialType = data.materialType || (family === "drum" ? "daig" : "scrap");
+  if (!INPUT_MATERIAL_TYPE_IDS.includes(materialType)) {
+    throw httpError("Invalid material type", 400);
+  }
+
+  const metalKg = roundKg(quantity * weightKg);
+  const wasteKg = roundKg(metalKg * (wastePercent / 100));
+  const chargedKg = roundKg(metalKg + wasteKg);
+
+  const available = await getAvailableMaterialKg(materialType);
+  if (chargedKg > available + 1e-9) {
+    throw httpError(
+      `Insufficient ${materialType} stock. Available ${available} kg, need ${chargedKg} kg`,
+      400
+    );
+  }
+
+  const batchNo = data.batchNo?.trim() || (await nextBatchNo());
+  const existing = await ProductionBatch.findOne({ batchNo });
+  if (existing) throw httpError("Batch number already exists", 409);
+
+  const productionDate = parseDate(data.productionDate || new Date(), "Production date");
+  const now = new Date();
+  const stages = buildStages(family).map((s) => ({
+    ...s,
+    status: s.status === "skipped" ? "skipped" : "completed",
+    completedAt: s.status === "skipped" ? null : now,
+  }));
+
+  const batch = await ProductionBatch.create({
+    batchNo,
+    family,
+    isRework: Boolean(data.isRework),
+    productionDate,
+    status: "completed",
+    currentStage: "finished",
+    inputs: [{ materialType, quantityKg: chargedKg }],
+    outputs: [{ product: product._id, quantity, family }],
+    furnaceWasteKg: wasteKg,
+    handKg: 0,
+    stages,
+    outputProgress: [
+      {
+        product: product._id,
+        furnaceQty: quantity,
+        goodAfterTurning: quantity,
+        brokenAfterTurning: 0,
+        finishedQty: quantity,
+      },
+    ],
+    notes: data.notes?.trim() || "",
+    product: product._id,
+    goodUnits: quantity,
+    rejectedUnits: 0,
+  });
+
+  const inventoryService = require("../inventory/inventory.service");
+  await inventoryService.onBatchInputsConsumed(batch);
+  await inventoryService.onBatchFinished(batch);
+
+  try {
+    await updateProductStandardCosts(batch);
+  } catch (e) {
+    console.error("standardCost update failed:", e.message);
+  }
+
+  const populated = await populateBatch(batch._id);
+  const obj = populated.toObject ? populated.toObject({ virtuals: true }) : populated;
+  obj.produceCalc = {
+    metalKg,
+    wastePercent,
+    wasteKg,
+    chargedKg,
+    materialType,
+    availableAfter: roundKg(available - chargedKg),
+  };
+  return obj;
+}
+
 async function create(data) {
+  // Legacy start-batch path kept for API compat; prefer produce()
   const family = data.family;
   if (!PRODUCT_FAMILY_IDS.includes(family)) {
     throw httpError("Family must be hub or drum", 400);
   }
 
-  // Prefer scrap for hub, daig for drum; reusable allowed via furnace charge material override
   let materialType = data.materialType || (family === "drum" ? "daig" : "scrap");
   if (!INPUT_MATERIAL_TYPE_IDS.includes(materialType)) {
     throw httpError("Invalid material type", 400);
@@ -168,7 +265,6 @@ async function create(data) {
   const existing = await ProductionBatch.findOne({ batchNo });
   if (existing) throw httpError("Batch number already exists", 409);
 
-  // No kg measured at charge time — inputs filled when furnace outputs are recorded
   const batch = await ProductionBatch.create({
     batchNo,
     family,
@@ -176,21 +272,14 @@ async function create(data) {
     productionDate: parseDate(data.productionDate || new Date(), "Production date"),
     status: "in_progress",
     currentStage: "furnace",
-    inputs: [],
-    // stash preferred charge material on notes tag is ugly — store as first empty input materialType via custom field
+    inputs: [{ materialType, quantityKg: 0 }],
     outputs: [],
     furnaceWasteKg: 0,
     handKg: 0,
     stages: buildStages(family),
     outputProgress: [],
     notes: data.notes?.trim() || "",
-    // temporary: use legacy-safe field to remember charge material until furnace
-    // We'll use a dedicated field via notes prefix OR add chargeMaterialType on model
   });
-
-  // Persist preferred material on batch using a lightweight approach: empty input placeholder
-  batch.inputs = [{ materialType, quantityKg: 0 }];
-  await batch.save();
 
   return populateBatch(batch._id);
 }
@@ -227,6 +316,7 @@ async function getById(id) {
 }
 
 async function recordFurnace(id, data) {
+  // Legacy stage API: Hand removed. Prefer produce().
   const batch = await ProductionBatch.findById(id);
   if (!batch) throw httpError("Production batch not found", 404);
   if (batch.status !== "in_progress") throw httpError("Batch is not in progress", 400);
@@ -252,7 +342,7 @@ async function recordFurnace(id, data) {
     const weightKg = Number(product.weightKg);
     if (!Number.isFinite(weightKg) || weightKg <= 0) {
       throw httpError(
-        `Set weight (kg) on product "${product.name}" first — furnace waste is calculated from piece weights.`,
+        `Set weight (kg) on product "${product.name}" first — waste is calculated from piece weights.`,
         400
       );
     }
@@ -271,13 +361,7 @@ async function recordFurnace(id, data) {
   }
 
   metalInPiecesKg = roundKg(metalInPiecesKg);
-  const handKg = roundKg(assertNonNeg(data.handKg ?? 0, "Hand kg"));
 
-  /**
-   * Factory model: do not weigh charge.
-   * Waste % applies to metal in pieces (e.g. 4×30kg=120 → 6% ≈ 7.2 kg).
-   * charged = metalInPieces + hand + waste
-   */
   let wastePercent = data.wastePercent;
   if (wastePercent === undefined || wastePercent === null || wastePercent === "") {
     wastePercent = 6;
@@ -288,14 +372,11 @@ async function recordFurnace(id, data) {
   }
 
   const furnaceWasteKg = roundKg(metalInPiecesKg * (wastePercent / 100));
-  const chargedKg = roundKg(metalInPiecesKg + handKg + furnaceWasteKg);
-
-  // Optional override: if user sends chargedKg explicitly, recalculate waste from that
-  let finalCharged = chargedKg;
+  let finalCharged = roundKg(metalInPiecesKg + furnaceWasteKg);
   let finalWaste = furnaceWasteKg;
   if (data.chargedKg != null && data.chargedKg !== "" && Number(data.chargedKg) > 0) {
     finalCharged = roundKg(assertNonNeg(data.chargedKg, "Charged kg"));
-    finalWaste = roundKg(Math.max(0, finalCharged - metalInPiecesKg - handKg));
+    finalWaste = roundKg(Math.max(0, finalCharged - metalInPiecesKg));
   }
 
   const materialType =
@@ -312,7 +393,7 @@ async function recordFurnace(id, data) {
 
   batch.outputs = outputs;
   batch.outputProgress = outputProgress;
-  batch.handKg = handKg;
+  batch.handKg = 0;
   batch.furnaceWasteKg = finalWaste;
   batch.inputs = [{ materialType, quantityKg: Math.round(finalCharged) || finalCharged }];
   if (data.notes !== undefined) batch.notes = data.notes.trim();
@@ -323,13 +404,12 @@ async function recordFurnace(id, data) {
 
   const inventoryService = require("../inventory/inventory.service");
   await inventoryService.onBatchInputsConsumed(batch);
-  if (handKg > 0) await inventoryService.onHandRecovery(batch, handKg);
 
   const populated = await populateBatch(batch._id);
   const obj = populated.toObject ? populated.toObject({ virtuals: true }) : populated;
   obj.furnaceCalc = {
     metalInPiecesKg,
-    handKg,
+    handKg: 0,
     wastePercent,
     chargedKg: finalCharged,
     furnaceWasteKg: finalWaste,
@@ -418,7 +498,7 @@ async function updateProductStandardCosts(batch) {
 
   let materialCost = 0;
   for (const inp of batch.inputs || []) {
-    if (inp.materialType === "reusable") continue;
+    if (inp.materialType !== "scrap" && inp.materialType !== "daig") continue;
     const rateRow = await Purchase.aggregate([
       { $match: { materialType: inp.materialType } },
       {
@@ -567,15 +647,20 @@ async function getReport({ dateFrom, dateTo, family } = {}) {
     }
   }
 
-  const batches = await ProductionBatch.find(match).lean();
+  const batches = await ProductionBatch.find(match)
+    .populate("outputs.product", "name sku")
+    .populate("outputProgress.product", "name sku")
+    .populate("product", "name sku")
+    .lean();
+
   let batchCount = 0;
   let totalInputKg = 0;
-  let handKg = 0;
   let wasteKg = 0;
   let goodUnits = 0;
   let brokenUnits = 0;
   let finishedUnits = 0;
   const byFamily = { hub: 0, drum: 0 };
+  const byProductMap = new Map();
 
   for (const b of batches) {
     batchCount += 1;
@@ -585,21 +670,58 @@ async function getReport({ dateFrom, dateTo, family } = {}) {
     } else {
       totalInputKg += b.inputScrapKg || 0;
     }
-    handKg += b.handKg || b.returnedScrapKg || 0;
     wasteKg += b.furnaceWasteKg || b.materialLossKg || 0;
+
+    let batchFinished = 0;
     for (const p of b.outputProgress || []) {
       goodUnits += p.goodAfterTurning || 0;
       brokenUnits += p.brokenAfterTurning || 0;
-      finishedUnits += p.finishedQty || p.goodAfterTurning || 0;
+      const fin = p.finishedQty || p.goodAfterTurning || 0;
+      finishedUnits += fin;
+      batchFinished += fin;
+      const pid = String(p.product?._id || p.product || "");
+      if (pid) {
+        const name =
+          (typeof p.product === "object" && p.product?.name) ||
+          "Product";
+        const row = byProductMap.get(pid) || {
+          productId: pid,
+          name,
+          batchCount: 0,
+          goodUnits: 0,
+          rejectedUnits: 0,
+          netConsumedKg: 0,
+        };
+        row.batchCount += 1;
+        row.goodUnits += fin;
+        row.rejectedUnits += p.brokenAfterTurning || 0;
+        byProductMap.set(pid, row);
+      }
     }
     if (!b.outputProgress?.length) {
       goodUnits += b.goodUnits || 0;
       brokenUnits += b.rejectedUnits || 0;
       finishedUnits += b.goodUnits || 0;
+      batchFinished += b.goodUnits || 0;
+    }
+
+    // Spread batch material across output products for report
+    const inputKg = Array.isArray(b.inputs) && b.inputs.length
+      ? b.inputs.reduce((s, i) => s + (i.quantityKg || 0), 0)
+      : b.inputScrapKg || 0;
+    if (batchFinished > 0 && byProductMap.size) {
+      for (const out of b.outputs || []) {
+        const pid = String(out.product?._id || out.product || "");
+        const row = byProductMap.get(pid);
+        if (row) {
+          const share = (out.quantity || 0) / batchFinished;
+          row.netConsumedKg = roundKg(row.netConsumedKg + inputKg * share);
+        }
+      }
     }
   }
 
-  const netConsumedKg = roundKg(Math.max(0, totalInputKg - handKg));
+  const netConsumedKg = roundKg(totalInputKg);
   const rejectRate =
     goodUnits + brokenUnits > 0
       ? Math.round((brokenUnits / (goodUnits + brokenUnits)) * 1000) / 10
@@ -611,10 +733,13 @@ async function getReport({ dateFrom, dateTo, family } = {}) {
     totals: {
       batchCount,
       totalInputKg: roundKg(totalInputKg),
-      handKg: roundKg(handKg),
+      inputScrapKg: roundKg(totalInputKg),
+      handKg: 0,
+      returnedScrapKg: 0,
       wasteKg: roundKg(wasteKg),
+      materialLossKg: roundKg(wasteKg),
       netConsumedKg,
-      goodUnits,
+      goodUnits: finishedUnits || goodUnits,
       brokenUnits,
       rejectedUnits: brokenUnits,
       finishedUnits,
@@ -622,10 +747,14 @@ async function getReport({ dateFrom, dateTo, family } = {}) {
       lossRate,
       byFamily,
     },
+    byProduct: Array.from(byProductMap.values()).sort((a, b) =>
+      a.name.localeCompare(b.name)
+    ),
   };
 }
 
 module.exports = {
+  produce,
   create,
   list,
   getById,
@@ -639,7 +768,6 @@ module.exports = {
   getReport,
   getAvailableStockKg,
   getAvailableMaterialKg,
-  getReusableBalanceKg,
   sumNetConsumedKg,
   sumNetConsumedForMaterial,
 };

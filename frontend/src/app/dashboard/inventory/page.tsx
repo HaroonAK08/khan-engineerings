@@ -90,16 +90,16 @@ export default function InventoryOverviewPage() {
                   </p>
                 </div>
                 <Link
-                  href="/dashboard/inventory/alerts"
+                  href="/dashboard/inventory/finished"
                   className="text-sm text-primary hover:underline"
                 >
-                  {t("inventory.page.viewAlerts")}
+                  {t("inventory.finished")}
                 </Link>
               </CardContent>
             </Card>
           )}
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             {[
               {
                 key: "raw",
@@ -121,14 +121,6 @@ export default function InventoryOverviewPage() {
                 hint: t("inventory.page.productLines", { count: overview.finished.skuCount }),
                 href: "/dashboard/inventory/finished",
                 accent: "bg-chart-3",
-              },
-              {
-                key: "movements",
-                label: t("inventory.page.stockMovements"),
-                value: String(overview.movementCount),
-                hint: t("inventory.page.inOutLedger"),
-                href: "/dashboard/inventory/movements",
-                accent: "bg-chart-2",
               },
               {
                 key: "spend",

@@ -40,7 +40,7 @@ const schema = z.object({
   order: z.string().min(1, "Select invoice"),
   product: z.string().min(1),
   quantity: z.number().int().positive(),
-  disposition: z.enum(["reusable", "rework", "scrap_loss", "replacement"]),
+  disposition: z.enum(["rework", "scrap_loss", "replacement"]),
   weightKg: z.number().min(0).optional(),
   reason: z.string().optional(),
   claimDate: z.string().min(1),
@@ -66,7 +66,7 @@ export default function ClaimsPage() {
       order: "",
       product: "",
       quantity: 1,
-      disposition: "reusable",
+      disposition: "scrap_loss",
       weightKg: undefined,
       reason: "",
       claimDate: todayInput(),
@@ -116,7 +116,7 @@ export default function ClaimsPage() {
         order: values.order,
         product: "",
         quantity: 1,
-        disposition: "reusable",
+        disposition: "scrap_loss",
         weightKg: undefined,
         reason: "",
         claimDate: todayInput(),
@@ -186,7 +186,6 @@ export default function ClaimsPage() {
                 className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
                 {...form.register("disposition")}
               >
-                <option value="reusable">{t("claims.disp.reusable")}</option>
                 <option value="rework">{t("claims.disp.rework")}</option>
                 <option value="scrap_loss">{t("claims.disp.scrap")}</option>
                 <option value="replacement">{t("claims.disp.replacement")}</option>

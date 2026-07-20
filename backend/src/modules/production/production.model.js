@@ -7,7 +7,11 @@ const {
 
 const inputSchema = new mongoose.Schema(
   {
-    materialType: { type: String, enum: INPUT_MATERIAL_TYPE_IDS, required: true },
+    materialType: {
+      type: String,
+      enum: [...INPUT_MATERIAL_TYPE_IDS, "reusable"],
+      required: true,
+    },
     quantityKg: { type: Number, required: true, min: 0 },
   },
   { _id: false }

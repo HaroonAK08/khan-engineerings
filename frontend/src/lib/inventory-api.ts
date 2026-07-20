@@ -31,7 +31,7 @@ export type FinishedStockItem = {
 
 export type StockMovement = {
   _id: string;
-  itemType: "raw_scrap" | "raw_daig" | "reusable" | "finished_good";
+  itemType: "raw_scrap" | "raw_daig" | "finished_good";
   direction: "in" | "out";
   reason: string;
   quantity: number;

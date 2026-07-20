@@ -12,6 +12,7 @@ router.get("/cost-reports", expenseController.costReport);
 router.get("/reports", controller.report);
 
 router.get("/", controller.list);
+router.post("/produce", controller.produce);
 router.post("/", controller.create);
 
 router.post("/:id/furnace", controller.furnace);

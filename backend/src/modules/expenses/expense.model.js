@@ -16,6 +16,10 @@ const batchExpenseSchema = new mongoose.Schema(
     amount: { type: Number, required: true, min: 0 },
     expenseDate: { type: Date, required: true, index: true },
     notes: { type: String, trim: true, default: "" },
+    /** Optional purchase qty for paint/tools/etc. (factory overhead) */
+    quantity: { type: Number, min: 0, default: null },
+    /** Unit for quantity — kg, pcs, L, etc. */
+    quantityUnit: { type: String, trim: true, default: "kg" },
     /** When salary was paid to a named worker */
     worker: {
       type: mongoose.Schema.Types.ObjectId,

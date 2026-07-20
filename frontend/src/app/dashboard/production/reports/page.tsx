@@ -51,6 +51,8 @@ export default function ProductionReportsPage() {
     return () => clearTimeout(t);
   }, [load]);
 
+  const byProduct = report?.byProduct || [];
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -63,7 +65,7 @@ export default function ProductionReportsPage() {
         </Link>
         <h1 className="text-nameplate text-xl">Production reports</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Material used, waste, good pieces, and rejects.
+          Material used, waste, and pieces produced.
         </p>
       </div>
 
@@ -92,31 +94,25 @@ export default function ProductionReportsPage() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {[
               {
-                label: "Raw material used",
-                value: `${formatKg(report.totals.netConsumedKg)} kg`,
-                hint: "net consumed (input − returned)",
+                label: "Material used",
+                value: `${formatKg(report.totals.netConsumedKg ?? report.totals.totalInputKg)} kg`,
+                hint: "scrap / daig deducted",
                 accent: "bg-chart-1",
               },
               {
-                label: "Material wasted",
-                value: `${formatKg(report.totals.materialLossKg)} kg`,
-                hint: `${report.totals.lossRate}% of input`,
+                label: "Waste",
+                value: `${formatKg(report.totals.materialLossKg ?? report.totals.wasteKg)} kg`,
+                hint: `${report.totals.lossRate ?? 0}% of input`,
                 accent: "bg-chart-4",
               },
               {
-                label: "Finished pieces",
-                value: String(report.totals.goodUnits),
-                hint: "good units",
+                label: "Pieces produced",
+                value: String(report.totals.finishedUnits ?? report.totals.goodUnits),
+                hint: `${report.totals.batchCount} runs`,
                 accent: "bg-chart-3",
-              },
-              {
-                label: "Defective pieces",
-                value: String(report.totals.rejectedUnits),
-                hint: `${report.totals.rejectRate}% reject rate`,
-                accent: "bg-chart-2",
               },
             ].map((stat) => (
               <Card key={stat.label} className="relative overflow-hidden py-0">
@@ -134,20 +130,11 @@ export default function ProductionReportsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-nameplate text-sm">Summary</CardTitle>
-              <CardDescription>
-                {report.totals.batchCount} batches · {formatKg(report.totals.inputScrapKg)} kg charged
-                · {formatKg(report.totals.returnedScrapKg)} kg returned
-              </CardDescription>
-            </CardHeader>
-          </Card>
-
-          <Card>
-            <CardHeader>
               <CardTitle className="text-nameplate text-sm">By product</CardTitle>
+              <CardDescription>Pieces and material use by hub / drum type</CardDescription>
             </CardHeader>
             <CardContent>
-              {report.byProduct.length === 0 ? (
+              {byProduct.length === 0 ? (
                 <p className="py-10 text-center text-sm text-muted-foreground">
                   No production in this range
                 </p>
@@ -156,15 +143,13 @@ export default function ProductionReportsPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Product</TableHead>
-                      <TableHead className="text-right">Batches</TableHead>
+                      <TableHead className="text-right">Runs</TableHead>
                       <TableHead className="text-right">Used (kg)</TableHead>
-                      <TableHead className="text-right">Loss (kg)</TableHead>
-                      <TableHead className="text-right">Good</TableHead>
-                      <TableHead className="text-right">Reject</TableHead>
+                      <TableHead className="text-right">Pieces</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {report.byProduct.map((row) => (
+                    {byProduct.map((row) => (
                       <TableRow key={row.productId}>
                         <TableCell className="font-medium">{row.name}</TableCell>
                         <TableCell className="font-data text-right text-xs">
@@ -174,13 +159,7 @@ export default function ProductionReportsPage() {
                           {formatKg(row.netConsumedKg)}
                         </TableCell>
                         <TableCell className="font-data text-right text-xs">
-                          {formatKg(row.materialLossKg)}
-                        </TableCell>
-                        <TableCell className="font-data text-right text-xs">
                           {row.goodUnits}
-                        </TableCell>
-                        <TableCell className="font-data text-right text-xs">
-                          {row.rejectedUnits}
                         </TableCell>
                       </TableRow>
                     ))}

@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { BarChart3, Loader2, Trash2 } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 import { InventorySubnav } from "@/components/layout/inventory-subnav";
 import { useI18n } from "@/hooks/use-i18n";
 import {
@@ -43,9 +43,7 @@ const purchaseSchema = z.object({
     .number()
     .positive("Quantity must be greater than 0")
     .refine((n) => Number.isInteger(n), "Quantity must be whole kilograms (no grams)"),
-  ratePerKg: z.number().positive("Enter rate per kg, or total amount"),
-  totalAmount: z.number().positive("Enter total amount, or rate per kg"),
-  vehicleNo: z.string().optional(),
+  ratePerKg: z.number().positive("Rate per kg is required"),
   purchaseDate: z.string().min(1, "Date is required"),
   invoiceNo: z.string().optional(),
   notes: z.string().optional(),
@@ -61,10 +59,6 @@ function roundMoney(n: number) {
   return Math.round(n * 100) / 100;
 }
 
-function roundRate(n: number) {
-  return Math.round(n * 10000) / 10000;
-}
-
 export default function InventoryPage() {
   const { t } = useI18n();
   const [stock, setStock] = useState<StockSummary | null>(null);
@@ -76,8 +70,6 @@ export default function InventoryPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [q, setQ] = useState("");
-  /** Which money field the user last typed — drives auto-calc direction */
-  const [priceEdit, setPriceEdit] = useState<"rate" | "total">("rate");
 
   const form = useForm<PurchaseForm>({
     resolver: zodResolver(purchaseSchema),
@@ -86,8 +78,6 @@ export default function InventoryPage() {
       materialType: "scrap",
       quantityKg: 0,
       ratePerKg: 0,
-      totalAmount: 0,
-      vehicleNo: "",
       purchaseDate: todayInput(),
       invoiceNo: "",
       notes: "",
@@ -96,40 +86,12 @@ export default function InventoryPage() {
 
   const qty = form.watch("quantityKg");
   const rate = form.watch("ratePerKg");
-  const total = form.watch("totalAmount");
-
-  function syncFromQty(nextQty: number) {
-    if (!Number.isFinite(nextQty) || nextQty <= 0) return;
-    if (priceEdit === "total") {
-      const t = Number(form.getValues("totalAmount"));
-      if (Number.isFinite(t) && t > 0) {
-        form.setValue("ratePerKg", roundRate(t / nextQty), { shouldValidate: true });
-      }
-    } else {
-      const r = Number(form.getValues("ratePerKg"));
-      if (Number.isFinite(r) && r > 0) {
-        form.setValue("totalAmount", roundMoney(nextQty * r), { shouldValidate: true });
-      }
-    }
-  }
-
-  function onRateChange(value: number) {
-    setPriceEdit("rate");
-    form.setValue("ratePerKg", value, { shouldValidate: true });
-    const qn = Number(form.getValues("quantityKg"));
-    if (Number.isFinite(qn) && qn > 0 && Number.isFinite(value) && value > 0) {
-      form.setValue("totalAmount", roundMoney(qn * value), { shouldValidate: true });
-    }
-  }
-
-  function onTotalChange(value: number) {
-    setPriceEdit("total");
-    form.setValue("totalAmount", value, { shouldValidate: true });
-    const qn = Number(form.getValues("quantityKg"));
-    if (Number.isFinite(qn) && qn > 0 && Number.isFinite(value) && value > 0) {
-      form.setValue("ratePerKg", roundRate(value / qn), { shouldValidate: true });
-    }
-  }
+  const totalAmount = useMemo(() => {
+    const qn = Number(qty);
+    const r = Number(rate);
+    if (!Number.isFinite(qn) || qn <= 0 || !Number.isFinite(r) || r <= 0) return 0;
+    return roundMoney(qn * r);
+  }, [qty, rate]);
 
   const activeSuppliers = useMemo(
     () => suppliers.filter((s) => s.isActive),
@@ -173,17 +135,16 @@ export default function InventoryPage() {
   async function onSubmit(values: PurchaseForm) {
     setSaving(true);
     try {
+      const total = roundMoney(values.quantityKg * values.ratePerKg);
       const purchase = await createPurchase({
         supplier: values.supplier,
         materialType: values.materialType,
         quantityKg: values.quantityKg,
         ratePerKg: values.ratePerKg,
-        totalAmount: values.totalAmount,
+        totalAmount: total,
         purchaseDate: values.purchaseDate,
         invoiceNo: values.invoiceNo,
         notes: values.notes,
-        vehicleNo: values.vehicleNo,
-        // Purchase is recorded as unpaid; clear later from Suppliers → ledger
         freightAmount: 0,
         amountPaid: 0,
       });
@@ -197,13 +158,10 @@ export default function InventoryPage() {
         materialType: values.materialType,
         quantityKg: 0,
         ratePerKg: 0,
-        totalAmount: 0,
-        vehicleNo: "",
         purchaseDate: todayInput(),
         invoiceNo: "",
         notes: "",
       });
-      setPriceEdit("rate");
       await load();
     } catch (err) {
       toast.error(apiError(err, "Failed to record purchase"));
@@ -233,13 +191,6 @@ export default function InventoryPage() {
           </p>
           <h1 className="text-nameplate text-xl">{t("purchases.title")}</h1>
         </div>
-        <Link
-          href="/dashboard/inventory/reports"
-          className="inline-flex h-8 items-center gap-2 rounded-lg border border-border px-3 text-sm hover:bg-muted"
-        >
-          <BarChart3 className="size-4" />
-          {t("purchases.reports")}
-        </Link>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -359,11 +310,11 @@ export default function InventoryPage() {
                     return;
                   }
                   const v = Math.round(Number(raw));
-                  form.setValue("quantityKg", Number.isFinite(v) ? v : 0, { shouldValidate: true });
-                  if (Number.isFinite(v) && v > 0) syncFromQty(v);
+                  form.setValue("quantityKg", Number.isFinite(v) ? v : 0, {
+                    shouldValidate: true,
+                  });
                 }}
               />
-              <p className="text-[11px] text-muted-foreground">Whole kilograms only (e.g. 100, not 0.001).</p>
               {form.formState.errors.quantityKg && (
                 <p className="text-xs text-destructive">
                   {form.formState.errors.quantityKg.message}
@@ -376,15 +327,16 @@ export default function InventoryPage() {
                 id="ratePerKg"
                 type="number"
                 step="0.01"
-                value={Number.isFinite(rate) && rate > 0 ? rate : rate === 0 ? "" : ""}
+                min={0}
+                placeholder="e.g. 80"
+                value={Number.isFinite(rate) && rate > 0 ? rate : ""}
                 onChange={(e) => {
                   const v = e.target.valueAsNumber;
-                  onRateChange(Number.isFinite(v) ? v : 0);
+                  form.setValue("ratePerKg", Number.isFinite(v) ? v : 0, {
+                    shouldValidate: true,
+                  });
                 }}
               />
-              <p className="text-[11px] text-muted-foreground">
-                Know the price per kg? Enter here → total fills in.
-              </p>
               {form.formState.errors.ratePerKg && (
                 <p className="text-xs text-destructive">
                   {form.formState.errors.ratePerKg.message}
@@ -395,30 +347,21 @@ export default function InventoryPage() {
               <Label htmlFor="totalAmount">Total amount</Label>
               <Input
                 id="totalAmount"
-                type="number"
-                step="0.01"
-                value={Number.isFinite(total) && total > 0 ? total : total === 0 ? "" : ""}
-                onChange={(e) => {
-                  const v = e.target.valueAsNumber;
-                  onTotalChange(Number.isFinite(v) ? v : 0);
-                }}
+                readOnly
+                tabIndex={-1}
+                className="bg-muted/50"
+                value={totalAmount > 0 ? totalAmount : ""}
+                placeholder="Quantity × rate"
               />
               <p className="text-[11px] text-muted-foreground">
-                Know the full bill (include truck if any)? Enter here → rate per kg fills in.
+                {qty > 0 && rate > 0
+                  ? `${qty} kg × ${formatMoney(rate)} = ${formatMoney(totalAmount)}`
+                  : "Fills automatically: quantity × rate per kg"}
               </p>
-              {form.formState.errors.totalAmount && (
-                <p className="text-xs text-destructive">
-                  {form.formState.errors.totalAmount.message}
-                </p>
-              )}
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="purchaseDate">Purchase date</Label>
               <Input id="purchaseDate" type="date" {...form.register("purchaseDate")} />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="vehicleNo">Vehicle / bilty</Label>
-              <Input id="vehicleNo" {...form.register("vehicleNo")} />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="invoiceNo">Invoice No. (optional)</Label>
@@ -427,9 +370,6 @@ export default function InventoryPage() {
                 placeholder="Supplier bill no. — or leave blank"
                 {...form.register("invoiceNo")}
               />
-              <p className="text-[11px] text-muted-foreground">
-                If empty, system creates one (e.g. PUR-20260718-001).
-              </p>
             </div>
             <div className="flex flex-col gap-1.5 md:col-span-2 xl:col-span-3">
               <Label htmlFor="notes">Notes</Label>
@@ -438,7 +378,7 @@ export default function InventoryPage() {
             <div className="flex flex-col gap-2 md:col-span-2 xl:col-span-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="font-data text-sm text-muted-foreground">
                 Amount due to supplier:{" "}
-                <span className="text-foreground">{formatMoney(Number(total) || 0)}</span>
+                <span className="text-foreground">{formatMoney(totalAmount)}</span>
                 <span className="ml-2 text-xs">(pay later from Suppliers)</span>
               </p>
               <Button type="submit" disabled={saving} className="gap-2">

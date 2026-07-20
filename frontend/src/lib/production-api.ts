@@ -50,60 +50,39 @@ export async function getBatch(id: string) {
   return data.batch;
 }
 
+export async function produce(body: {
+  productId: string;
+  quantity: number;
+  wastePercent?: number;
+  materialType?: "scrap" | "daig";
+  productionDate?: string;
+  notes?: string;
+  batchNo?: string;
+}) {
+  const { data } = await api.post<{
+    batch: ProductionBatch & {
+      produceCalc?: {
+        metalKg: number;
+        wastePercent: number;
+        wasteKg: number;
+        chargedKg: number;
+        materialType: string;
+        availableAfter: number;
+      };
+    };
+  }>("/production/produce", body);
+  return data.batch;
+}
+
 export async function createBatch(body: {
   family: "hub" | "drum";
-  materialType?: "scrap" | "daig" | "reusable";
+  materialType?: "scrap" | "daig";
   productionDate: string;
   notes?: string;
   batchNo?: string;
   isRework?: boolean;
 }) {
   const { data } = await api.post<{ batch: ProductionBatch }>("/production", body);
-  return data.batch;
-}
-
-export async function recordFurnace(
-  id: string,
-  body: {
-    outputs: Array<{ product: string; quantity: number }>;
-    handKg: number;
-    wastePercent?: number;
-    chargedKg?: number;
-    notes?: string;
-  }
-) {
-  const { data } = await api.post<{ batch: ProductionBatch }>(`/production/${id}/furnace`, body);
-  return data.batch;
-}
-
-export async function recordTurning(
-  id: string,
-  body: {
-    lines: Array<{
-      product: string;
-      goodUnits: number;
-      brokenUnits: number;
-      brokenKg: number;
-    }>;
-    notes?: string;
-  }
-) {
-  const { data } = await api.post<{ batch: ProductionBatch }>(`/production/${id}/turning`, body);
-  return data.batch;
-}
-
-export async function advanceBatch(id: string) {
-  const { data } = await api.post<{ batch: ProductionBatch }>(`/production/${id}/advance`);
-  return data.batch;
-}
-
-export async function finishBatch(id: string) {
-  const { data } = await api.post<{ batch: ProductionBatch }>(`/production/${id}/finish`);
-  return data.batch;
-}
-
-export async function cancelBatch(id: string) {
-  const { data } = await api.post<{ batch: ProductionBatch }>(`/production/${id}/cancel`);
   return data.batch;
 }
 

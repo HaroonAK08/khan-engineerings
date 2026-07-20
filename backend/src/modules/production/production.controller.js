@@ -1,5 +1,14 @@
 const productionService = require("./production.service");
 
+async function produce(req, res, next) {
+  try {
+    const batch = await productionService.produce(req.body);
+    res.status(201).json({ batch });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function create(req, res, next) {
   try {
     const batch = await productionService.create(req.body);
@@ -100,6 +109,7 @@ async function cancel(req, res, next) {
 }
 
 module.exports = {
+  produce,
   create,
   list,
   getOne,

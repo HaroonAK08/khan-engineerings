@@ -61,7 +61,7 @@
   --secondary: oklch(0.96 0.008 250);
   --secondary-foreground: oklch(0.32 0.03 255);
   --muted: oklch(0.965 0.005 85);
-  --muted-foreground: oklch(0.5 0.015 255);
+  --muted-foreground: oklch(0.42 0.02 255);
   --accent: oklch(0.96 0.02 70);
   --accent-foreground: oklch(0.3 0.04 60);
   --destructive: oklch(0.55 0.2 25);
@@ -123,11 +123,24 @@
   * {
     @apply border-border outline-ring/50;
   }
-  body {
-    @apply bg-background text-foreground;
-  }
   html {
     @apply font-sans;
+    /* Larger default for easier reading (browser default is usually 16px) */
+    font-size: 18px;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-foreground text-base;
+    line-height: 1.55;
+    letter-spacing: 0.01em;
+  }
+  /* Inputs and selects read clearer at a larger size */
+  input,
+  select,
+  textarea,
+  button {
+    font-size: inherit;
   }
 }
 
@@ -144,8 +157,25 @@
   }
 }
 
+/* Bump micro labels (were often 9–11px) so they stay readable */
+.text-\[9px\] {
+  font-size: 0.75rem !important; /* ~13.5px at 18px root */
+}
+.text-\[10px\] {
+  font-size: 0.8125rem !important; /* ~14.5px */
+}
+.text-\[11px\] {
+  font-size: 0.875rem !important; /* ~15.5px */
+}
+
+html.locale-ur {
+  /* Nastaliq script needs a touch more size */
+  font-size: 19px;
+}
+
 html.locale-ur body {
   font-family: var(--font-urdu), var(--font-plex-sans), sans-serif;
+  line-height: 1.7;
 }
 
 html.locale-ur .text-nameplate {

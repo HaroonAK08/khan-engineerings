@@ -7,7 +7,7 @@ const claimItemSchema = new mongoose.Schema(
     reason: { type: String, trim: true, default: "" },
     disposition: {
       type: String,
-      enum: ["reusable", "rework", "scrap_loss", "replacement"],
+      enum: ["rework", "scrap_loss", "replacement", "reusable"],
       required: true,
     },
     weightKg: { type: Number, min: 0, default: null },

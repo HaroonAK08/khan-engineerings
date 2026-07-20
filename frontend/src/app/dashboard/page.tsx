@@ -87,9 +87,7 @@ const QUICK_ACTIONS: Array<{ href: string; labelKey: MessageKey; icon: typeof Tr
   { href: "/dashboard/orders/new", labelKey: "dash.qa.order", icon: Plus },
   { href: "/dashboard/customers", labelKey: "dash.qa.payment", icon: Banknote },
   { href: "/dashboard/claims", labelKey: "dash.qa.claim", icon: RotateCcw },
-  { href: "/dashboard/inventory/reusable", labelKey: "dash.qa.reusable", icon: Boxes },
   { href: "/dashboard/reports", labelKey: "dash.qa.reports", icon: Wallet },
-  { href: "/dashboard/inventory/alerts", labelKey: "dash.qa.alerts", icon: AlertTriangle },
 ];
 
 export default function DashboardPage() {
@@ -369,7 +367,7 @@ export default function DashboardPage() {
               </CardDescription>
             </div>
             <Link
-              href="/dashboard/inventory/alerts"
+              href="/dashboard/inventory/finished"
               className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
             >
               <Boxes className="size-3.5" />

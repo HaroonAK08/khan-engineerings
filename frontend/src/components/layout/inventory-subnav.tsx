@@ -9,12 +9,7 @@ import type { MessageKey } from "@/lib/i18n/messages";
 const LINKS: Array<{ href: string; labelKey: MessageKey; exact?: boolean }> = [
   { href: "/dashboard/inventory", labelKey: "inventory.overview", exact: true },
   { href: "/dashboard/inventory/purchases", labelKey: "inventory.purchases" },
-  { href: "/dashboard/inventory/reusable", labelKey: "inventory.reusable" },
   { href: "/dashboard/inventory/finished", labelKey: "inventory.finished" },
-  { href: "/dashboard/inventory/movements", labelKey: "inventory.movements" },
-  { href: "/dashboard/inventory/alerts", labelKey: "inventory.alerts" },
-  { href: "/dashboard/inventory/settings", labelKey: "inventory.settings" },
-  { href: "/dashboard/inventory/reports", labelKey: "inventory.reports" },
 ];
 
 export function InventorySubnav() {

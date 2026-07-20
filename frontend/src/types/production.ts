@@ -19,7 +19,7 @@ export type Product = {
 };
 
 export type BatchInput = {
-  materialType: "scrap" | "daig" | "reusable";
+  materialType: "scrap" | "daig";
   quantityKg: number;
 };
 
@@ -78,13 +78,29 @@ export type ProductionReport = {
   totals: {
     batchCount: number;
     totalInputKg: number;
+    inputScrapKg?: number;
     handKg: number;
+    returnedScrapKg?: number;
     wasteKg: number;
+    materialLossKg?: number;
+    netConsumedKg?: number;
     goodUnits: number;
     brokenUnits: number;
-    finishedUnits: number;
+    rejectedUnits?: number;
+    finishedUnits?: number;
+    rejectRate?: number;
+    lossRate?: number;
     byFamily?: Record<string, number>;
   };
+  byProduct?: Array<{
+    productId: string;
+    name: string;
+    batchCount: number;
+    goodUnits: number;
+    rejectedUnits: number;
+    netConsumedKg: number;
+    materialLossKg?: number;
+  }>;
 };
 
 export type ProductionStageId =
@@ -135,6 +151,9 @@ export type BatchExpense = {
         job?: string;
       };
   units?: number | null;
+  /** Purchase qty for paint/tools/etc. */
+  quantity?: number | null;
+  quantityUnit?: string | null;
   payType?: "weekly" | "monthly" | "per_unit" | null;
 };
 

@@ -56,7 +56,7 @@ export default function CostReportsPage() {
         </Link>
         <h1 className="text-nameplate text-xl">Manufacturing costs</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Batch costs, expensive stages, and where spend is rising.
+          Operating spend by category and production run.
         </p>
       </div>
 
