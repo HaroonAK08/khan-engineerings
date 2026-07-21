@@ -8,10 +8,19 @@ function cookieOptions() {
     maxAge: 7 * 24 * 60 * 60 * 1000,
     path: "/",
   };
-  // Share cookie across subdomains, e.g. .haroonahmadkhan.dev
+
+  // Shared parent domain (e.g. .haroonahmadkhan.dev)
   if (process.env.COOKIE_DOMAIN) {
     options.domain = process.env.COOKIE_DOMAIN;
+    return options;
   }
+
+  // Separate Vercel hosts (web.vercel.app → api.vercel.app) need cross-site cookies
+  if (process.env.NODE_ENV === "production") {
+    options.sameSite = "none";
+    options.secure = true;
+  }
+
   return options;
 }
 

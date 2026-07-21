@@ -2,14 +2,8 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 export function middleware(request: NextRequest) {
-  const token = request.cookies.get("token")?.value;
-  const { pathname } = request.nextUrl;
-
-  // Cookie presence only — validity is checked client-side via /auth/me
-  if (pathname.startsWith("/dashboard") && !token) {
-    return NextResponse.redirect(new URL("/", request.url));
-  }
-
+  // Auth cookie lives on the API host when frontend/API are on different Vercel URLs.
+  // Session is verified client-side via /auth/me + AuthGuard instead.
   return NextResponse.next();
 }
 
