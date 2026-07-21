@@ -8,7 +8,7 @@ if (!cached) {
 async function connectDB() {
   const uri = process.env.MONGODB_URI;
   if (!uri) {
-    throw new Error("MONGODB_URI is not set");
+    throw new Error("MONGODB_URI is not set on this server (check Vercel Environment Variables)");
   }
 
   if (cached.conn) return cached.conn;
@@ -21,6 +21,14 @@ async function connectDB() {
       .then((m) => {
         console.log("MongoDB connected");
         return m;
+      })
+      .catch((err) => {
+        cached.promise = null;
+        const hint =
+          "Check Vercel env MONGODB_URI matches Atlas (no quotes). IP Access List should include 0.0.0.0/0.";
+        const wrapped = new Error(`${err.message} | ${hint}`);
+        wrapped.name = err.name;
+        throw wrapped;
       });
   }
 
