@@ -26,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useI18n } from "@/hooks/use-i18n";
 
 function ledgerDelta(e: CustomerLedgerEntry) {
   if (e.type === "invoice") return e.amount;
@@ -34,6 +35,7 @@ function ledgerDelta(e: CustomerLedgerEntry) {
 }
 
 export default function CustomerDetailPage() {
+  const { t } = useI18n();
   const params = useParams();
   const id = String(params.id);
   const [customer, setCustomer] = useState<Customer | null>(null);
@@ -60,12 +62,12 @@ export default function CustomerDetailPage() {
       setOrders(ords);
       setPayments(pays);
     } catch (err) {
-      toast.error(apiError(err, "Failed to load customer"));
+      toast.error(apiError(err, t("customerDetail.loadFailed")));
       setCustomer(null);
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, t]);
 
   useEffect(() => {
     load();
@@ -82,9 +84,9 @@ export default function CustomerDetailPage() {
   if (!customer) {
     return (
       <div className="flex flex-col items-center gap-3 py-20">
-        <p className="text-sm text-muted-foreground">Customer not found</p>
+        <p className="text-sm text-muted-foreground">{t("customerDetail.notFound")}</p>
         <Link href="/dashboard/customers" className="text-sm text-primary hover:underline">
-          Back
+          {t("common.back")}
         </Link>
       </div>
     );
@@ -99,17 +101,18 @@ export default function CustomerDetailPage() {
             className="mb-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="size-3" />
-            Customers
+            {t("cus.title")}
           </Link>
           <h1 className="text-nameplate text-xl">{customer.name}</h1>
           <p className="font-data mt-1 text-xs text-muted-foreground">
-            {[customer.phone, customer.email].filter(Boolean).join(" · ") || "No contact"}
+            {[customer.phone, customer.email].filter(Boolean).join(" · ") ||
+              t("customerDetail.noContact")}
           </p>
         </div>
         <Card className="min-w-[200px] py-0">
           <CardContent className="p-4">
             <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
-              Balance owed
+              {t("customerDetail.balanceOwed")}
             </p>
             <p className="font-data mt-1 text-2xl">{formatMoney(balance)}</p>
           </CardContent>
@@ -118,9 +121,9 @@ export default function CustomerDetailPage() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {[
-          { label: "Orders", value: String(stats.orderCount) },
-          { label: "Total sales", value: formatMoney(stats.totalSales) },
-          { label: "Total paid", value: formatMoney(stats.totalPaid) },
+          { label: t("customerDetail.orders"), value: String(stats.orderCount) },
+          { label: t("customerDetail.totalSales"), value: formatMoney(stats.totalSales) },
+          { label: t("customerDetail.totalPaid"), value: formatMoney(stats.totalPaid) },
         ].map((s) => (
           <Card key={s.label} className="py-0">
             <CardContent className="p-4">
@@ -136,32 +139,34 @@ export default function CustomerDetailPage() {
           href={`/dashboard/orders/new?customer=${id}`}
           className="inline-flex h-8 items-center rounded-lg bg-primary px-3 text-sm text-primary-foreground"
         >
-          New order
+          {t("customerDetail.newOrder")}
         </Link>
         <Link
           href="/dashboard/orders"
           className="inline-flex h-8 items-center rounded-lg border border-border px-3 text-sm hover:bg-muted"
         >
-          All orders
+          {t("customerDetail.allOrders")}
         </Link>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-nameplate text-sm">Customer ledger</CardTitle>
-          <CardDescription>Invoices and payments.</CardDescription>
+          <CardTitle className="text-nameplate text-sm">{t("customerDetail.ledgerTitle")}</CardTitle>
+          <CardDescription>{t("customerDetail.ledgerDesc")}</CardDescription>
         </CardHeader>
         <CardContent>
           {entries.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">No ledger entries</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              {t("customerDetail.noLedger")}
+            </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Notes</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>{t("common.date")}</TableHead>
+                  <TableHead>{t("common.type")}</TableHead>
+                  <TableHead>{t("common.notes")}</TableHead>
+                  <TableHead className="text-right">{t("common.amount")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -198,18 +203,22 @@ export default function CustomerDetailPage() {
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-nameplate text-sm">Invoices / orders</CardTitle>
+            <CardTitle className="text-nameplate text-sm">
+              {t("customerDetail.invoicesOrders")}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {orders.length === 0 ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">No orders</p>
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                {t("customerDetail.noOrders")}
+              </p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Invoice</TableHead>
-                    <TableHead className="text-right">Balance</TableHead>
-                    <TableHead>Pay</TableHead>
+                    <TableHead>{t("common.invoice")}</TableHead>
+                    <TableHead className="text-right">{t("common.balance")}</TableHead>
+                    <TableHead>{t("common.pay")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -241,18 +250,22 @@ export default function CustomerDetailPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-nameplate text-sm">Payment history</CardTitle>
+            <CardTitle className="text-nameplate text-sm">
+              {t("customerDetail.paymentHistory")}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {payments.length === 0 ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">No payments</p>
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                {t("customerDetail.noPayments")}
+              </p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Invoice</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead>{t("common.date")}</TableHead>
+                    <TableHead>{t("common.invoice")}</TableHead>
+                    <TableHead className="text-right">{t("common.amount")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

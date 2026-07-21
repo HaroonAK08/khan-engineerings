@@ -31,6 +31,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useI18n } from "@/hooks/use-i18n";
 
 const paymentSchema = z.object({
   amount: z.number().positive("Amount must be greater than 0"),
@@ -58,6 +59,7 @@ function entryDelta(entry: LedgerEntry) {
 }
 
 export default function SupplierDetailPage() {
+  const { t } = useI18n();
   const params = useParams();
   const id = String(params.id);
   const [supplier, setSupplier] = useState<Supplier | null>(null);
@@ -86,11 +88,11 @@ export default function SupplierDetailPage() {
       setEntries(ledger.entries);
       setBalance(ledger.balance);
     } catch (err) {
-      toast.error(apiError(err, "Failed to load supplier"));
+      toast.error(apiError(err, t("supplierDetail.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, t]);
 
   useEffect(() => {
     load();
@@ -101,11 +103,11 @@ export default function SupplierDetailPage() {
     try {
       const result = await recordPayment(id, values);
       setBalance(result.balance);
-      toast.success("Payment recorded");
+      toast.success(t("supplierDetail.paymentRecorded"));
       paymentForm.reset({ amount: 0, entryDate: todayInput(), notes: "" });
       await load();
     } catch (err) {
-      toast.error(apiError(err, "Failed to record payment"));
+      toast.error(apiError(err, t("supplierDetail.paymentFailed")));
     } finally {
       setSavingPayment(false);
     }
@@ -116,11 +118,11 @@ export default function SupplierDetailPage() {
     try {
       const result = await recordAdjustment(id, values);
       setBalance(result.balance);
-      toast.success("Adjustment recorded");
+      toast.success(t("supplierDetail.adjustmentRecorded"));
       adjForm.reset({ amount: 0, entryDate: todayInput(), notes: "" });
       await load();
     } catch (err) {
-      toast.error(apiError(err, "Failed to record adjustment"));
+      toast.error(apiError(err, t("supplierDetail.adjustmentFailed")));
     } finally {
       setSavingAdj(false);
     }
@@ -137,12 +139,12 @@ export default function SupplierDetailPage() {
   if (!supplier) {
     return (
       <div className="flex flex-col items-center gap-3 py-20">
-        <p className="text-sm text-muted-foreground">Supplier not found</p>
+        <p className="text-sm text-muted-foreground">{t("supplierDetail.notFound")}</p>
         <Link
           href="/dashboard/suppliers"
           className="inline-flex h-8 items-center rounded-lg border border-border px-3 text-sm hover:bg-muted"
         >
-          Back to suppliers
+          {t("supplierDetail.backToSuppliers")}
         </Link>
       </div>
     );
@@ -161,19 +163,20 @@ export default function SupplierDetailPage() {
           </Link>
           <h1 className="text-nameplate text-xl">{supplier.name}</h1>
           <p className="font-data mt-1 text-xs text-muted-foreground">
-            {[supplier.phone, supplier.email].filter(Boolean).join(" · ") || "No contact info"}
+            {[supplier.phone, supplier.email].filter(Boolean).join(" · ") ||
+              t("supplierDetail.noContact")}
           </p>
           <Badge
             variant={supplier.isActive ? "secondary" : "outline"}
             className="font-data mt-2 text-[10px]"
           >
-            {supplier.isActive ? "ACTIVE" : "INACTIVE"}
+            {supplier.isActive ? t("sup.status.active") : t("sup.status.inactive")}
           </Badge>
         </div>
         <Card className="min-w-[200px] py-0">
           <CardContent className="p-4">
             <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
-              Balance owed
+              {t("supplierDetail.balanceOwed")}
             </p>
             <p className="font-data mt-1 text-2xl">{formatMoney(balance)}</p>
           </CardContent>
@@ -185,13 +188,17 @@ export default function SupplierDetailPage() {
           <CardContent className="grid gap-2 p-4 text-sm sm:grid-cols-2">
             {supplier.address && (
               <div>
-                <p className="font-data text-[10px] text-muted-foreground uppercase">Address</p>
+                <p className="font-data text-[10px] text-muted-foreground uppercase">
+                  {t("common.address")}
+                </p>
                 <p>{supplier.address}</p>
               </div>
             )}
             {supplier.notes && (
               <div>
-                <p className="font-data text-[10px] text-muted-foreground uppercase">Notes</p>
+                <p className="font-data text-[10px] text-muted-foreground uppercase">
+                  {t("common.notes")}
+                </p>
                 <p>{supplier.notes}</p>
               </div>
             )}
@@ -202,13 +209,13 @@ export default function SupplierDetailPage() {
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-nameplate text-sm">Record payment</CardTitle>
-            <CardDescription>Reduces balance owed to this supplier.</CardDescription>
+            <CardTitle className="text-nameplate text-sm">{t("supplierDetail.recordPayment")}</CardTitle>
+            <CardDescription>{t("supplierDetail.recordPaymentDesc")}</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={paymentForm.handleSubmit(onPayment)} className="flex flex-col gap-3">
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="pay-amount">Amount</Label>
+                <Label htmlFor="pay-amount">{t("common.amount")}</Label>
                 <Input
                   id="pay-amount"
                   type="number"
@@ -222,16 +229,16 @@ export default function SupplierDetailPage() {
                 )}
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="pay-date">Date</Label>
+                <Label htmlFor="pay-date">{t("common.date")}</Label>
                 <Input id="pay-date" type="date" {...paymentForm.register("entryDate")} />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="pay-notes">Notes</Label>
+                <Label htmlFor="pay-notes">{t("common.notes")}</Label>
                 <Input id="pay-notes" {...paymentForm.register("notes")} />
               </div>
               <Button type="submit" disabled={savingPayment} className="w-fit gap-2">
                 {savingPayment && <Loader2 className="size-4 animate-spin" />}
-                Record payment
+                {t("supplierDetail.submitPayment")}
               </Button>
             </form>
           </CardContent>
@@ -239,15 +246,13 @@ export default function SupplierDetailPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-nameplate text-sm">Adjustment</CardTitle>
-            <CardDescription>
-              Positive increases owed; negative decreases (corrections).
-            </CardDescription>
+            <CardTitle className="text-nameplate text-sm">{t("supplierDetail.adjustment")}</CardTitle>
+            <CardDescription>{t("supplierDetail.adjustmentDesc")}</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={adjForm.handleSubmit(onAdjustment)} className="flex flex-col gap-3">
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="adj-amount">Signed amount</Label>
+                <Label htmlFor="adj-amount">{t("supplierDetail.signedAmount")}</Label>
                 <Input
                   id="adj-amount"
                   type="number"
@@ -261,16 +266,16 @@ export default function SupplierDetailPage() {
                 )}
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="adj-date">Date</Label>
+                <Label htmlFor="adj-date">{t("common.date")}</Label>
                 <Input id="adj-date" type="date" {...adjForm.register("entryDate")} />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="adj-notes">Notes</Label>
+                <Label htmlFor="adj-notes">{t("common.notes")}</Label>
                 <Input id="adj-notes" {...adjForm.register("notes")} />
               </div>
               <Button type="submit" variant="outline" disabled={savingAdj} className="w-fit gap-2">
                 {savingAdj && <Loader2 className="size-4 animate-spin" />}
-                Post adjustment
+                {t("supplierDetail.postAdjustment")}
               </Button>
             </form>
           </CardContent>
@@ -279,20 +284,22 @@ export default function SupplierDetailPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-nameplate text-sm">Supplier ledger</CardTitle>
-          <CardDescription>Purchases, payments, and adjustments.</CardDescription>
+          <CardTitle className="text-nameplate text-sm">{t("supplierDetail.ledgerTitle")}</CardTitle>
+          <CardDescription>{t("supplierDetail.ledgerDesc")}</CardDescription>
         </CardHeader>
         <CardContent>
           {entries.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">No ledger entries yet</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              {t("supplierDetail.noLedger")}
+            </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Notes</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>{t("common.date")}</TableHead>
+                  <TableHead>{t("common.type")}</TableHead>
+                  <TableHead>{t("common.notes")}</TableHead>
+                  <TableHead className="text-right">{t("common.amount")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

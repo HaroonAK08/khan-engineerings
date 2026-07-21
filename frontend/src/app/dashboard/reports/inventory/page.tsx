@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useI18n } from "@/hooks/use-i18n";
 
 function monthDefaults() {
   const now = new Date();
@@ -28,6 +29,7 @@ function monthDefaults() {
 }
 
 export default function InventoryReportsHubPage() {
+  const { t } = useI18n();
   const d = monthDefaults();
   const [dateFrom, setDateFrom] = useState(d.from);
   const [dateTo, setDateTo] = useState(d.to);
@@ -40,11 +42,11 @@ export default function InventoryReportsHubPage() {
     try {
       setReport(await getLiveInventoryReport({ dateFrom, dateTo }));
     } catch (err) {
-      toast.error(apiError(err, "Failed to load inventory report"));
+      toast.error(apiError(err, t("invReportsHub.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, t]);
 
   useEffect(() => {
     const t = setTimeout(load, 200);
@@ -55,9 +57,9 @@ export default function InventoryReportsHubPage() {
     setExporting(format);
     try {
       await downloadReportExport("inventory", { format, dateFrom, dateTo });
-      toast.success(`${format.toUpperCase()} downloaded`);
+      toast.success(t("common.downloaded", { format: format.toUpperCase() }));
     } catch (err) {
-      toast.error(apiError(err, "Export failed"));
+      toast.error(apiError(err, t("common.exportFailed")));
     } finally {
       setExporting(null);
     }
@@ -68,10 +70,8 @@ export default function InventoryReportsHubPage() {
       <ReportsSubnav />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-nameplate text-xl">Inventory reports</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Stock on hand and production for the period.
-          </p>
+          <h1 className="text-nameplate text-xl">{t("rep.invTitle")}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t("invReportsHub.subtitle")}</p>
         </div>
         <ExportButtons exporting={exporting} onExport={onExport} />
       </div>
@@ -88,19 +88,19 @@ export default function InventoryReportsHubPage() {
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             {[
               {
-                label: "Raw scrap",
+                label: t("invReportsHub.rawScrap"),
                 value: `${formatKg(report.raw?.availableKg ?? report.raw?.totalKg ?? 0)} kg`,
               },
               {
-                label: "Finished units",
+                label: t("invReportsHub.finishedUnits"),
                 value: String(Math.round(report.finishedStock?.totalUnits ?? 0)),
               },
               {
-                label: "Produced (good)",
+                label: t("invReportsHub.producedGood"),
                 value: String(report.producedThisPeriod?.totals?.goodUnits ?? 0),
               },
               {
-                label: "Low stock SKUs",
+                label: t("invReportsHub.lowStockSkus"),
                 value: String(report.lowStock?.length ?? 0),
               },
             ].map((s) => (
@@ -116,16 +116,16 @@ export default function InventoryReportsHubPage() {
           </div>
           <Card>
             <CardHeader>
-              <CardTitle className="text-nameplate text-sm">Finished goods</CardTitle>
+              <CardTitle className="text-nameplate text-sm">{t("dash.finishedGoods")}</CardTitle>
             </CardHeader>
             <CardContent className="px-0">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Product</TableHead>
-                    <TableHead>Warehouse</TableHead>
-                    <TableHead className="text-right">Qty</TableHead>
-                    <TableHead className="text-right">Threshold</TableHead>
+                    <TableHead>{t("common.product")}</TableHead>
+                    <TableHead>{t("common.warehouse")}</TableHead>
+                    <TableHead className="text-right">{t("common.qty")}</TableHead>
+                    <TableHead className="text-right">{t("invReportsHub.threshold")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

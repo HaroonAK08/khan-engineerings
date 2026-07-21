@@ -31,8 +31,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useI18n } from "@/hooks/use-i18n";
 
 export default function StatementsPage() {
+  const { t } = useI18n();
   const [partyType, setPartyType] = useState<"customer" | "supplier">("customer");
   const [partyId, setPartyId] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -50,10 +52,10 @@ export default function StatementsPage() {
         setCustomers(c.map((x) => ({ _id: x._id, name: x.name })));
         setSuppliers(s.map((x) => ({ _id: x._id, name: x.name })));
       } catch (err) {
-        toast.error(apiError(err, "Failed to load parties"));
+        toast.error(apiError(err, t("statements.loadPartiesFailed")));
       }
     })();
-  }, []);
+  }, [t]);
 
   const load = useCallback(async () => {
     if (!partyId) {
@@ -72,12 +74,12 @@ export default function StatementsPage() {
           : await getSupplierStatement(partyId, params);
       setStatement(data);
     } catch (err) {
-      toast.error(apiError(err, "Failed to load statement"));
+      toast.error(apiError(err, t("statements.loadFailed")));
       setStatement(null);
     } finally {
       setLoading(false);
     }
-  }, [partyId, partyType, dateFrom, dateTo]);
+  }, [partyId, partyType, dateFrom, dateTo, t]);
 
   useEffect(() => {
     const t = setTimeout(load, 200);
@@ -86,7 +88,7 @@ export default function StatementsPage() {
 
   async function onExport(format: "xlsx" | "pdf") {
     if (!partyId) {
-      toast.error("Select a customer or supplier first");
+      toast.error(t("statements.selectFirst"));
       return;
     }
     setExporting(format);
@@ -96,9 +98,9 @@ export default function StatementsPage() {
         dateFrom: dateFrom || undefined,
         dateTo: dateTo || undefined,
       });
-      toast.success(`${format.toUpperCase()} downloaded`);
+      toast.success(t("common.downloaded", { format: format.toUpperCase() }));
     } catch (err) {
-      toast.error(apiError(err, "Export failed"));
+      toast.error(apiError(err, t("common.exportFailed")));
     } finally {
       setExporting(null);
     }
@@ -111,10 +113,8 @@ export default function StatementsPage() {
       <ReportsSubnav />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-nameplate text-xl">Customer & supplier statements</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Ledger history with opening/closing balance — export Excel or PDF.
-          </p>
+          <h1 className="text-nameplate text-xl">{t("statements.title")}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t("statements.subtitle")}</p>
         </div>
         <ExportButtons exporting={exporting} onExport={onExport} />
       </div>
@@ -122,7 +122,7 @@ export default function StatementsPage() {
       <Card>
         <CardContent className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="grid gap-1.5">
-            <Label>Type</Label>
+            <Label>{t("common.type")}</Label>
             <Select
               value={partyType}
               onValueChange={(v) => {
@@ -135,16 +135,16 @@ export default function StatementsPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="customer">Customer</SelectItem>
-                <SelectItem value="supplier">Supplier</SelectItem>
+                <SelectItem value="customer">{t("common.customer")}</SelectItem>
+                <SelectItem value="supplier">{t("common.supplier")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="grid gap-1.5">
-            <Label>{partyType === "customer" ? "Customer" : "Supplier"}</Label>
+            <Label>{partyType === "customer" ? t("common.customer") : t("common.supplier")}</Label>
             <Select value={partyId || null} onValueChange={(v) => setPartyId(v || "")}>
               <SelectTrigger>
-                <SelectValue placeholder="Select…" />
+                <SelectValue placeholder={t("claims.select")} />
               </SelectTrigger>
               <SelectContent>
                 {parties.map((p) => (
@@ -156,11 +156,11 @@ export default function StatementsPage() {
             </Select>
           </div>
           <div className="grid gap-1.5">
-            <Label>From</Label>
+            <Label>{t("common.from")}</Label>
             <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
           </div>
           <div className="grid gap-1.5">
-            <Label>To</Label>
+            <Label>{t("common.to")}</Label>
             <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
           </div>
         </CardContent>
@@ -171,14 +171,14 @@ export default function StatementsPage() {
           <Loader2 className="size-6 animate-spin text-primary" />
         </div>
       ) : !statement ? (
-        <p className="text-sm text-muted-foreground">Select a party to view their statement.</p>
+        <p className="text-sm text-muted-foreground">{t("statements.selectPartyPrompt")}</p>
       ) : (
         <>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {[
-              { label: "Opening", value: formatMoney(statement.openingBalance) },
-              { label: "Period balance", value: formatMoney(statement.periodBalance) },
-              { label: "Closing (current)", value: formatMoney(statement.closingBalance) },
+              { label: t("statements.opening"), value: formatMoney(statement.openingBalance) },
+              { label: t("statements.periodBalance"), value: formatMoney(statement.periodBalance) },
+              { label: t("statements.closingCurrent"), value: formatMoney(statement.closingBalance) },
             ].map((s) => (
               <Card key={s.label} className="py-0">
                 <CardContent className="p-4">
@@ -196,26 +196,26 @@ export default function StatementsPage() {
               <CardTitle className="text-nameplate text-sm">{statement.party.name}</CardTitle>
               <CardDescription>
                 {[statement.party.phone, statement.party.email].filter(Boolean).join(" · ") ||
-                  "Ledger lines"}
+                  t("statements.ledgerLines")}
               </CardDescription>
             </CardHeader>
             <CardContent className="px-0">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Reference</TableHead>
-                    <TableHead className="text-right">Debit</TableHead>
-                    <TableHead className="text-right">Credit</TableHead>
-                    <TableHead className="text-right">Balance</TableHead>
+                    <TableHead>{t("common.date")}</TableHead>
+                    <TableHead>{t("common.type")}</TableHead>
+                    <TableHead>{t("statements.reference")}</TableHead>
+                    <TableHead className="text-right">{t("statements.debit")}</TableHead>
+                    <TableHead className="text-right">{t("statements.credit")}</TableHead>
+                    <TableHead className="text-right">{t("common.balance")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {statement.lines.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={6} className="text-muted-foreground">
-                        No entries in this period
+                        {t("statements.noEntriesPeriod")}
                       </TableCell>
                     </TableRow>
                   ) : (

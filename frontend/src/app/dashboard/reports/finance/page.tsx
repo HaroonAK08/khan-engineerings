@@ -19,6 +19,7 @@ import { downloadReportExport } from "@/lib/reports-api";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { useI18n } from "@/hooks/use-i18n";
 
 function monthDefaults() {
   const now = new Date();
@@ -31,6 +32,7 @@ function monthDefaults() {
 }
 
 export default function FinanceOverviewPage() {
+  const { t } = useI18n();
   const defaults = monthDefaults();
   const [dateFrom, setDateFrom] = useState(defaults.from);
   const [dateTo, setDateTo] = useState(defaults.to);
@@ -60,11 +62,11 @@ export default function FinanceOverviewPage() {
       setTopSuppliers(supp.suppliers.slice(0, 5));
       setTopProduct(prod.topEarner);
     } catch (err) {
-      toast.error(apiError(err, "Failed to load finance overview"));
+      toast.error(apiError(err, t("financeOverview.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, t]);
 
   useEffect(() => {
     const t = setTimeout(load, 200);
@@ -75,9 +77,9 @@ export default function FinanceOverviewPage() {
     setExporting(format);
     try {
       await downloadReportExport("finance", { format, dateFrom, dateTo });
-      toast.success(`${format.toUpperCase()} downloaded`);
+      toast.success(t("common.downloaded", { format: format.toUpperCase() }));
     } catch (err) {
-      toast.error(apiError(err, "Export failed"));
+      toast.error(apiError(err, t("common.exportFailed")));
     } finally {
       setExporting(null);
     }
@@ -91,12 +93,10 @@ export default function FinanceOverviewPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
-            Phase 7 · Finance
+            {t("common.financeEyebrow")}
           </p>
-          <h1 className="text-nameplate text-xl">Profit & cash flow</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Where money comes from and where it goes.
-          </p>
+          <h1 className="text-nameplate text-xl">{t("financeOverview.title")}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t("financeOverview.subtitle")}</p>
         </div>
         <div className="flex flex-col items-stretch gap-2 sm:items-end">
           <ExportButtons exporting={exporting} onExport={onExport} />
@@ -128,8 +128,8 @@ export default function FinanceOverviewPage() {
                 <div>
                   <p className="text-sm font-medium">
                     {overview.profitAndLoss.isProfit
-                      ? "Profit this period"
-                      : "Loss this period"}
+                      ? t("financeOverview.profitPeriod")
+                      : t("financeOverview.lossPeriod")}
                   </p>
                   <p className="font-data text-xs text-muted-foreground">
                     {formatDate(overview.period.from)} → {formatDate(overview.period.to)}
@@ -141,7 +141,7 @@ export default function FinanceOverviewPage() {
                   {formatMoney(overview.profitAndLoss.netProfit)}
                 </p>
                 <p className="font-data text-xs text-muted-foreground">
-                  Margin{" "}
+                  {t("financeOverview.margin")}{" "}
                   {overview.profitAndLoss.marginPct != null
                     ? `${overview.profitAndLoss.marginPct}%`
                     : "—"}
@@ -153,27 +153,27 @@ export default function FinanceOverviewPage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {[
               {
-                label: "Revenue",
+                label: t("financeOverview.revenue"),
                 value: formatMoney(overview.profitAndLoss.revenue),
-                hint: "Invoices + other income",
+                hint: t("financeOverview.invoicesOtherIncome"),
                 accent: "bg-chart-1",
               },
               {
-                label: "COGS / ops",
+                label: t("financeOverview.cogsOps"),
                 value: formatMoney(overview.profitAndLoss.cogs),
-                hint: "Purchases + manufacturing",
+                hint: t("financeOverview.purchasesManufacturing"),
                 accent: "bg-chart-4",
               },
               {
-                label: "Cash in",
+                label: t("financeOverview.cashIn"),
                 value: formatMoney(overview.cashFlow.cashIn),
-                hint: "Customer payments + other",
+                hint: t("financeOverview.customerPaymentsOther"),
                 accent: "bg-chart-3",
               },
               {
-                label: "Cash out",
+                label: t("financeOverview.cashOut"),
                 value: formatMoney(overview.cashFlow.cashOut),
-                hint: "Supplier pay + mfg + other",
+                hint: t("financeOverview.supplierPayMfgOther"),
                 accent: "bg-chart-2",
               },
             ].map((stat) => (
@@ -193,16 +193,16 @@ export default function FinanceOverviewPage() {
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle className="text-nameplate text-sm">Profit & loss</CardTitle>
-                <CardDescription>Accrual view for the selected dates.</CardDescription>
+                <CardTitle className="text-nameplate text-sm">{t("financeOverview.profitLoss")}</CardTitle>
+                <CardDescription>{t("financeOverview.accrualView")}</CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-2 text-sm">
                 {[
-                  ["Revenue", overview.profitAndLoss.revenue],
-                  ["COGS (purchases + mfg ops)", overview.profitAndLoss.cogs],
-                  ["Gross profit", overview.profitAndLoss.grossProfit],
-                  ["Other expenses", overview.profitAndLoss.otherExpenses],
-                  ["Net profit", overview.profitAndLoss.netProfit],
+                  [t("financeOverview.revenue"), overview.profitAndLoss.revenue],
+                  [t("financeOverview.cogsLabel"), overview.profitAndLoss.cogs],
+                  [t("financeOverview.grossProfit"), overview.profitAndLoss.grossProfit],
+                  [t("financeOverview.otherExpenses"), overview.profitAndLoss.otherExpenses],
+                  [t("financeOverview.netProfit"), overview.profitAndLoss.netProfit],
                 ].map(([label, value], i, arr) => (
                   <div
                     key={String(label)}
@@ -219,14 +219,14 @@ export default function FinanceOverviewPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-nameplate text-sm">Cash flow</CardTitle>
-                <CardDescription>Money that actually moved.</CardDescription>
+                <CardTitle className="text-nameplate text-sm">{t("financeOverview.cashFlow")}</CardTitle>
+                <CardDescription>{t("financeOverview.moneyMoved")}</CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-2 text-sm">
                 {[
-                  ["Cash in", overview.cashFlow.cashIn],
-                  ["Cash out", overview.cashFlow.cashOut],
-                  ["Net cash", overview.cashFlow.net],
+                  [t("financeOverview.cashIn"), overview.cashFlow.cashIn],
+                  [t("financeOverview.cashOut"), overview.cashFlow.cashOut],
+                  [t("financeOverview.netCash"), overview.cashFlow.net],
                 ].map(([label, value], i, arr) => (
                   <div
                     key={String(label)}
@@ -239,8 +239,10 @@ export default function FinanceOverviewPage() {
                   </div>
                 ))}
                 <p className="pt-2 text-xs text-muted-foreground">
-                  Customer payments {formatMoney(overview.income.customerPayments)} · Supplier
-                  payments {formatMoney(overview.expenses.supplierPayments)}
+                  {t("financeOverview.customerPaymentsLbl")}{" "}
+                  {formatMoney(overview.income.customerPayments)} ·{" "}
+                  {t("financeOverview.supplierPaymentsLbl")}{" "}
+                  {formatMoney(overview.expenses.supplierPayments)}
                 </p>
               </CardContent>
             </Card>
@@ -249,11 +251,13 @@ export default function FinanceOverviewPage() {
           <div className="grid gap-6 lg:grid-cols-3">
             <Card>
               <CardHeader>
-                <CardTitle className="text-nameplate text-sm">Top revenue customers</CardTitle>
+                <CardTitle className="text-nameplate text-sm">
+                  {t("financeOverview.topRevenueCustomers")}
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 {topCustomers.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No sales in period</p>
+                  <p className="text-sm text-muted-foreground">{t("salesReports.noSalesPeriod")}</p>
                 ) : (
                   <ul className="flex flex-col gap-2 text-sm">
                     {topCustomers.map((c, i) => (
@@ -264,7 +268,7 @@ export default function FinanceOverviewPage() {
                         >
                           {i === 0 && (
                             <Badge variant="secondary" className="mr-1 font-data text-[9px]">
-                              TOP
+                              {t("common.top")}
                             </Badge>
                           )}
                           {c.name}
@@ -279,11 +283,15 @@ export default function FinanceOverviewPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-nameplate text-sm">Top supplier spend</CardTitle>
+                <CardTitle className="text-nameplate text-sm">
+                  {t("financeOverview.topSupplierSpend")}
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 {topSuppliers.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No purchases in period</p>
+                  <p className="text-sm text-muted-foreground">
+                    {t("financeOverview.noPurchasesPeriod")}
+                  </p>
                 ) : (
                   <ul className="flex flex-col gap-2 text-sm">
                     {topSuppliers.map((s) => (
@@ -304,24 +312,28 @@ export default function FinanceOverviewPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-nameplate text-sm">Best product profit</CardTitle>
+                <CardTitle className="text-nameplate text-sm">
+                  {t("financeOverview.bestProductProfit")}
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 {topProduct ? (
                   <div>
                     <p className="text-lg font-medium">{topProduct.name}</p>
                     <p className="font-data mt-1 text-sm">
-                      Profit {formatMoney(topProduct.profit)}
+                      {t("financeOverview.profitLabel")} {formatMoney(topProduct.profit)}
                     </p>
                     <Link
                       href="/dashboard/reports/finance/profit"
                       className="mt-3 inline-block text-sm text-primary hover:underline"
                     >
-                      Full product analysis →
+                      {t("financeOverview.fullProductAnalysis")}
                     </Link>
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground">No product sales yet</p>
+                  <p className="text-sm text-muted-foreground">
+                    {t("financeOverview.noProductSales")}
+                  </p>
                 )}
               </CardContent>
             </Card>

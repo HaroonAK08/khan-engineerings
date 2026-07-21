@@ -19,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useI18n } from "@/hooks/use-i18n";
 
 function monthDefaults() {
   const now = new Date();
@@ -31,6 +32,7 @@ function monthDefaults() {
 }
 
 export default function ProductProfitPage() {
+  const { t } = useI18n();
   const defaults = monthDefaults();
   const [dateFrom, setDateFrom] = useState(defaults.from);
   const [dateTo, setDateTo] = useState(defaults.to);
@@ -62,11 +64,11 @@ export default function ProductProfitPage() {
       setProducts(data.products);
       setTopEarner(data.topEarner);
     } catch (err) {
-      toast.error(apiError(err, "Failed to load product profitability"));
+      toast.error(apiError(err, t("productProfit.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, t]);
 
   useEffect(() => {
     const t = setTimeout(load, 200);
@@ -81,12 +83,10 @@ export default function ProductProfitPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
-            Phase 7 · Finance
+            {t("common.financeEyebrow")}
           </p>
-          <h1 className="text-nameplate text-xl">Product profitability</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Which SKU earns the most after manufacturing cost share.
-          </p>
+          <h1 className="text-nameplate text-xl">{t("productProfit.title")}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t("productProfit.subtitle")}</p>
         </div>
         <div className="flex gap-2">
           <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
@@ -98,11 +98,14 @@ export default function ProductProfitPage() {
         <Card className="border-chart-3/40">
           <CardContent className="p-5">
             <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
-              Top earner
+              {t("productProfit.topEarner")}
             </p>
             <p className="mt-1 text-lg font-medium">{topEarner.name}</p>
             <p className="font-data mt-1 text-sm">
-              Profit {formatMoney(topEarner.profit)} · Revenue {formatMoney(topEarner.revenue)}
+              {t("productProfit.profitRevenue", {
+                profit: formatMoney(topEarner.profit),
+                revenue: formatMoney(topEarner.revenue),
+              })}
             </p>
           </CardContent>
         </Card>
@@ -110,10 +113,8 @@ export default function ProductProfitPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-nameplate text-sm">By product</CardTitle>
-          <CardDescription>
-            Costs allocate manufacturing ops by production volume; materials by scrap share.
-          </CardDescription>
+          <CardTitle className="text-nameplate text-sm">{t("prodReports.byProduct")}</CardTitle>
+          <CardDescription>{t("productProfit.costAllocDesc")}</CardDescription>
         </CardHeader>
         <CardContent className="px-0">
           {loading ? (
@@ -121,17 +122,19 @@ export default function ProductProfitPage() {
               <Loader2 className="size-6 animate-spin text-primary" />
             </div>
           ) : products.length === 0 ? (
-            <p className="px-6 py-8 text-sm text-muted-foreground">No product activity in period</p>
+            <p className="px-6 py-8 text-sm text-muted-foreground">
+              {t("productProfit.noProductActivity")}
+            </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Product</TableHead>
-                  <TableHead className="text-right">Sold</TableHead>
-                  <TableHead className="text-right">Revenue</TableHead>
-                  <TableHead className="text-right">Cost</TableHead>
-                  <TableHead className="text-right">Profit</TableHead>
-                  <TableHead className="text-right">Margin</TableHead>
+                  <TableHead>{t("common.product")}</TableHead>
+                  <TableHead className="text-right">{t("productProfit.sold")}</TableHead>
+                  <TableHead className="text-right">{t("financeOverview.revenue")}</TableHead>
+                  <TableHead className="text-right">{t("productProfit.cost")}</TableHead>
+                  <TableHead className="text-right">{t("financeOverview.profitLabel")}</TableHead>
+                  <TableHead className="text-right">{t("productProfit.margin")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

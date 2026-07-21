@@ -43,6 +43,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { useI18n } from "@/hooks/use-i18n";
 
 const entrySchema = z.object({
   type: z.enum(["income", "expense"]),
@@ -56,6 +57,7 @@ const entrySchema = z.object({
 type EntryForm = z.infer<typeof entrySchema>;
 
 export default function FinanceEntriesPage() {
+  const { t } = useI18n();
   const [entries, setEntries] = useState<FinanceEntry[]>([]);
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [loading, setLoading] = useState(true);
@@ -83,11 +85,11 @@ export default function FinanceEntriesPage() {
         })
       );
     } catch (err) {
-      toast.error(apiError(err, "Failed to load entries"));
+      toast.error(apiError(err, t("financeEntries.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, [typeFilter]);
+  }, [typeFilter, t]);
 
   useEffect(() => {
     void load();
@@ -104,7 +106,7 @@ export default function FinanceEntriesPage() {
         notes: values.notes,
         reference: values.reference,
       });
-      toast.success("Entry recorded");
+      toast.success(t("financeEntries.entryRecorded"));
       setOpen(false);
       form.reset({
         type: "expense",
@@ -116,20 +118,20 @@ export default function FinanceEntriesPage() {
       });
       await load();
     } catch (err) {
-      toast.error(apiError(err, "Failed to save entry"));
+      toast.error(apiError(err, t("financeEntries.saveFailed")));
     } finally {
       setSaving(false);
     }
   }
 
   async function onDelete(id: string) {
-    if (!confirm("Delete this finance entry?")) return;
+    if (!confirm(t("financeEntries.confirmDelete"))) return;
     try {
       await deleteFinanceEntry(id);
-      toast.success("Entry deleted");
+      toast.success(t("financeEntries.entryDeleted"));
       await load();
     } catch (err) {
-      toast.error(apiError(err, "Failed to delete"));
+      toast.error(apiError(err, t("financeEntries.deleteFailed")));
     }
   }
 
@@ -141,12 +143,10 @@ export default function FinanceEntriesPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
-            Phase 7 · Finance
+            {t("common.financeEyebrow")}
           </p>
-          <h1 className="text-nameplate text-xl">Income & expense entries</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Manual ledger for costs and income outside purchases and sales.
-          </p>
+          <h1 className="text-nameplate text-xl">{t("financeEntries.title")}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t("financeEntries.subtitle")}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Select
@@ -154,26 +154,26 @@ export default function FinanceEntriesPage() {
             onValueChange={(v) => setTypeFilter(v ?? "all")}
           >
             <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="Type" />
+              <SelectValue placeholder={t("financeEntries.typePh")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="income">Income</SelectItem>
-              <SelectItem value="expense">Expense</SelectItem>
+              <SelectItem value="all">{t("common.all")}</SelectItem>
+              <SelectItem value="income">{t("financeEntries.income")}</SelectItem>
+              <SelectItem value="expense">{t("financeEntries.expense")}</SelectItem>
             </SelectContent>
           </Select>
           <Button onClick={() => setOpen(true)}>
             <Plus className="size-4" />
-            Add entry
+            {t("financeEntries.addEntry")}
           </Button>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle className="text-nameplate">New finance entry</DialogTitle>
+                <DialogTitle className="text-nameplate">{t("financeEntries.newEntry")}</DialogTitle>
               </DialogHeader>
               <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-4">
                 <div className="grid gap-2">
-                  <Label>Type</Label>
+                  <Label>{t("common.type")}</Label>
                   <Select
                     value={form.watch("type")}
                     onValueChange={(v) =>
@@ -184,16 +184,16 @@ export default function FinanceEntriesPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="income">Income</SelectItem>
-                      <SelectItem value="expense">Expense</SelectItem>
+                      <SelectItem value="income">{t("financeEntries.income")}</SelectItem>
+                      <SelectItem value="expense">{t("financeEntries.expense")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="category">Category</Label>
+                  <Label htmlFor="category">{t("common.category")}</Label>
                   <Input
                     id="category"
-                    placeholder="e.g. rent, transport, scrap sale"
+                    placeholder={t("financeEntries.categoryPh")}
                     {...form.register("category")}
                   />
                   {form.formState.errors.category && (
@@ -204,7 +204,7 @@ export default function FinanceEntriesPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="grid gap-2">
-                    <Label htmlFor="amount">Amount</Label>
+                    <Label htmlFor="amount">{t("common.amount")}</Label>
                     <Input
                       id="amount"
                       type="number"
@@ -213,22 +213,26 @@ export default function FinanceEntriesPage() {
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="entryDate">Date</Label>
+                    <Label htmlFor="entryDate">{t("common.date")}</Label>
                     <Input id="entryDate" type="date" {...form.register("entryDate")} />
                   </div>
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="reference">Reference</Label>
-                  <Input id="reference" placeholder="Optional" {...form.register("reference")} />
+                  <Label htmlFor="reference">{t("financeEntries.reference")}</Label>
+                  <Input
+                    id="reference"
+                    placeholder={t("financeEntries.referenceOptional")}
+                    {...form.register("reference")}
+                  />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="notes">Notes</Label>
+                  <Label htmlFor="notes">{t("common.notes")}</Label>
                   <Textarea id="notes" rows={2} {...form.register("notes")} />
                 </div>
                 <DialogFooter>
                   <Button type="submit" disabled={saving}>
                     {saving && <Loader2 className="size-4 animate-spin" />}
-                    Save
+                    {t("common.save")}
                   </Button>
                 </DialogFooter>
               </form>
@@ -239,10 +243,8 @@ export default function FinanceEntriesPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-nameplate text-sm">Ledger</CardTitle>
-          <CardDescription>
-            Feeds other income / other expenses on the P&amp;L overview.
-          </CardDescription>
+          <CardTitle className="text-nameplate text-sm">{t("financeEntries.ledger")}</CardTitle>
+          <CardDescription>{t("financeEntries.ledgerDesc")}</CardDescription>
         </CardHeader>
         <CardContent className="px-0">
           {loading ? (
@@ -250,16 +252,18 @@ export default function FinanceEntriesPage() {
               <Loader2 className="size-6 animate-spin text-primary" />
             </div>
           ) : entries.length === 0 ? (
-            <p className="px-6 py-8 text-sm text-muted-foreground">No manual entries yet</p>
+            <p className="px-6 py-8 text-sm text-muted-foreground">
+              {t("financeEntries.noManualEntries")}
+            </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  <TableHead>Notes</TableHead>
+                  <TableHead>{t("common.date")}</TableHead>
+                  <TableHead>{t("common.type")}</TableHead>
+                  <TableHead>{t("common.category")}</TableHead>
+                  <TableHead className="text-right">{t("common.amount")}</TableHead>
+                  <TableHead>{t("common.notes")}</TableHead>
                   <TableHead className="w-12" />
                 </TableRow>
               </TableHeader>
@@ -269,7 +273,7 @@ export default function FinanceEntriesPage() {
                     <TableCell className="font-data text-xs">{formatDate(e.entryDate)}</TableCell>
                     <TableCell>
                       <Badge variant={e.type === "income" ? "secondary" : "outline"}>
-                        {e.type}
+                        {e.type === "income" ? t("financeEntries.income") : t("financeEntries.expense")}
                       </Badge>
                     </TableCell>
                     <TableCell>{e.category}</TableCell>

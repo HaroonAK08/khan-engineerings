@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -118,14 +119,16 @@ export function Topbar() {
             </Avatar>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-52">
-            <DropdownMenuLabel className="font-normal">
-              <p className="truncate text-sm font-medium text-foreground">
-                {user?.name ?? t("topbar.account")}
-              </p>
-              <p className="font-data truncate text-[11px] text-muted-foreground">
-                {user?.email}
-              </p>
-            </DropdownMenuLabel>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="font-normal">
+                <p className="truncate text-sm font-medium text-foreground">
+                  {user?.name ?? t("topbar.account")}
+                </p>
+                <p className="font-data truncate text-[11px] text-muted-foreground">
+                  {user?.email}
+                </p>
+              </DropdownMenuLabel>
+            </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={() => router.push("/dashboard/profile")}

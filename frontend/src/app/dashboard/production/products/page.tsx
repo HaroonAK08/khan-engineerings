@@ -31,6 +31,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useI18n } from "@/hooks/use-i18n";
 
 const productSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -62,6 +63,7 @@ function refName(value: Product["category"] | Product["size"]) {
 }
 
 export default function ProductsPage() {
+  const { t } = useI18n();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<CatalogItem[]>([]);
   const [sizes, setSizes] = useState<CatalogItem[]>([]);
@@ -104,11 +106,11 @@ export default function ProductsPage() {
       setSizes(s);
       setWarehouses(w);
     } catch (err) {
-      toast.error(apiError(err, "Failed to load products"));
+      toast.error(apiError(err, t("productsPage.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, [q]);
+  }, [q, t]);
 
   useEffect(() => {
     const t = setTimeout(load, 200);
@@ -164,15 +166,15 @@ export default function ProductsPage() {
       };
       if (editing) {
         await updateProduct(editing._id, body);
-        toast.success("Product updated");
+        toast.success(t("productsPage.updated"));
       } else {
         await createProduct(body);
-        toast.success("Product created");
+        toast.success(t("productsPage.created"));
       }
       setDialogOpen(false);
       await load();
     } catch (err) {
-      toast.error(apiError(err, "Failed to save product"));
+      toast.error(apiError(err, t("productsPage.saveFailed")));
     } finally {
       setSaving(false);
     }
@@ -181,10 +183,10 @@ export default function ProductsPage() {
   async function toggleActive(product: Product) {
     try {
       await updateProduct(product._id, { isActive: !product.isActive });
-      toast.success(product.isActive ? "Product deactivated" : "Product activated");
+      toast.success(product.isActive ? t("productsPage.deactivated") : t("productsPage.activated"));
       await load();
     } catch (err) {
-      toast.error(apiError(err, "Failed to update product"));
+      toast.error(apiError(err, t("productsPage.updateFailed")));
     }
   }
 
@@ -197,23 +199,21 @@ export default function ProductsPage() {
             className="mb-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="size-3" />
-            Production
+            {t("prod.title")}
           </Link>
-          <h1 className="text-nameplate text-xl">Products</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Finished goods — hub or drum — with weight, default price, and low-stock threshold.
-          </p>
+          <h1 className="text-nameplate text-xl">{t("financeSubnav.products")}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t("productsPage.subtitle")}</p>
         </div>
         <Button onClick={openCreate} className="gap-2">
           <Plus className="size-4" />
-          Add product
+          {t("productsPage.addProduct")}
         </Button>
       </div>
 
       <Card>
         <CardHeader className="pb-3">
           <Input
-            placeholder="Search name or SKU…"
+            placeholder={t("productsPage.searchPh")}
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
@@ -224,18 +224,18 @@ export default function ProductsPage() {
               <Loader2 className="size-6 animate-spin text-primary" />
             </div>
           ) : products.length === 0 ? (
-            <p className="py-10 text-center text-sm text-muted-foreground">No products yet</p>
+            <p className="py-10 text-center text-sm text-muted-foreground">{t("productsPage.empty")}</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Family</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Size</TableHead>
-                  <TableHead className="text-right">Low stock</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>{t("common.name")}</TableHead>
+                  <TableHead>{t("prod.family")}</TableHead>
+                  <TableHead>{t("common.category")}</TableHead>
+                  <TableHead>{t("finished.col.size")}</TableHead>
+                  <TableHead className="text-right">{t("productsPage.colLowStock")}</TableHead>
+                  <TableHead>{t("common.status")}</TableHead>
+                  <TableHead className="text-right">{t("common.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -262,16 +262,16 @@ export default function ProductsPage() {
                         variant={p.isActive ? "secondary" : "outline"}
                         className="font-data text-[10px]"
                       >
-                        {p.isActive ? "ACTIVE" : "INACTIVE"}
+                        {p.isActive ? t("sup.status.active") : t("sup.status.inactive")}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
                         <Button size="sm" variant="ghost" onClick={() => openEdit(p)}>
-                          Edit
+                          {t("sup.edit")}
                         </Button>
                         <Button size="sm" variant="ghost" onClick={() => toggleActive(p)}>
-                          {p.isActive ? "Deactivate" : "Activate"}
+                          {p.isActive ? t("sup.deactivate") : t("sup.activate")}
                         </Button>
                       </div>
                     </TableCell>
@@ -287,34 +287,34 @@ export default function ProductsPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-nameplate text-base">
-              {editing ? "Edit product" : "Add product"}
+              {editing ? t("productsPage.dialogEdit") : t("productsPage.addProduct")}
             </DialogTitle>
           </DialogHeader>
           <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="name">Name</Label>
+              <Label htmlFor="name">{t("common.name")}</Label>
               <Input id="name" {...form.register("name")} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="sku">SKU</Label>
+                <Label htmlFor="sku">{t("productsPage.sku")}</Label>
                 <Input id="sku" {...form.register("sku")} />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="family">Family</Label>
+                <Label htmlFor="family">{t("prod.family")}</Label>
                 <select
                   id="family"
                   className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
                   {...form.register("family")}
                 >
-                  <option value="hub">Hub</option>
-                  <option value="drum">Drum</option>
+                  <option value="hub">{t("prod.hub")}</option>
+                  <option value="drum">{t("prod.drum")}</option>
                 </select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="weightKg">Weight (kg)</Label>
+                <Label htmlFor="weightKg">{t("productsPage.weightKg")}</Label>
                 <Input
                   id="weightKg"
                   type="number"
@@ -323,7 +323,7 @@ export default function ProductsPage() {
                 />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="sellingPrice">Selling price</Label>
+                <Label htmlFor="sellingPrice">{t("productsPage.sellingPrice")}</Label>
                 <Input
                   id="sellingPrice"
                   type="number"
@@ -334,12 +334,12 @@ export default function ProductsPage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
-                <Label>Category</Label>
+                <Label>{t("common.category")}</Label>
                 <select
                   className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
                   {...form.register("category")}
                 >
-                  <option value="">None</option>
+                  <option value="">{t("productsPage.none")}</option>
                   {categories.map((c) => (
                     <option key={c._id} value={c._id}>
                       {c.name}
@@ -348,12 +348,12 @@ export default function ProductsPage() {
                 </select>
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label>Size</Label>
+                <Label>{t("finished.col.size")}</Label>
                 <select
                   className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
                   {...form.register("size")}
                 >
-                  <option value="">None</option>
+                  <option value="">{t("productsPage.none")}</option>
                   {sizes.map((s) => (
                     <option key={s._id} value={s._id}>
                       {s.name}
@@ -363,12 +363,12 @@ export default function ProductsPage() {
               </div>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label>Default warehouse</Label>
+              <Label>{t("productsPage.defaultWarehouse")}</Label>
               <select
                 className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
                 {...form.register("defaultWarehouse")}
               >
-                <option value="">System default</option>
+                <option value="">{t("productsPage.systemDefault")}</option>
                 {warehouses.map((w) => (
                   <option key={w._id} value={w._id}>
                     {w.name}
@@ -378,11 +378,11 @@ export default function ProductsPage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="unitLabel">Unit</Label>
+                <Label htmlFor="unitLabel">{t("other.unit")}</Label>
                 <Input id="unitLabel" {...form.register("unitLabel")} />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="lowStockThreshold">Low stock at</Label>
+                <Label htmlFor="lowStockThreshold">{t("productsPage.lowStockAt")}</Label>
                 <Input
                   id="lowStockThreshold"
                   type="number"
@@ -391,16 +391,16 @@ export default function ProductsPage() {
               </div>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="description">Description</Label>
+              <Label htmlFor="description">{t("productsPage.description")}</Label>
               <Input id="description" {...form.register("description")} />
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                Cancel
+                {t("common.cancel")}
               </Button>
               <Button type="submit" disabled={saving} className="gap-2">
                 {saving && <Loader2 className="size-4 animate-spin" />}
-                Save
+                {t("common.save")}
               </Button>
             </DialogFooter>
           </form>

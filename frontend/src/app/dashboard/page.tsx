@@ -420,7 +420,7 @@ export default function DashboardPage() {
                     >
                       {i === 0 && (
                         <Badge variant="secondary" className="mr-1 font-data text-[9px]">
-                          TOP
+                          {t("common.top")}
                         </Badge>
                       )}
                       {c.name}

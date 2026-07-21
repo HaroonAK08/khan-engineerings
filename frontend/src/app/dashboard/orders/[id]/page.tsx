@@ -2,14 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, Trash2 } from "lucide-react";
 import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
-import { listWarehouses, type CatalogItem } from "@/lib/inventory-api";
 import {
   cancelOrder,
   createDispatch,
@@ -36,6 +35,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useI18n } from "@/hooks/use-i18n";
 
 const paymentSchema = z.object({
   amount: z.number().positive("Amount must be greater than 0"),
@@ -51,14 +51,14 @@ function todayInput() {
 }
 
 export default function OrderDetailPage() {
+  const { t } = useI18n();
   const params = useParams();
+  const router = useRouter();
   const id = String(params.id);
   const [order, setOrder] = useState<SalesOrder | null>(null);
   const [payments, setPayments] = useState<CustomerPayment[]>([]);
   const [dispatches, setDispatches] = useState<Dispatch[]>([]);
-  const [warehouses, setWarehouses] = useState<CatalogItem[]>([]);
   const [dispatchQty, setDispatchQty] = useState<Record<string, number>>({});
-  const [warehouse, setWarehouse] = useState("");
   const [loading, setLoading] = useState(true);
   const [savingPay, setSavingPay] = useState(false);
   const [savingDispatch, setSavingDispatch] = useState(false);
@@ -71,16 +71,14 @@ export default function OrderDetailPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [o, pays, dsps, wh] = await Promise.all([
+      const [o, pays, dsps] = await Promise.all([
         getOrder(id),
         listPayments({ order: id }),
         listDispatches({ order: id }),
-        listWarehouses(),
       ]);
       setOrder(o);
       setPayments(pays);
       setDispatches(dsps);
-      setWarehouses(wh);
       const qty: Record<string, number> = {};
       for (const item of o.items) {
         const key = item._id || (typeof item.product === "object" ? item.product._id : item.product);
@@ -97,12 +95,12 @@ export default function OrderDetailPage() {
         });
       }
     } catch (err) {
-      toast.error(apiError(err, "Failed to load order"));
+      toast.error(apiError(err, t("orderDetail.loadFailed")));
       setOrder(null);
     } finally {
       setLoading(false);
     }
-  }, [id, payForm]);
+  }, [id, payForm, t]);
 
   useEffect(() => {
     load();
@@ -112,10 +110,10 @@ export default function OrderDetailPage() {
     setSavingPay(true);
     try {
       await recordOrderPayment(id, values);
-      toast.success("Payment recorded");
+      toast.success(t("common.paymentRecorded"));
       await load();
     } catch (err) {
-      toast.error(apiError(err, "Failed to record payment"));
+      toast.error(apiError(err, t("common.paymentFailed")));
     } finally {
       setSavingPay(false);
     }
@@ -138,7 +136,7 @@ export default function OrderDetailPage() {
       .filter((i) => i.quantity > 0);
 
     if (items.length === 0) {
-      toast.error("Enter dispatch quantities");
+      toast.error(t("orderDetail.enterDispatchQty"));
       return;
     }
 
@@ -146,26 +144,25 @@ export default function OrderDetailPage() {
     try {
       await createDispatch(id, {
         items,
-        warehouse: warehouse || undefined,
         dispatchDate: todayInput(),
       });
-      toast.success("Dispatch recorded — stock updated");
+      toast.success(t("orderDetail.dispatchRecorded"));
       await load();
     } catch (err) {
-      toast.error(apiError(err, "Failed to dispatch"));
+      toast.error(apiError(err, t("orderDetail.dispatchFailed")));
     } finally {
       setSavingDispatch(false);
     }
   }
 
   async function onCancel() {
-    if (!confirm("Cancel this order? Only allowed with no payments/dispatches.")) return;
+    if (!confirm(t("orderDetail.confirmCancel"))) return;
     try {
       await cancelOrder(id);
-      toast.success("Order cancelled");
-      await load();
+      toast.success(t("orderDetail.cancelled"));
+      router.push("/dashboard/orders");
     } catch (err) {
-      toast.error(apiError(err, "Failed to cancel"));
+      toast.error(apiError(err, t("orderDetail.cancelFailed")));
     }
   }
 
@@ -180,9 +177,9 @@ export default function OrderDetailPage() {
   if (!order) {
     return (
       <div className="flex flex-col items-center gap-3 py-20">
-        <p className="text-sm text-muted-foreground">Order not found</p>
+        <p className="text-sm text-muted-foreground">{t("orderDetail.notFound")}</p>
         <Link href="/dashboard/orders" className="text-sm text-primary hover:underline">
-          Back
+          {t("common.back")}
         </Link>
       </div>
     );
@@ -197,7 +194,7 @@ export default function OrderDetailPage() {
             className="mb-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="size-3" />
-            Orders
+            {t("orders.title")}
           </Link>
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-nameplate text-xl">{order.invoiceNo}</h1>
@@ -213,27 +210,32 @@ export default function OrderDetailPage() {
           </p>
         </div>
         <div className="text-right">
-          <p className="font-data text-[10px] text-muted-foreground uppercase">Balance</p>
+          <p className="font-data text-[10px] text-muted-foreground uppercase">
+            {t("common.balance")}
+          </p>
           <p className="font-data text-2xl">{formatMoney(order.balance)}</p>
           <p className="font-data text-xs text-muted-foreground">
-            Paid {formatMoney(order.amountPaid)} / {formatMoney(order.totalAmount)}
+            {t("orderDetail.paid", {
+              paid: formatMoney(order.amountPaid),
+              total: formatMoney(order.totalAmount),
+            })}
           </p>
         </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-nameplate text-sm">Invoice lines</CardTitle>
+          <CardTitle className="text-nameplate text-sm">{t("orderDetail.invoiceLines")}</CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Product</TableHead>
-                <TableHead className="text-right">Qty</TableHead>
-                <TableHead className="text-right">Dispatched</TableHead>
-                <TableHead className="text-right">Price</TableHead>
-                <TableHead className="text-right">Total</TableHead>
+                <TableHead>{t("common.product")}</TableHead>
+                <TableHead className="text-right">{t("common.qty")}</TableHead>
+                <TableHead className="text-right">{t("orderDetail.dispatched")}</TableHead>
+                <TableHead className="text-right">{t("orderDetail.price")}</TableHead>
+                <TableHead className="text-right">{t("common.total")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -261,8 +263,8 @@ export default function OrderDetailPage() {
         {order.balance > 0 && order.status !== "cancelled" && (
           <Card>
             <CardHeader>
-              <CardTitle className="text-nameplate text-sm">Record payment</CardTitle>
-              <CardDescription>Partial payments allowed.</CardDescription>
+              <CardTitle className="text-nameplate text-sm">{t("orderDetail.recordPayment")}</CardTitle>
+              <CardDescription>{t("orderDetail.partialAllowed")}</CardDescription>
             </CardHeader>
             <CardContent>
               <form
@@ -270,7 +272,7 @@ export default function OrderDetailPage() {
                 className="flex flex-col gap-3"
               >
                 <div className="flex flex-col gap-1.5">
-                  <Label>Amount</Label>
+                  <Label>{t("common.amount")}</Label>
                   <Input
                     type="number"
                     step="0.01"
@@ -278,28 +280,28 @@ export default function OrderDetailPage() {
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  <Label>Date</Label>
+                  <Label>{t("common.date")}</Label>
                   <Input type="date" {...payForm.register("paymentDate")} />
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  <Label>Method</Label>
+                  <Label>{t("common.method")}</Label>
                   <select
                     className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
                     {...payForm.register("method")}
                   >
-                    <option value="cash">Cash</option>
-                    <option value="bank">Bank</option>
-                    <option value="cheque">Cheque</option>
-                    <option value="other">Other</option>
+                    <option value="cash">{t("common.cash")}</option>
+                    <option value="bank">{t("common.bank")}</option>
+                    <option value="cheque">{t("common.cheque")}</option>
+                    <option value="other">{t("common.other")}</option>
                   </select>
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  <Label>Notes</Label>
+                  <Label>{t("common.notes")}</Label>
                   <Input {...payForm.register("notes")} />
                 </div>
                 <Button type="submit" disabled={savingPay} className="w-fit gap-2">
                   {savingPay && <Loader2 className="size-4 animate-spin" />}
-                  Save payment
+                  {t("orderDetail.savePayment")}
                 </Button>
               </form>
             </CardContent>
@@ -309,25 +311,10 @@ export default function OrderDetailPage() {
         {order.dispatchStatus !== "dispatched" && order.status !== "cancelled" && (
           <Card>
             <CardHeader>
-              <CardTitle className="text-nameplate text-sm">Dispatch</CardTitle>
-              <CardDescription>Ship goods and reduce finished stock.</CardDescription>
+              <CardTitle className="text-nameplate text-sm">{t("orderDetail.dispatch")}</CardTitle>
+              <CardDescription>{t("orderDetail.shipDesc")}</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
-              <div className="flex flex-col gap-1.5">
-                <Label>Warehouse</Label>
-                <select
-                  className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
-                  value={warehouse}
-                  onChange={(e) => setWarehouse(e.target.value)}
-                >
-                  <option value="">Default</option>
-                  {warehouses.map((w) => (
-                    <option key={w._id} value={w._id}>
-                      {w.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
               {order.items.map((item) => {
                 const key = String(
                   item._id ||
@@ -340,7 +327,7 @@ export default function OrderDetailPage() {
                     <span className="text-sm">
                       {productName(item.product)}{" "}
                       <span className="font-data text-xs text-muted-foreground">
-                        (left {remaining})
+                        ({t("orderDetail.left", { remaining })})
                       </span>
                     </span>
                     <Input
@@ -364,7 +351,7 @@ export default function OrderDetailPage() {
                 className="w-fit gap-2"
               >
                 {savingDispatch && <Loader2 className="size-4 animate-spin" />}
-                Record dispatch
+                {t("orderDetail.recordDispatch")}
               </Button>
             </CardContent>
           </Card>
@@ -374,18 +361,22 @@ export default function OrderDetailPage() {
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-nameplate text-sm">Payment history</CardTitle>
+            <CardTitle className="text-nameplate text-sm">
+              {t("customerDetail.paymentHistory")}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {payments.length === 0 ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">No payments</p>
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                {t("orderDetail.noPayments")}
+              </p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Method</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead>{t("common.date")}</TableHead>
+                    <TableHead>{t("common.method")}</TableHead>
+                    <TableHead className="text-right">{t("common.amount")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -408,18 +399,20 @@ export default function OrderDetailPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-nameplate text-sm">Dispatch records</CardTitle>
+            <CardTitle className="text-nameplate text-sm">{t("orderDetail.dispatchRecords")}</CardTitle>
           </CardHeader>
           <CardContent>
             {dispatches.length === 0 ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">No dispatches</p>
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                {t("orderDetail.noDispatches")}
+              </p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>No.</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Items</TableHead>
+                    <TableHead>{t("orderDetail.dispatchNo")}</TableHead>
+                    <TableHead>{t("common.date")}</TableHead>
+                    <TableHead>{t("claims.col.items")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -433,7 +426,7 @@ export default function OrderDetailPage() {
                         {d.items
                           .map(
                             (i) =>
-                              `${typeof i.product === "object" ? i.product.name : "Item"}×${i.quantity}`
+                              `${typeof i.product === "object" ? i.product.name : t("common.item")}×${i.quantity}`
                           )
                           .join(", ")}
                       </TableCell>
@@ -449,8 +442,9 @@ export default function OrderDetailPage() {
       {order.status !== "cancelled" &&
         order.amountPaid === 0 &&
         order.dispatchStatus === "pending" && (
-          <Button variant="destructive" className="w-fit" onClick={onCancel}>
-            Cancel order
+          <Button variant="destructive" className="w-fit gap-2" onClick={onCancel}>
+            <Trash2 className="size-4" />
+            {t("orderDetail.cancelOrder")}
           </Button>
         )}
     </div>

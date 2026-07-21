@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useI18n } from "@/hooks/use-i18n";
 
 function monthDefaults() {
   const now = new Date();
@@ -28,6 +29,7 @@ function monthDefaults() {
 }
 
 export default function PurchaseReportsPage() {
+  const { t } = useI18n();
   const d = monthDefaults();
   const [dateFrom, setDateFrom] = useState(d.from);
   const [dateTo, setDateTo] = useState(d.to);
@@ -40,11 +42,11 @@ export default function PurchaseReportsPage() {
     try {
       setReport(await getPurchaseReport({ dateFrom, dateTo }));
     } catch (err) {
-      toast.error(apiError(err, "Failed to load purchase report"));
+      toast.error(apiError(err, t("purchReports.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, t]);
 
   useEffect(() => {
     const t = setTimeout(load, 200);
@@ -55,9 +57,9 @@ export default function PurchaseReportsPage() {
     setExporting(format);
     try {
       await downloadReportExport("purchases", { format, dateFrom, dateTo });
-      toast.success(`${format.toUpperCase()} downloaded`);
+      toast.success(t("common.downloaded", { format: format.toUpperCase() }));
     } catch (err) {
-      toast.error(apiError(err, "Export failed"));
+      toast.error(apiError(err, t("common.exportFailed")));
     } finally {
       setExporting(null);
     }
@@ -68,8 +70,8 @@ export default function PurchaseReportsPage() {
       <ReportsSubnav />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-nameplate text-xl">Purchase reports</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Scrap spend and rates by supplier.</p>
+          <h1 className="text-nameplate text-xl">{t("rep.purchaseTitle")}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t("purchReports.subtitle")}</p>
         </div>
         <ExportButtons exporting={exporting} onExport={onExport} />
       </div>
@@ -85,10 +87,10 @@ export default function PurchaseReportsPage() {
         <>
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             {[
-              { label: "Purchases", value: String(report.totals.purchaseCount) },
-              { label: "Kg", value: formatKg(report.totals.totalKg) },
-              { label: "Spend", value: formatMoney(report.totals.totalSpend) },
-              { label: "Avg rate", value: formatMoney(report.totals.avgRate) },
+              { label: t("purchases.count"), value: String(report.totals.purchaseCount) },
+              { label: t("purchReports.kg"), value: formatKg(report.totals.totalKg) },
+              { label: t("purchReports.spend"), value: formatMoney(report.totals.totalSpend) },
+              { label: t("purchReports.avgRate"), value: formatMoney(report.totals.avgRate) },
             ].map((s) => (
               <Card key={s.label} className="py-0">
                 <CardContent className="p-4">
@@ -102,18 +104,18 @@ export default function PurchaseReportsPage() {
           </div>
           <Card>
             <CardHeader>
-              <CardTitle className="text-nameplate text-sm">By supplier</CardTitle>
+              <CardTitle className="text-nameplate text-sm">{t("purchReports.bySupplier")}</CardTitle>
             </CardHeader>
             <CardContent className="px-0">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Supplier</TableHead>
-                    <TableHead>Material</TableHead>
-                    <TableHead className="text-right">Count</TableHead>
-                    <TableHead className="text-right">Kg</TableHead>
-                    <TableHead className="text-right">Spend</TableHead>
-                    <TableHead className="text-right">Avg rate</TableHead>
+                    <TableHead>{t("common.supplier")}</TableHead>
+                    <TableHead>{t("prod.chargeMaterial")}</TableHead>
+                    <TableHead className="text-right">{t("purchReports.count")}</TableHead>
+                    <TableHead className="text-right">{t("purchReports.kg")}</TableHead>
+                    <TableHead className="text-right">{t("purchReports.spend")}</TableHead>
+                    <TableHead className="text-right">{t("purchReports.avgRate")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

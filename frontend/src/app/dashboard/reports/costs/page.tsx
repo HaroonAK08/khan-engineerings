@@ -19,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useI18n } from "@/hooks/use-i18n";
 
 function monthDefaults() {
   const now = new Date();
@@ -29,6 +30,7 @@ function monthDefaults() {
 }
 
 export default function ExpenseReportsPage() {
+  const { t } = useI18n();
   const d = monthDefaults();
   const [dateFrom, setDateFrom] = useState(d.from);
   const [dateTo, setDateTo] = useState(d.to);
@@ -41,11 +43,11 @@ export default function ExpenseReportsPage() {
     try {
       setReport(await getCostReport({ dateFrom, dateTo }));
     } catch (err) {
-      toast.error(apiError(err, "Failed to load expense report"));
+      toast.error(apiError(err, t("expReports.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, t]);
 
   useEffect(() => {
     const t = setTimeout(load, 200);
@@ -56,9 +58,9 @@ export default function ExpenseReportsPage() {
     setExporting(format);
     try {
       await downloadReportExport("expenses", { format, dateFrom, dateTo });
-      toast.success(`${format.toUpperCase()} downloaded`);
+      toast.success(t("common.downloaded", { format: format.toUpperCase() }));
     } catch (err) {
-      toast.error(apiError(err, "Export failed"));
+      toast.error(apiError(err, t("common.exportFailed")));
     } finally {
       setExporting(null);
     }
@@ -69,10 +71,8 @@ export default function ExpenseReportsPage() {
       <ReportsSubnav />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-nameplate text-xl">Expense reports</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Manufacturing costs by stage and category.
-          </p>
+          <h1 className="text-nameplate text-xl">{t("expReports.title")}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t("expReports.subtitle")}</p>
         </div>
         <ExportButtons exporting={exporting} onExport={onExport} />
       </div>
@@ -90,7 +90,7 @@ export default function ExpenseReportsPage() {
             <Card className="py-0">
               <CardContent className="p-4">
                 <p className="font-data text-[10px] tracking-wider text-muted-foreground uppercase">
-                  Total operating
+                  {t("expReports.totalOperating")}
                 </p>
                 <p className="font-data mt-1 text-xl">
                   {formatMoney(report.totals.totalOperatingCost)}
@@ -100,7 +100,7 @@ export default function ExpenseReportsPage() {
             <Card className="py-0">
               <CardContent className="p-4">
                 <p className="font-data text-[10px] tracking-wider text-muted-foreground uppercase">
-                  Expense lines
+                  {t("expReports.expenseLines")}
                 </p>
                 <p className="font-data mt-1 text-xl">{report.totals.expenseCount}</p>
               </CardContent>
@@ -109,14 +109,14 @@ export default function ExpenseReportsPage() {
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle className="text-nameplate text-sm">By stage</CardTitle>
+                <CardTitle className="text-nameplate text-sm">{t("expReports.byStage")}</CardTitle>
               </CardHeader>
               <CardContent className="px-0">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Stage</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead>{t("costReports.stage")}</TableHead>
+                      <TableHead className="text-right">{t("common.amount")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -134,14 +134,14 @@ export default function ExpenseReportsPage() {
             </Card>
             <Card>
               <CardHeader>
-                <CardTitle className="text-nameplate text-sm">By category</CardTitle>
+                <CardTitle className="text-nameplate text-sm">{t("expReports.byCategory")}</CardTitle>
               </CardHeader>
               <CardContent className="px-0">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Category</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead>{t("common.category")}</TableHead>
+                      <TableHead className="text-right">{t("common.amount")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>

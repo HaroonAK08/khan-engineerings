@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useI18n } from "@/hooks/use-i18n";
 
 type Line = { product: string; quantity: number; unitPrice: number };
 
@@ -21,6 +22,7 @@ function todayInput() {
 }
 
 export default function NewOrderPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -46,11 +48,11 @@ export default function NewOrderPage() {
         if (preset) setCustomer(preset);
       }
     } catch (err) {
-      toast.error(apiError(err, "Failed to load form data"));
+      toast.error(apiError(err, t("orderNew.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     load();
@@ -71,12 +73,12 @@ export default function NewOrderPage() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!customer) {
-      toast.error("Select a customer");
+      toast.error(t("orderNew.selectCustomerErr"));
       return;
     }
     const items = lines.filter((l) => l.product && l.quantity > 0);
     if (items.length === 0) {
-      toast.error("Add at least one line item");
+      toast.error(t("orderNew.addLineErr"));
       return;
     }
     setSaving(true);
@@ -88,10 +90,10 @@ export default function NewOrderPage() {
         notes,
         items,
       });
-      toast.success("Order created");
+      toast.success(t("orderNew.created"));
       router.push(`/dashboard/orders/${order._id}`);
     } catch (err) {
-      toast.error(apiError(err, "Failed to create order"));
+      toast.error(apiError(err, t("orderNew.createFailed")));
     } finally {
       setSaving(false);
     }
@@ -113,26 +115,26 @@ export default function NewOrderPage() {
           className="mb-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-3" />
-          Orders
+          {t("orders.title")}
         </Link>
-        <h1 className="text-nameplate text-xl">New sales order</h1>
+        <h1 className="text-nameplate text-xl">{t("orderNew.title")}</h1>
       </div>
 
       <form onSubmit={onSubmit} className="flex flex-col gap-6">
         <Card>
           <CardHeader>
-            <CardTitle className="text-nameplate text-sm">Order details</CardTitle>
+            <CardTitle className="text-nameplate text-sm">{t("orderNew.orderDetails")}</CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5 sm:col-span-2">
-              <Label>Customer</Label>
+              <Label>{t("common.customer")}</Label>
               <select
                 className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
                 value={customer}
                 onChange={(e) => setCustomer(e.target.value)}
                 required
               >
-                <option value="">Select customer…</option>
+                <option value="">{t("orderNew.selectCustomer")}</option>
                 {customers.map((c) => (
                   <option key={c._id} value={c._id}>
                     {c.name}
@@ -141,15 +143,15 @@ export default function NewOrderPage() {
               </select>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label>Order date</Label>
+              <Label>{t("orderNew.orderDate")}</Label>
               <Input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label>Due date</Label>
+              <Label>{t("orderNew.dueDate")}</Label>
               <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </div>
             <div className="flex flex-col gap-1.5 sm:col-span-2">
-              <Label>Notes</Label>
+              <Label>{t("common.notes")}</Label>
               <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
             </div>
           </CardContent>
@@ -157,8 +159,8 @@ export default function NewOrderPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-nameplate text-sm">Line items</CardTitle>
-            <CardDescription>Products sold on this invoice.</CardDescription>
+            <CardTitle className="text-nameplate text-sm">{t("orderNew.lineItems")}</CardTitle>
+            <CardDescription>{t("orderNew.lineItemsDesc")}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             {lines.map((line, index) => (
@@ -168,7 +170,7 @@ export default function NewOrderPage() {
                   value={line.product}
                   onChange={(e) => updateLine(index, { product: e.target.value })}
                 >
-                  <option value="">Product…</option>
+                  <option value="">{t("orderNew.productPh")}</option>
                   {products.map((p) => (
                     <option key={p._id} value={p._id}>
                       {p.name}
@@ -181,7 +183,7 @@ export default function NewOrderPage() {
                   className="sm:col-span-2"
                   value={line.quantity}
                   onChange={(e) => updateLine(index, { quantity: Number(e.target.value) })}
-                  placeholder="Qty"
+                  placeholder={t("orderNew.qtyPh")}
                 />
                 <Input
                   type="number"
@@ -189,7 +191,7 @@ export default function NewOrderPage() {
                   className="sm:col-span-3"
                   value={line.unitPrice}
                   onChange={(e) => updateLine(index, { unitPrice: Number(e.target.value) })}
-                  placeholder="Unit price"
+                  placeholder={t("orderNew.unitPricePh")}
                 />
                 <div className="flex items-center justify-between gap-2 sm:col-span-2">
                   <span className="font-data text-xs">{formatMoney(line.quantity * line.unitPrice)}</span>
@@ -212,17 +214,17 @@ export default function NewOrderPage() {
               onClick={() => setLines((prev) => [...prev, { product: "", quantity: 1, unitPrice: 0 }])}
             >
               <Plus className="size-4" />
-              Add line
+              {t("orderNew.addLine")}
             </Button>
             <p className="font-data text-right text-sm">
-              Total: <span className="text-lg">{formatMoney(total)}</span>
+              {t("orderNew.total")} <span className="text-lg">{formatMoney(total)}</span>
             </p>
           </CardContent>
         </Card>
 
         <Button type="submit" disabled={saving} className="w-fit gap-2">
           {saving && <Loader2 className="size-4 animate-spin" />}
-          Create order & invoice
+          {t("orderNew.createBtn")}
         </Button>
       </form>
     </div>

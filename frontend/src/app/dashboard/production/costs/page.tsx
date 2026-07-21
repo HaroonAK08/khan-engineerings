@@ -18,8 +18,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useI18n } from "@/hooks/use-i18n";
 
 export default function CostReportsPage() {
+  const { t } = useI18n();
   const [report, setReport] = useState<CostReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [dateFrom, setDateFrom] = useState("");
@@ -33,11 +35,11 @@ export default function CostReportsPage() {
       if (dateTo) params.dateTo = dateTo;
       setReport(await getCostReport(params));
     } catch (err) {
-      toast.error(apiError(err, "Failed to load cost report"));
+      toast.error(apiError(err, t("costReports.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, t]);
 
   useEffect(() => {
     const t = setTimeout(load, 200);
@@ -52,12 +54,10 @@ export default function CostReportsPage() {
           className="mb-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-3" />
-          Production
+          {t("prod.title")}
         </Link>
-        <h1 className="text-nameplate text-xl">Manufacturing costs</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Operating spend by category and production run.
-        </p>
+        <h1 className="text-nameplate text-xl">{t("costReports.title")}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{t("costReports.subtitle")}</p>
       </div>
 
       <Card>
@@ -76,39 +76,43 @@ export default function CostReportsPage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {[
               {
-                label: "Total operating cost",
+                id: "total",
+                label: t("costReports.totalOperating"),
                 value: formatMoney(report.totals.totalOperatingCost),
-                hint: `${report.totals.expenseCount} expense entries`,
+                hint: t("costReports.expenseEntries", { count: report.totals.expenseCount }),
                 accent: "bg-chart-1",
               },
               {
-                label: "Most expensive stage",
+                id: "mostExpensive",
+                label: t("costReports.mostExpensiveStage"),
                 value: report.mostExpensiveStage?.label ?? "—",
                 hint: report.mostExpensiveStage
                   ? formatMoney(report.mostExpensiveStage.amount)
-                  : "no expenses yet",
+                  : t("costReports.noExpensesYet"),
                 accent: "bg-chart-4",
               },
               {
-                label: "Expense trend",
+                id: "expenseTrend",
+                label: t("costReports.expenseTrend"),
                 value: report.expenseTrend
                   ? `${report.expenseTrend.changePct != null ? `${report.expenseTrend.changePct > 0 ? "+" : ""}${report.expenseTrend.changePct}%` : "—"}`
                   : "—",
                 hint: report.expenseTrend
                   ? `${report.expenseTrend.from} → ${report.expenseTrend.to}`
-                  : "need 2+ months of data",
+                  : t("costReports.need2Months"),
                 accent: "bg-chart-2",
               },
               {
-                label: "Top category",
+                id: "topCategory",
+                label: t("costReports.topCategory"),
                 value: report.risingCategories[0]?.label ?? "—",
                 hint: report.risingCategories[0]
                   ? formatMoney(report.risingCategories[0].amount)
-                  : "no spend yet",
+                  : t("costReports.noSpendYet"),
                 accent: "bg-chart-3",
               },
             ].map((stat) => (
-              <Card key={stat.label} className="relative overflow-hidden py-0">
+              <Card key={stat.id} className="relative overflow-hidden py-0">
                 <span className={`absolute inset-x-0 top-0 h-1 ${stat.accent}`} aria-hidden />
                 <CardContent className="p-5">
                   <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
@@ -116,10 +120,10 @@ export default function CostReportsPage() {
                   </p>
                   <p className="font-data mt-2 text-2xl font-medium">{stat.value}</p>
                   <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                    {stat.label === "Expense trend" && report.expenseTrend?.direction === "up" && (
+                    {stat.id === "expenseTrend" && report.expenseTrend?.direction === "up" && (
                       <TrendingUp className="size-3 text-destructive" />
                     )}
-                    {stat.label === "Expense trend" && report.expenseTrend?.direction === "down" && (
+                    {stat.id === "expenseTrend" && report.expenseTrend?.direction === "down" && (
                       <TrendingDown className="size-3 text-chart-3" />
                     )}
                     {stat.hint}
@@ -132,16 +136,16 @@ export default function CostReportsPage() {
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle className="text-nameplate text-sm">Cost by stage</CardTitle>
-                <CardDescription>Which workflow stage costs the most?</CardDescription>
+                <CardTitle className="text-nameplate text-sm">{t("costReports.costByStage")}</CardTitle>
+                <CardDescription>{t("costReports.costByStageDesc")}</CardDescription>
               </CardHeader>
               <CardContent>
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Stage</TableHead>
+                      <TableHead>{t("costReports.stage")}</TableHead>
                       <TableHead className="text-right">#</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead className="text-right">{t("common.amount")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -152,7 +156,7 @@ export default function CostReportsPage() {
                             {row.label}
                             {report.mostExpensiveStage?.stage === row.stage && row.amount > 0 && (
                               <Badge variant="secondary" className="font-data text-[9px]">
-                                HIGHEST
+                                {t("costReports.highest")}
                               </Badge>
                             )}
                           </span>
@@ -170,16 +174,16 @@ export default function CostReportsPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-nameplate text-sm">Cost by category</CardTitle>
-                <CardDescription>Where expenses concentrate.</CardDescription>
+                <CardTitle className="text-nameplate text-sm">{t("costReports.costByCategory")}</CardTitle>
+                <CardDescription>{t("costReports.costByCategoryDesc")}</CardDescription>
               </CardHeader>
               <CardContent>
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Category</TableHead>
+                      <TableHead>{t("common.category")}</TableHead>
                       <TableHead className="text-right">#</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead className="text-right">{t("common.amount")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -200,20 +204,22 @@ export default function CostReportsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-nameplate text-sm">Monthly spend</CardTitle>
-              <CardDescription>Track whether expenses are increasing over time.</CardDescription>
+              <CardTitle className="text-nameplate text-sm">{t("costReports.monthlySpend")}</CardTitle>
+              <CardDescription>{t("costReports.monthlySpendDesc")}</CardDescription>
             </CardHeader>
             <CardContent>
               {report.byMonth.length === 0 ? (
-                <p className="py-8 text-center text-sm text-muted-foreground">No monthly data</p>
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  {t("costReports.noMonthlyData")}
+                </p>
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Month</TableHead>
-                      <TableHead className="text-right">Expenses</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                      <TableHead className="text-right">Change</TableHead>
+                      <TableHead>{t("dash.month")}</TableHead>
+                      <TableHead className="text-right">{t("nav.expenses")}</TableHead>
+                      <TableHead className="text-right">{t("common.amount")}</TableHead>
+                      <TableHead className="text-right">{t("costReports.change")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -253,21 +259,23 @@ export default function CostReportsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-nameplate text-sm">Costliest batches</CardTitle>
-              <CardDescription>Operating cost per batch in range.</CardDescription>
+              <CardTitle className="text-nameplate text-sm">{t("costReports.costliestBatches")}</CardTitle>
+              <CardDescription>{t("costReports.costliestBatchesDesc")}</CardDescription>
             </CardHeader>
             <CardContent>
               {report.byBatch.length === 0 ? (
-                <p className="py-8 text-center text-sm text-muted-foreground">No batch costs yet</p>
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  {t("costReports.noBatchCosts")}
+                </p>
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Batch</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead className="text-right">Good</TableHead>
-                      <TableHead className="text-right">Operating</TableHead>
-                      <TableHead className="text-right">Per unit</TableHead>
+                      <TableHead>{t("costReports.batch")}</TableHead>
+                      <TableHead>{t("common.date")}</TableHead>
+                      <TableHead className="text-right">{t("costReports.good")}</TableHead>
+                      <TableHead className="text-right">{t("costReports.operating")}</TableHead>
+                      <TableHead className="text-right">{t("costReports.perUnit")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>

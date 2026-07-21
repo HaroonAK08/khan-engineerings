@@ -17,8 +17,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useI18n } from "@/hooks/use-i18n";
 
 export default function ProductionReportsPage() {
+  const { t } = useI18n();
   const [report, setReport] = useState<ProductionReport | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,11 +42,11 @@ export default function ProductionReportsPage() {
       setReport(reportData);
       setProducts(productData);
     } catch (err) {
-      toast.error(apiError(err, "Failed to load report"));
+      toast.error(apiError(err, t("prodReports.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, product]);
+  }, [dateFrom, dateTo, product, t]);
 
   useEffect(() => {
     const t = setTimeout(load, 200);
@@ -61,12 +63,10 @@ export default function ProductionReportsPage() {
           className="mb-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-3" />
-          Production
+          {t("prod.title")}
         </Link>
-        <h1 className="text-nameplate text-xl">Production reports</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Material used, waste, and pieces produced.
-        </p>
+        <h1 className="text-nameplate text-xl">{t("prodReports.title")}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{t("prodReports.subtitle")}</p>
       </div>
 
       <Card>
@@ -78,7 +78,7 @@ export default function ProductionReportsPage() {
             value={product}
             onChange={(e) => setProduct(e.target.value)}
           >
-            <option value="">All products</option>
+            <option value="">{t("prodReports.allProducts")}</option>
             {products.map((p) => (
               <option key={p._id} value={p._id}>
                 {p.name}
@@ -97,21 +97,21 @@ export default function ProductionReportsPage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {[
               {
-                label: "Material used",
+                label: t("prodReports.materialUsed"),
                 value: `${formatKg(report.totals.netConsumedKg ?? report.totals.totalInputKg)} kg`,
-                hint: "scrap / daig deducted",
+                hint: t("prodReports.scrapDaigHint"),
                 accent: "bg-chart-1",
               },
               {
-                label: "Waste",
+                label: t("prod.calcWaste"),
                 value: `${formatKg(report.totals.materialLossKg ?? report.totals.wasteKg)} kg`,
-                hint: `${report.totals.lossRate ?? 0}% of input`,
+                hint: t("prodReports.ofInput", { pct: report.totals.lossRate ?? 0 }),
                 accent: "bg-chart-4",
               },
               {
-                label: "Pieces produced",
+                label: t("prodReports.piecesProduced"),
                 value: String(report.totals.finishedUnits ?? report.totals.goodUnits),
-                hint: `${report.totals.batchCount} runs`,
+                hint: t("prodReports.runsHint", { count: report.totals.batchCount }),
                 accent: "bg-chart-3",
               },
             ].map((stat) => (
@@ -130,22 +130,22 @@ export default function ProductionReportsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-nameplate text-sm">By product</CardTitle>
-              <CardDescription>Pieces and material use by hub / drum type</CardDescription>
+              <CardTitle className="text-nameplate text-sm">{t("prodReports.byProduct")}</CardTitle>
+              <CardDescription>{t("prodReports.byProductDesc")}</CardDescription>
             </CardHeader>
             <CardContent>
               {byProduct.length === 0 ? (
                 <p className="py-10 text-center text-sm text-muted-foreground">
-                  No production in this range
+                  {t("prodReports.noProdRange")}
                 </p>
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Product</TableHead>
-                      <TableHead className="text-right">Runs</TableHead>
-                      <TableHead className="text-right">Used (kg)</TableHead>
-                      <TableHead className="text-right">Pieces</TableHead>
+                      <TableHead>{t("common.product")}</TableHead>
+                      <TableHead className="text-right">{t("prodReports.runs")}</TableHead>
+                      <TableHead className="text-right">{t("prod.col.usedKg")}</TableHead>
+                      <TableHead className="text-right">{t("prodReports.pieces")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>

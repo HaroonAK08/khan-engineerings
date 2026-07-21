@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useI18n } from "@/hooks/use-i18n";
 
 function monthDefaults() {
   const now = new Date();
@@ -30,6 +31,7 @@ function monthDefaults() {
 }
 
 export default function FinanceExpensesPage() {
+  const { t } = useI18n();
   const defaults = monthDefaults();
   const [dateFrom, setDateFrom] = useState(defaults.from);
   const [dateTo, setDateTo] = useState(defaults.to);
@@ -62,11 +64,11 @@ export default function FinanceExpensesPage() {
       setMfg(mf);
       setSuppliers(supp.suppliers);
     } catch (err) {
-      toast.error(apiError(err, "Failed to load expense analysis"));
+      toast.error(apiError(err, t("financeExpenses.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, t]);
 
   useEffect(() => {
     const t = setTimeout(load, 200);
@@ -81,12 +83,10 @@ export default function FinanceExpensesPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
-            Phase 7 · Finance
+            {t("common.financeEyebrow")}
           </p>
-          <h1 className="text-nameplate text-xl">Expense analysis</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Spot unnecessary spend — manufacturing hotspots and supplier outflows.
-          </p>
+          <h1 className="text-nameplate text-xl">{t("financeExpenses.title")}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t("financeExpenses.subtitle")}</p>
         </div>
         <div className="flex gap-2">
           <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
@@ -116,8 +116,8 @@ export default function FinanceExpensesPage() {
           {breakdown.hotspots.length > 0 && (
             <Card className="border-destructive/30">
               <CardHeader>
-                <CardTitle className="text-nameplate text-sm">Expense hotspots</CardTitle>
-                <CardDescription>Largest buckets — review for waste.</CardDescription>
+                <CardTitle className="text-nameplate text-sm">{t("financeExpenses.hotspots")}</CardTitle>
+                <CardDescription>{t("financeExpenses.hotspotsDesc")}</CardDescription>
               </CardHeader>
               <CardContent>
                 <ul className="flex flex-col gap-2 text-sm">
@@ -137,11 +137,11 @@ export default function FinanceExpensesPage() {
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle className="text-nameplate text-sm">Manufacturing by stage</CardTitle>
+                <CardTitle className="text-nameplate text-sm">{t("financeExpenses.mfgByStage")}</CardTitle>
                 <CardDescription>
-                  Total ops {formatMoney(mfg.operating.totalOperatingCost)}
+                  {t("financeExpenses.totalOpsLabel")} {formatMoney(mfg.operating.totalOperatingCost)}
                   {mfg.mostExpensiveStage
-                    ? ` · Heaviest: ${mfg.mostExpensiveStage.label}`
+                    ? ` · ${t("financeExpenses.heaviestLabel")}: ${mfg.mostExpensiveStage.label}`
                     : ""}
                 </CardDescription>
               </CardHeader>
@@ -149,15 +149,15 @@ export default function FinanceExpensesPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Stage</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead>{t("costReports.stage")}</TableHead>
+                      <TableHead className="text-right">{t("common.amount")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {mfg.byStage.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={2} className="text-muted-foreground">
-                          No batch expenses
+                          {t("financeExpenses.noBatchExpenses")}
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -177,26 +177,28 @@ export default function FinanceExpensesPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-nameplate text-sm">Manufacturing by category</CardTitle>
+                <CardTitle className="text-nameplate text-sm">{t("financeExpenses.mfgByCategory")}</CardTitle>
                 <CardDescription>
-                  Material estimate {formatMoney(mfg.materialEstimate.total)} (
-                  {mfg.materialEstimate.netKg.toFixed(1)} kg)
+                  {t("financeExpenses.materialEstimate", {
+                    amount: formatMoney(mfg.materialEstimate.total),
+                    kg: mfg.materialEstimate.netKg.toFixed(1),
+                  })}
                 </CardDescription>
               </CardHeader>
               <CardContent className="px-0">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Category</TableHead>
-                      <TableHead className="text-right">Share</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead>{t("common.category")}</TableHead>
+                      <TableHead className="text-right">{t("financeExpenses.share")}</TableHead>
+                      <TableHead className="text-right">{t("common.amount")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {mfg.byCategory.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={3} className="text-muted-foreground">
-                          No categories
+                          {t("financeExpenses.noCategories")}
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -220,24 +222,26 @@ export default function FinanceExpensesPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-nameplate text-sm">Supplier expenses</CardTitle>
-              <CardDescription>Purchase spend and cash paid in period.</CardDescription>
+              <CardTitle className="text-nameplate text-sm">
+                {t("financeExpenses.supplierExpenses")}
+              </CardTitle>
+              <CardDescription>{t("financeExpenses.supplierExpensesDesc")}</CardDescription>
             </CardHeader>
             <CardContent className="px-0">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Supplier</TableHead>
-                    <TableHead className="text-right">Purchases</TableHead>
-                    <TableHead className="text-right">Kg</TableHead>
-                    <TableHead className="text-right">Cash paid</TableHead>
+                    <TableHead>{t("common.supplier")}</TableHead>
+                    <TableHead className="text-right">{t("purchases.count")}</TableHead>
+                    <TableHead className="text-right">{t("purchReports.kg")}</TableHead>
+                    <TableHead className="text-right">{t("financeExpenses.cashPaid")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {suppliers.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={4} className="text-muted-foreground">
-                        No supplier spend
+                        {t("financeExpenses.noSupplierSpend")}
                       </TableCell>
                     </TableRow>
                   ) : (

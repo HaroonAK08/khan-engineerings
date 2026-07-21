@@ -17,8 +17,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useI18n } from "@/hooks/use-i18n";
 
 export default function FinanceMonthlyPage() {
+  const { t } = useI18n();
   const [months, setMonths] = useState<MonthlyPoint[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -27,11 +29,11 @@ export default function FinanceMonthlyPage() {
     try {
       setMonths(await getFinanceMonthly({ months: 12 }));
     } catch (err) {
-      toast.error(apiError(err, "Failed to load monthly reports"));
+      toast.error(apiError(err, t("financeMonthly.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void load();
@@ -47,12 +49,10 @@ export default function FinanceMonthlyPage() {
 
       <div>
         <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
-          Phase 7 · Finance
+          {t("common.financeEyebrow")}
         </p>
-        <h1 className="text-nameplate text-xl">Monthly reports</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Twelve-month profit and cash movement.
-        </p>
+        <h1 className="text-nameplate text-xl">{t("financeMonthly.title")}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{t("financeMonthly.subtitle")}</p>
       </div>
 
       {loading ? (
@@ -63,8 +63,8 @@ export default function FinanceMonthlyPage() {
         <>
           <Card>
             <CardHeader>
-              <CardTitle className="text-nameplate text-sm">Revenue by month</CardTitle>
-              <CardDescription>Bar height relative to peak revenue.</CardDescription>
+              <CardTitle className="text-nameplate text-sm">{t("financeMonthly.revenueByMonth")}</CardTitle>
+              <CardDescription>{t("financeMonthly.barHeightDesc")}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex h-40 items-end gap-1.5 sm:gap-2">
@@ -86,7 +86,7 @@ export default function FinanceMonthlyPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-nameplate text-sm">Cash in vs out</CardTitle>
+              <CardTitle className="text-nameplate text-sm">{t("financeMonthly.cashInVsOut")}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex h-36 items-end gap-1.5 sm:gap-2">
@@ -107,10 +107,10 @@ export default function FinanceMonthlyPage() {
               </div>
               <div className="mt-3 flex gap-4 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1.5">
-                  <span className="size-2 rounded-sm bg-chart-3" /> Cash in
+                  <span className="size-2 rounded-sm bg-chart-3" /> {t("financeOverview.cashIn")}
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="size-2 rounded-sm bg-chart-2" /> Cash out
+                  <span className="size-2 rounded-sm bg-chart-2" /> {t("financeOverview.cashOut")}
                 </span>
               </div>
             </CardContent>
@@ -118,18 +118,18 @@ export default function FinanceMonthlyPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-nameplate text-sm">Month detail</CardTitle>
+              <CardTitle className="text-nameplate text-sm">{t("financeMonthly.monthDetail")}</CardTitle>
             </CardHeader>
             <CardContent className="px-0">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Month</TableHead>
-                    <TableHead className="text-right">Revenue</TableHead>
-                    <TableHead className="text-right">Expenses</TableHead>
-                    <TableHead className="text-right">Net</TableHead>
-                    <TableHead className="text-right">Cash net</TableHead>
-                    <TableHead>Result</TableHead>
+                    <TableHead>{t("dash.month")}</TableHead>
+                    <TableHead className="text-right">{t("financeOverview.revenue")}</TableHead>
+                    <TableHead className="text-right">{t("nav.expenses")}</TableHead>
+                    <TableHead className="text-right">{t("financeMonthly.net")}</TableHead>
+                    <TableHead className="text-right">{t("financeMonthly.cashNet")}</TableHead>
+                    <TableHead>{t("financeMonthly.result")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -150,7 +150,7 @@ export default function FinanceMonthlyPage() {
                       </TableCell>
                       <TableCell>
                         <Badge variant={m.isProfit ? "secondary" : "destructive"}>
-                          {m.isProfit ? "Profit" : "Loss"}
+                          {m.isProfit ? t("financeOverview.profitLabel") : t("financeMonthly.loss")}
                         </Badge>
                       </TableCell>
                     </TableRow>

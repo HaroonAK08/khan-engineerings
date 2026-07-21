@@ -19,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useI18n } from "@/hooks/use-i18n";
 
 function monthDefaults() {
   const now = new Date();
@@ -29,6 +30,7 @@ function monthDefaults() {
 }
 
 export default function ProductionReportsHubPage() {
+  const { t } = useI18n();
   const d = monthDefaults();
   const [dateFrom, setDateFrom] = useState(d.from);
   const [dateTo, setDateTo] = useState(d.to);
@@ -41,11 +43,11 @@ export default function ProductionReportsHubPage() {
     try {
       setReport(await getProductionReport({ dateFrom, dateTo }));
     } catch (err) {
-      toast.error(apiError(err, "Failed to load production report"));
+      toast.error(apiError(err, t("prodReportsHub.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, t]);
 
   useEffect(() => {
     const t = setTimeout(load, 200);
@@ -56,9 +58,9 @@ export default function ProductionReportsHubPage() {
     setExporting(format);
     try {
       await downloadReportExport("production", { format, dateFrom, dateTo });
-      toast.success(`${format.toUpperCase()} downloaded`);
+      toast.success(t("common.downloaded", { format: format.toUpperCase() }));
     } catch (err) {
-      toast.error(apiError(err, "Export failed"));
+      toast.error(apiError(err, t("common.exportFailed")));
     } finally {
       setExporting(null);
     }
@@ -69,8 +71,8 @@ export default function ProductionReportsHubPage() {
       <ReportsSubnav />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-nameplate text-xl">Production reports</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Material used and pieces produced.</p>
+          <h1 className="text-nameplate text-xl">{t("prodReports.title")}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t("prodReportsHub.subtitle")}</p>
         </div>
         <ExportButtons exporting={exporting} onExport={onExport} />
       </div>
@@ -86,17 +88,17 @@ export default function ProductionReportsHubPage() {
         <>
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             {[
-              { label: "Runs", value: String(report.totals.batchCount) },
+              { label: t("prodReports.runs"), value: String(report.totals.batchCount) },
               {
-                label: "Pieces",
+                label: t("prodReports.pieces"),
                 value: String(report.totals.finishedUnits ?? report.totals.goodUnits),
               },
               {
-                label: "Waste %",
+                label: t("prod.wastePercent"),
                 value: `${report.totals.lossRate ?? 0}%`,
               },
               {
-                label: "Material used",
+                label: t("prodReports.materialUsed"),
                 value: `${formatKg(report.totals.netConsumedKg ?? report.totals.totalInputKg ?? 0)} kg`,
               },
             ].map((s) => (
@@ -112,16 +114,16 @@ export default function ProductionReportsHubPage() {
           </div>
           <Card>
             <CardHeader>
-              <CardTitle className="text-nameplate text-sm">By product</CardTitle>
+              <CardTitle className="text-nameplate text-sm">{t("prodReports.byProduct")}</CardTitle>
             </CardHeader>
             <CardContent className="px-0">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Product</TableHead>
-                    <TableHead className="text-right">Runs</TableHead>
-                    <TableHead className="text-right">Pieces</TableHead>
-                    <TableHead className="text-right">Used kg</TableHead>
+                    <TableHead>{t("common.product")}</TableHead>
+                    <TableHead className="text-right">{t("prodReports.runs")}</TableHead>
+                    <TableHead className="text-right">{t("prodReports.pieces")}</TableHead>
+                    <TableHead className="text-right">{t("prodReportsHub.usedKg")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

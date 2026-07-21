@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Loader2, Plus } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
 import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
-import { customerName, listOrders, type SalesOrder } from "@/lib/sales-api";
+import { cancelOrder, customerName, listOrders, type SalesOrder } from "@/lib/sales-api";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -19,10 +20,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+function canDeleteOrder(o: SalesOrder) {
+  return o.status !== "cancelled" && o.amountPaid === 0 && o.dispatchStatus === "pending";
+}
+
 export default function OrdersPage() {
   const { t } = useI18n();
   const [orders, setOrders] = useState<SalesOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [paymentStatus, setPaymentStatus] = useState("");
 
@@ -41,9 +47,24 @@ export default function OrdersPage() {
   }, [q, paymentStatus]);
 
   useEffect(() => {
-    const t = setTimeout(load, 200);
-    return () => clearTimeout(t);
+    const timer = setTimeout(load, 200);
+    return () => clearTimeout(timer);
   }, [load]);
+
+  async function onDelete(order: SalesOrder) {
+    if (!canDeleteOrder(order)) return;
+    if (!confirm(t("orders.confirmDelete"))) return;
+    setDeletingId(order._id);
+    try {
+      await cancelOrder(order._id);
+      toast.success(t("orders.deleted"));
+      await load();
+    } catch (err) {
+      toast.error(apiError(err, t("orders.deleteFailed")));
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -109,6 +130,9 @@ export default function OrdersPage() {
                   <TableHead className="text-right">{t("orders.col.balance")}</TableHead>
                   <TableHead>{t("orders.col.payment")}</TableHead>
                   <TableHead>{t("orders.col.dispatch")}</TableHead>
+                  <TableHead className="w-12">
+                    <span className="sr-only">{t("orders.col.actions")}</span>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -142,6 +166,25 @@ export default function OrdersPage() {
                       <Badge variant="outline" className="font-data text-[9px] uppercase">
                         {o.dispatchStatus}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {canDeleteOrder(o) && (
+                        <Button
+                          type="button"
+                          size="icon-sm"
+                          variant="ghost"
+                          className="text-muted-foreground hover:text-destructive"
+                          disabled={deletingId === o._id}
+                          aria-label={t("orders.delete")}
+                          onClick={() => onDelete(o)}
+                        >
+                          {deletingId === o._id ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="size-4" />
+                          )}
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

@@ -19,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useI18n } from "@/hooks/use-i18n";
 
 function monthDefaults() {
   const now = new Date();
@@ -28,6 +29,7 @@ function monthDefaults() {
 }
 
 export default function SalesReportsHubPage() {
+  const { t } = useI18n();
   const defaults = monthDefaults();
   const [dateFrom, setDateFrom] = useState(defaults.from);
   const [dateTo, setDateTo] = useState(defaults.to);
@@ -40,11 +42,11 @@ export default function SalesReportsHubPage() {
     try {
       setReport(await getSalesReport({ dateFrom, dateTo }));
     } catch (err) {
-      toast.error(apiError(err, "Failed to load sales report"));
+      toast.error(apiError(err, t("salesReportsHub.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, t]);
 
   useEffect(() => {
     const t = setTimeout(load, 200);
@@ -55,9 +57,9 @@ export default function SalesReportsHubPage() {
     setExporting(format);
     try {
       await downloadReportExport("sales", { format, dateFrom, dateTo });
-      toast.success(`${format.toUpperCase()} downloaded`);
+      toast.success(t("common.downloaded", { format: format.toUpperCase() }));
     } catch (err) {
-      toast.error(apiError(err, "Export failed"));
+      toast.error(apiError(err, t("common.exportFailed")));
     } finally {
       setExporting(null);
     }
@@ -68,10 +70,8 @@ export default function SalesReportsHubPage() {
       <ReportsSubnav />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-nameplate text-xl">Sales reports</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Invoices, collections, and who still owes.
-          </p>
+          <h1 className="text-nameplate text-xl">{t("rep.salesTitle")}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t("salesReportsHub.subtitle")}</p>
         </div>
         <ExportButtons exporting={exporting} onExport={onExport} />
       </div>
@@ -89,10 +89,10 @@ export default function SalesReportsHubPage() {
         <>
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             {[
-              { label: "Orders", value: String(report.totals.orderCount) },
-              { label: "Sales", value: formatMoney(report.totals.totalSales) },
-              { label: "Collected", value: formatMoney(report.totals.totalPaid) },
-              { label: "Outstanding", value: formatMoney(report.totals.outstanding) },
+              { label: t("customerDetail.orders"), value: String(report.totals.orderCount) },
+              { label: t("salesReports.sales"), value: formatMoney(report.totals.totalSales) },
+              { label: t("salesReports.collected"), value: formatMoney(report.totals.totalPaid) },
+              { label: t("dash.outstanding"), value: formatMoney(report.totals.outstanding) },
             ].map((s) => (
               <Card key={s.label} className="py-0">
                 <CardContent className="p-4">
@@ -107,24 +107,26 @@ export default function SalesReportsHubPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-nameplate text-sm">Outstanding invoices</CardTitle>
-              <CardDescription>Unpaid and partially paid</CardDescription>
+              <CardTitle className="text-nameplate text-sm">
+                {t("salesReportsHub.outstandingInvoices")}
+              </CardTitle>
+              <CardDescription>{t("salesReportsHub.unpaidDesc")}</CardDescription>
             </CardHeader>
             <CardContent className="px-0">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Invoice</TableHead>
-                    <TableHead>Customer</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead className="text-right">Balance</TableHead>
+                    <TableHead>{t("common.invoice")}</TableHead>
+                    <TableHead>{t("common.customer")}</TableHead>
+                    <TableHead>{t("common.date")}</TableHead>
+                    <TableHead className="text-right">{t("common.balance")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {report.outstanding.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={4} className="text-muted-foreground">
-                        None
+                        {t("salesReportsHub.none")}
                       </TableCell>
                     </TableRow>
                   ) : (

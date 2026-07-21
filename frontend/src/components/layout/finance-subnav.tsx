@@ -3,17 +3,20 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/hooks/use-i18n";
+import type { MessageKey } from "@/lib/i18n/messages";
 
-const LINKS = [
-  { href: "/dashboard/reports/finance", label: "Overview", exact: true },
-  { href: "/dashboard/reports/finance/monthly", label: "Monthly" },
-  { href: "/dashboard/reports/finance/profit", label: "Products" },
-  { href: "/dashboard/reports/finance/expenses", label: "Expenses" },
-  { href: "/dashboard/reports/finance/entries", label: "Entries" },
+const LINKS: Array<{ href: string; labelKey: MessageKey; exact?: boolean }> = [
+  { href: "/dashboard/reports/finance", labelKey: "financeSubnav.overview", exact: true },
+  { href: "/dashboard/reports/finance/monthly", labelKey: "financeSubnav.monthly" },
+  { href: "/dashboard/reports/finance/profit", labelKey: "financeSubnav.products" },
+  { href: "/dashboard/reports/finance/expenses", labelKey: "financeSubnav.expenses" },
+  { href: "/dashboard/reports/finance/entries", labelKey: "financeSubnav.entries" },
 ];
 
 export function FinanceSubnav() {
   const pathname = usePathname();
+  const { t } = useI18n();
 
   return (
     <nav className="flex flex-wrap gap-1 border-b border-border/60 pb-3">
@@ -32,7 +35,7 @@ export function FinanceSubnav() {
                 : "text-muted-foreground hover:bg-muted hover:text-foreground"
             )}
           >
-            {link.label}
+            {t(link.labelKey)}
           </Link>
         );
       })}
