@@ -14,10 +14,14 @@ async function connectDB() {
   if (cached.conn) return cached.conn;
 
   if (!cached.promise) {
-    cached.promise = mongoose.connect(uri).then((m) => {
-      console.log("MongoDB connected");
-      return m;
-    });
+    cached.promise = mongoose
+      .connect(uri, {
+        serverSelectionTimeoutMS: 8000,
+      })
+      .then((m) => {
+        console.log("MongoDB connected");
+        return m;
+      });
   }
 
   cached.conn = await cached.promise;
