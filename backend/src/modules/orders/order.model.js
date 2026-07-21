@@ -20,6 +20,17 @@ const salesOrderSchema = new mongoose.Schema(
     dueDate: { type: Date, default: null },
     city: { type: String, trim: true, default: "" },
     salesman: { type: String, trim: true, default: "" },
+    salesmanRef: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Salesman",
+      default: null,
+    },
+    commissionType: {
+      type: String,
+      enum: ["none", "amount", "percent"],
+      default: "none",
+    },
+    commissionValue: { type: Number, min: 0, default: 0 },
     commissionAmount: { type: Number, min: 0, default: 0 },
     items: { type: [orderItemSchema], default: [] },
     totalAmount: { type: Number, required: true, min: 0 },

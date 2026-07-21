@@ -10,6 +10,14 @@ export type Customer = {
   isActive: boolean;
 };
 
+export type Salesman = {
+  _id: string;
+  name: string;
+  phone: string;
+  notes: string;
+  isActive: boolean;
+};
+
 export type OrderItem = {
   _id?: string;
   product: { _id: string; name: string; sku?: string; unitLabel?: string } | string;
@@ -26,6 +34,11 @@ export type SalesOrder = {
   customer: Customer | string;
   orderDate: string;
   dueDate?: string | null;
+  salesman?: string;
+  salesmanRef?: Salesman | string | null;
+  commissionType?: "none" | "amount" | "percent";
+  commissionValue?: number;
+  commissionAmount?: number;
   items: OrderItem[];
   totalAmount: number;
   amountPaid: number;
@@ -157,10 +170,37 @@ export async function createOrder(body: {
   orderDate: string;
   dueDate?: string;
   notes?: string;
+  salesmanId?: string;
+  commissionType?: "none" | "amount" | "percent";
+  commissionValue?: number;
   items: Array<{ product: string; quantity: number; unitPrice: number }>;
 }) {
   const { data } = await api.post<{ order: SalesOrder }>("/orders", body);
   return data.order;
+}
+
+export async function listSalesmen(params?: { q?: string; active?: string }) {
+  const { data } = await api.get<{ salesmen: Salesman[] }>("/salesmen", { params });
+  return data.salesmen;
+}
+
+export async function createSalesman(body: Partial<Salesman>) {
+  const { data } = await api.post<{ salesman: Salesman }>("/salesmen", body);
+  return data.salesman;
+}
+
+export async function updateSalesman(id: string, body: Partial<Salesman>) {
+  const { data } = await api.patch<{ salesman: Salesman }>(`/salesmen/${id}`, body);
+  return data.salesman;
+}
+
+export function salesmanName(
+  order: Pick<SalesOrder, "salesman" | "salesmanRef">
+) {
+  if (order.salesmanRef && typeof order.salesmanRef === "object") {
+    return order.salesmanRef.name;
+  }
+  return order.salesman || "";
 }
 
 export async function cancelOrder(id: string) {

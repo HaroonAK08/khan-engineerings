@@ -2,9 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import { toast } from "sonner";
 import axios from "axios";
 import { Loader2, ShieldCheck } from "lucide-react";
@@ -17,27 +14,33 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CornerFrame } from "@/components/layout/corner-frame";
 
+/* --- Full email/password login (restore later) ---
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+
 const loginSchema = z.object({
   email: z.string().min(1, "Email is required").email("Enter a valid email"),
   password: z.string().min(6, "Password must be at least 6 characters"),
 });
-
 type LoginValues = z.infer<typeof loginSchema>;
+--- */
 
 function LoginForm() {
   const router = useRouter();
   const setUser = useAuthStore((s) => s.setUser);
   const [submitting, setSubmitting] = useState(false);
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<LoginValues>({ resolver: zodResolver(loginSchema) });
+  const [pin, setPin] = useState("");
 
-  async function onSubmit(values: LoginValues) {
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!/^\d{4}$/.test(pin)) {
+      toast.error("Enter 4-digit code");
+      return;
+    }
     setSubmitting(true);
     try {
-      const { data } = await api.post<{ user: AuthUser }>("/auth/login", values);
+      const { data } = await api.post<{ user: AuthUser }>("/auth/login", { pin });
       setUser(data.user);
       toast.success("Access granted");
       router.push("/dashboard");
@@ -45,11 +48,25 @@ function LoginForm() {
       const message = axios.isAxiosError(err)
         ? (err.response?.data as { message?: string } | undefined)?.message
         : undefined;
-      toast.error(message ?? "Login failed");
+      toast.error(message ?? "Wrong code");
     } finally {
       setSubmitting(false);
     }
   }
+
+  /* --- Full email/password submit (restore later) ---
+  async function onSubmitEmail(values: LoginValues) {
+    setSubmitting(true);
+    try {
+      const { data } = await api.post<{ user: AuthUser }>("/auth/login", values);
+      setUser(data.user);
+      toast.success("Access granted");
+      router.push("/dashboard");
+    } catch (err) {
+      ...
+    }
+  }
+  --- */
 
   return (
     <div className="flex min-h-svh items-center justify-center bg-background p-6">
@@ -76,42 +93,42 @@ function LoginForm() {
             FACTORY OPERATIONS TERMINAL
           </p>
 
-          <form onSubmit={handleSubmit(onSubmit)} className="mt-8 flex flex-col gap-4">
+          <form onSubmit={onSubmit} className="mt-8 flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="pin">Code</Label>
+              <Input
+                id="pin"
+                type="password"
+                inputMode="numeric"
+                autoComplete="off"
+                maxLength={4}
+                pattern="\d{4}"
+                placeholder="••••"
+                className="font-data text-center text-2xl tracking-[0.4em]"
+                value={pin}
+                onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                autoFocus
+              />
+            </div>
+
+            {/* --- Email/password fields (restore later) ---
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="email"
-                placeholder="you@khanengineerings.com"
-                {...register("email")}
-              />
-              {errors.email && (
-                <p className="text-xs text-destructive">{errors.email.message}</p>
-              )}
+              <Input id="email" type="email" ... />
             </div>
-
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                placeholder="••••••••"
-                {...register("password")}
-              />
-              {errors.password && (
-                <p className="text-xs text-destructive">{errors.password.message}</p>
-              )}
+              <Input id="password" type="password" ... />
             </div>
+            --- */}
 
-            <Button type="submit" disabled={submitting} className="mt-2 gap-2">
+            <Button type="submit" disabled={submitting || pin.length !== 4} className="mt-2 gap-2">
               {submitting ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (
                 <ShieldCheck className="size-4" />
               )}
-              Sign in
+              Unlock
             </Button>
           </form>
         </div>

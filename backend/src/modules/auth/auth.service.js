@@ -55,7 +55,30 @@ async function register({ name, email, password, role = "staff" }) {
   return { user, token: signToken(user) };
 }
 
-async function login({ email, password }) {
+async function login(body) {
+  // Simple 4-digit unlock for factory floor (restore email login below later)
+  const USE_PIN_LOGIN = true;
+  const APP_PIN = process.env.APP_PIN || "3811";
+
+  if (USE_PIN_LOGIN) {
+    const pin = String(body.pin ?? body.password ?? "").trim();
+    if (!/^\d{4}$/.test(pin) || pin !== APP_PIN) {
+      const err = new Error("Wrong code");
+      err.statusCode = 401;
+      throw err;
+    }
+    let user = await User.findOne({ role: "admin" });
+    if (!user) user = await User.findOne();
+    if (!user) {
+      const err = new Error("No user found — run seed admin first");
+      err.statusCode = 500;
+      throw err;
+    }
+    return { user, token: signToken(user) };
+  }
+
+  /* --- Email/password login (restore later: set USE_PIN_LOGIN = false) ---
+  const { email, password } = body;
   assertEmail(email);
   if (!password) {
     const err = new Error("Password is required");
@@ -70,6 +93,7 @@ async function login({ email, password }) {
     throw err;
   }
   return { user, token: signToken(user) };
+  --- */
 }
 
 async function getById(userId) {

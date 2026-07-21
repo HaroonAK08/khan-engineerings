@@ -90,6 +90,35 @@ async function createOrder(data) {
   const { items, totalAmount } = await normalizeItems(data.items);
   const nos = await nextOrderNos();
 
+  let salesmanName = data.salesman?.trim() || "";
+  let salesmanRef = null;
+  if (data.salesmanId) {
+    const Salesman = require("../salesmen/salesman.model");
+    const sm = await Salesman.findById(data.salesmanId);
+    if (!sm) throw httpError("Salesman not found", 404);
+    if (!sm.isActive) throw httpError("Salesman is inactive", 400);
+    salesmanRef = sm._id;
+    salesmanName = sm.name;
+  }
+
+  let commissionType = "none";
+  let commissionValue = 0;
+  let commissionAmount = 0;
+  if (salesmanRef || salesmanName) {
+    const type = data.commissionType === "percent" ? "percent" : data.commissionType === "amount" ? "amount" : "none";
+    const value = Math.max(0, Number(data.commissionValue ?? data.commissionAmount) || 0);
+    if (type === "amount") {
+      commissionType = "amount";
+      commissionValue = roundMoney(value);
+      commissionAmount = commissionValue;
+    } else if (type === "percent") {
+      if (value > 100) throw httpError("Commission percent cannot exceed 100", 400);
+      commissionType = "percent";
+      commissionValue = value;
+      commissionAmount = roundMoney((totalAmount * value) / 100);
+    }
+  }
+
   const order = await SalesOrder.create({
     orderNo: data.orderNo?.trim() || nos.orderNo,
     invoiceNo: data.invoiceNo?.trim() || nos.invoiceNo,
@@ -97,8 +126,11 @@ async function createOrder(data) {
     orderDate: parseDate(data.orderDate || new Date(), "Order date"),
     dueDate: data.dueDate ? parseDate(data.dueDate, "Due date") : null,
     city: data.city?.trim() || "",
-    salesman: data.salesman?.trim() || "",
-    commissionAmount: Math.max(0, Number(data.commissionAmount) || 0),
+    salesman: salesmanName,
+    salesmanRef,
+    commissionType,
+    commissionValue,
+    commissionAmount,
     items,
     totalAmount,
     amountPaid: 0,
@@ -120,6 +152,7 @@ async function createOrder(data) {
 
   return SalesOrder.findById(order._id)
     .populate("customer", "name phone email")
+    .populate("salesmanRef", "name phone")
     .populate("items.product", "name sku unitLabel");
 }
 
@@ -147,6 +180,7 @@ async function listOrders({ customer, paymentStatus, dispatchStatus, dateFrom, d
 
   return SalesOrder.find(filter)
     .populate("customer", "name phone")
+    .populate("salesmanRef", "name")
     .populate("items.product", "name sku")
     .sort({ orderDate: -1, createdAt: -1 });
 }
@@ -154,6 +188,7 @@ async function listOrders({ customer, paymentStatus, dispatchStatus, dateFrom, d
 async function getOrder(id) {
   const order = await SalesOrder.findById(id)
     .populate("customer", "name phone email address")
+    .populate("salesmanRef", "name phone")
     .populate("items.product", "name sku unitLabel");
   if (!order) throw httpError("Order not found", 404);
   return order;

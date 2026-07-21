@@ -7,7 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, Plus } from "lucide-react";
-import { apiError } from "@/lib/materials-api";
+import { apiError, formatMoney } from "@/lib/materials-api";
 import { listCategories, listSizes, listWarehouses, type CatalogItem } from "@/lib/inventory-api";
 import { createProduct, listProducts, updateProduct } from "@/lib/production-api";
 import type { Product } from "@/types/production";
@@ -233,6 +233,8 @@ export default function ProductsPage() {
                   <TableHead>{t("prod.family")}</TableHead>
                   <TableHead>{t("common.category")}</TableHead>
                   <TableHead>{t("finished.col.size")}</TableHead>
+                  <TableHead className="text-right">{t("productsPage.makeCost")}</TableHead>
+                  <TableHead className="text-right">{t("productsPage.sellingPrice")}</TableHead>
                   <TableHead className="text-right">{t("productsPage.colLowStock")}</TableHead>
                   <TableHead>{t("common.status")}</TableHead>
                   <TableHead className="text-right">{t("common.actions")}</TableHead>
@@ -254,6 +256,12 @@ export default function ProductsPage() {
                     </TableCell>
                     <TableCell className="text-sm">{refName(p.category)}</TableCell>
                     <TableCell className="font-data text-xs">{refName(p.size)}</TableCell>
+                    <TableCell className="font-data text-right text-xs">
+                      {formatMoney(Number(p.standardCost) || 0)}
+                    </TableCell>
+                    <TableCell className="font-data text-right text-xs">
+                      {formatMoney(Number(p.sellingPrice) || 0)}
+                    </TableCell>
                     <TableCell className="font-data text-right text-xs">
                       {p.lowStockThreshold ?? 0}
                     </TableCell>
@@ -332,6 +340,15 @@ export default function ProductsPage() {
                 />
               </div>
             </div>
+            {editing && (
+              <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
+                <p className="text-[11px] text-muted-foreground">{t("productsPage.makeCost")}</p>
+                <p className="font-data text-sm">{formatMoney(Number(editing.standardCost) || 0)}</p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  {t("productsPage.makeCostHint")}
+                </p>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
                 <Label>{t("common.category")}</Label>

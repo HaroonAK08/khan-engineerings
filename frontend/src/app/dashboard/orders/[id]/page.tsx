@@ -18,6 +18,7 @@ import {
   listPayments,
   productName,
   recordOrderPayment,
+  salesmanName,
   type CustomerPayment,
   type Dispatch,
   type SalesOrder,
@@ -208,6 +209,20 @@ export default function OrderDetailPage() {
           <p className="font-data mt-1 text-xs text-muted-foreground">
             {order.orderNo} · {formatDate(order.orderDate)} · {customerName(order.customer)}
           </p>
+          {salesmanName(order) && (
+            <p className="font-data mt-1 text-xs text-muted-foreground">
+              {t("orderDetail.salesman")}: {salesmanName(order)}
+              {(order.commissionAmount || 0) > 0 && (
+                <>
+                  {" · "}
+                  {t("orderDetail.commission")}: {formatMoney(order.commissionAmount || 0)}
+                  {order.commissionType === "percent" && order.commissionValue != null
+                    ? ` (${t("orderDetail.commissionOf", { value: String(order.commissionValue) })})`
+                    : ""}
+                </>
+              )}
+            </p>
+          )}
         </div>
         <div className="text-right">
           <p className="font-data text-[10px] text-muted-foreground uppercase">
@@ -259,55 +274,20 @@ export default function OrderDetailPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        {order.balance > 0 && order.status !== "cancelled" && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-nameplate text-sm">{t("orderDetail.recordPayment")}</CardTitle>
-              <CardDescription>{t("orderDetail.partialAllowed")}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form
-                onSubmit={payForm.handleSubmit(onPayment)}
-                className="flex flex-col gap-3"
-              >
-                <div className="flex flex-col gap-1.5">
-                  <Label>{t("common.amount")}</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    {...payForm.register("amount", { valueAsNumber: true })}
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label>{t("common.date")}</Label>
-                  <Input type="date" {...payForm.register("paymentDate")} />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label>{t("common.method")}</Label>
-                  <select
-                    className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
-                    {...payForm.register("method")}
-                  >
-                    <option value="cash">{t("common.cash")}</option>
-                    <option value="bank">{t("common.bank")}</option>
-                    <option value="cheque">{t("common.cheque")}</option>
-                    <option value="other">{t("common.other")}</option>
-                  </select>
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label>{t("common.notes")}</Label>
-                  <Input {...payForm.register("notes")} />
-                </div>
-                <Button type="submit" disabled={savingPay} className="w-fit gap-2">
-                  {savingPay && <Loader2 className="size-4 animate-spin" />}
-                  {t("orderDetail.savePayment")}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
+      {order.status !== "cancelled" && order.dispatchStatus !== "dispatched" && (
+        <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          {t("orderDetail.nextStepSend")}
+        </p>
+      )}
+      {order.status !== "cancelled" &&
+        order.dispatchStatus === "dispatched" &&
+        order.balance > 0 && (
+          <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+            {t("orderDetail.nextStepPay")}
+          </p>
         )}
 
+      <div className="grid gap-6 lg:grid-cols-2">
         {order.dispatchStatus !== "dispatched" && order.status !== "cancelled" && (
           <Card>
             <CardHeader>
@@ -353,6 +333,54 @@ export default function OrderDetailPage() {
                 {savingDispatch && <Loader2 className="size-4 animate-spin" />}
                 {t("orderDetail.recordDispatch")}
               </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {order.balance > 0 && order.status !== "cancelled" && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-nameplate text-sm">{t("orderDetail.recordPayment")}</CardTitle>
+              <CardDescription>{t("orderDetail.partialAllowed")}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form
+                onSubmit={payForm.handleSubmit(onPayment)}
+                className="flex flex-col gap-3"
+              >
+                <div className="flex flex-col gap-1.5">
+                  <Label>{t("common.amount")}</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    {...payForm.register("amount", { valueAsNumber: true })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>{t("common.date")}</Label>
+                  <Input type="date" {...payForm.register("paymentDate")} />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>{t("common.method")}</Label>
+                  <select
+                    className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
+                    {...payForm.register("method")}
+                  >
+                    <option value="cash">{t("common.cash")}</option>
+                    <option value="bank">{t("common.bank")}</option>
+                    <option value="cheque">{t("common.cheque")}</option>
+                    <option value="other">{t("common.other")}</option>
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>{t("common.notes")}</Label>
+                  <Input {...payForm.register("notes")} />
+                </div>
+                <Button type="submit" disabled={savingPay} className="w-fit gap-2">
+                  {savingPay && <Loader2 className="size-4 animate-spin" />}
+                  {t("orderDetail.savePayment")}
+                </Button>
+              </form>
             </CardContent>
           </Card>
         )}

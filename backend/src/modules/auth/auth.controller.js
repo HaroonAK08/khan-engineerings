@@ -1,11 +1,19 @@
 const authService = require("./auth.service");
 
-const COOKIE_OPTIONS = {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: "lax",
-  maxAge: 7 * 24 * 60 * 60 * 1000,
-};
+function cookieOptions() {
+  const options = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    path: "/",
+  };
+  // Share cookie across subdomains, e.g. .haroonahmadkhan.dev
+  if (process.env.COOKIE_DOMAIN) {
+    options.domain = process.env.COOKIE_DOMAIN;
+  }
+  return options;
+}
 
 function toPublicUser(user) {
   return { id: user._id, name: user.name, email: user.email, role: user.role };
@@ -14,7 +22,7 @@ function toPublicUser(user) {
 async function register(req, res, next) {
   try {
     const { user, token } = await authService.register(req.body);
-    res.cookie("token", token, COOKIE_OPTIONS);
+    res.cookie("token", token, cookieOptions());
     res.status(201).json({ user: toPublicUser(user) });
   } catch (err) {
     next(err);
@@ -24,7 +32,7 @@ async function register(req, res, next) {
 async function login(req, res, next) {
   try {
     const { user, token } = await authService.login(req.body);
-    res.cookie("token", token, COOKIE_OPTIONS);
+    res.cookie("token", token, cookieOptions());
     res.json({ user: toPublicUser(user) });
   } catch (err) {
     next(err);
@@ -32,7 +40,7 @@ async function login(req, res, next) {
 }
 
 function logout(req, res) {
-  res.clearCookie("token", COOKIE_OPTIONS);
+  res.clearCookie("token", cookieOptions());
   res.status(204).send();
 }
 
