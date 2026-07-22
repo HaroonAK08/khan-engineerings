@@ -249,6 +249,7 @@ export default function OrderDetailPage() {
                 <TableHead>{t("common.product")}</TableHead>
                 <TableHead className="text-right">{t("common.qty")}</TableHead>
                 <TableHead className="text-right">{t("orderDetail.dispatched")}</TableHead>
+                <TableHead className="text-right">{t("orderDetail.ratePerKg")}</TableHead>
                 <TableHead className="text-right">{t("orderDetail.price")}</TableHead>
                 <TableHead className="text-right">{t("common.total")}</TableHead>
               </TableRow>
@@ -260,6 +261,9 @@ export default function OrderDetailPage() {
                   <TableCell className="font-data text-right text-xs">{item.quantity}</TableCell>
                   <TableCell className="font-data text-right text-xs">
                     {item.dispatchedQty || 0}
+                  </TableCell>
+                  <TableCell className="font-data text-right text-xs">
+                    {formatMoney(item.ratePerKg)}
                   </TableCell>
                   <TableCell className="font-data text-right text-xs">
                     {formatMoney(item.unitPrice)}

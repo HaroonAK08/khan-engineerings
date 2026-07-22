@@ -25,6 +25,18 @@ function optionalNonNeg(value, label) {
   return n;
 }
 
+function requirePositive(value, label) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) {
+    throw httpError(`${label} is required and must be greater than 0`, 400);
+  }
+  return n;
+}
+
+function roundMoney(n) {
+  return Math.round(n * 100) / 100;
+}
+
 async function create(data) {
   const name = data.name?.trim();
   if (!name) throw httpError("Name is required", 400);
@@ -34,15 +46,19 @@ async function create(data) {
     throw httpError("Family must be hub or drum", 400);
   }
 
+  const weightKg = requirePositive(data.weightKg, "Weight (kg)");
+  const pricePerKg = optionalNonNeg(data.pricePerKg, "Rate per kg") ?? 0;
+
   const product = await Product.create({
     name,
     sku: data.sku?.trim() || "",
     description: data.description?.trim() || "",
     unitLabel: data.unitLabel?.trim() || "pcs",
     family,
-    weightKg: optionalNonNeg(data.weightKg, "Weight") ?? null,
+    weightKg,
     standardCost: optionalNonNeg(data.standardCost, "Standard cost") ?? 0,
-    sellingPrice: optionalNonNeg(data.sellingPrice, "Selling price") ?? 0,
+    pricePerKg,
+    sellingPrice: roundMoney(weightKg * pricePerKg),
     category: optionalId(data.category),
     size: optionalId(data.size),
     defaultWarehouse: optionalId(data.defaultWarehouse),
@@ -92,15 +108,16 @@ async function update(id, data) {
     product.family = data.family;
   }
   if (data.weightKg !== undefined) {
-    product.weightKg = data.weightKg === null || data.weightKg === ""
-      ? null
-      : optionalNonNeg(data.weightKg, "Weight");
+    product.weightKg = requirePositive(data.weightKg, "Weight (kg)");
   }
   if (data.standardCost !== undefined) {
     product.standardCost = optionalNonNeg(data.standardCost, "Standard cost") ?? 0;
   }
-  if (data.sellingPrice !== undefined) {
-    product.sellingPrice = optionalNonNeg(data.sellingPrice, "Selling price") ?? 0;
+  if (data.pricePerKg !== undefined) {
+    product.pricePerKg = optionalNonNeg(data.pricePerKg, "Rate per kg") ?? 0;
+  }
+  if (data.weightKg !== undefined || data.pricePerKg !== undefined) {
+    product.sellingPrice = roundMoney((product.weightKg || 0) * (product.pricePerKg || 0));
   }
   if (data.category !== undefined) product.category = optionalId(data.category);
   if (data.size !== undefined) product.size = optionalId(data.size);

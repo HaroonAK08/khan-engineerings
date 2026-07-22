@@ -22,6 +22,7 @@ export type OrderItem = {
   _id?: string;
   product: { _id: string; name: string; sku?: string; unitLabel?: string } | string;
   quantity: number;
+  ratePerKg: number;
   unitPrice: number;
   lineTotal: number;
   dispatchedQty?: number;
@@ -173,7 +174,7 @@ export async function createOrder(body: {
   salesmanId?: string;
   commissionType?: "none" | "amount" | "percent";
   commissionValue?: number;
-  items: Array<{ product: string; quantity: number; unitPrice: number }>;
+  items: Array<{ product: string; quantity: number; ratePerKg: number }>;
 }) {
   const { data } = await api.post<{ order: SalesOrder }>("/orders", body);
   return data.order;

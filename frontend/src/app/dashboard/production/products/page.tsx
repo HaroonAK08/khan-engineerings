@@ -8,7 +8,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, Plus } from "lucide-react";
 import { apiError, formatMoney } from "@/lib/materials-api";
-import { listCategories, listSizes, listWarehouses, type CatalogItem } from "@/lib/inventory-api";
+import { listCategories, listSizes, type CatalogItem } from "@/lib/inventory-api";
 import { createProduct, listProducts, updateProduct } from "@/lib/production-api";
 import type { Product } from "@/types/production";
 import { Badge } from "@/components/ui/badge";
@@ -39,11 +39,10 @@ const productSchema = z.object({
   description: z.string().optional(),
   unitLabel: z.string().optional(),
   family: z.enum(["hub", "drum"]),
-  weightKg: z.number().min(0).optional().nullable(),
-  sellingPrice: z.number().min(0).optional(),
+  weightKg: z.number().min(0.001, "Weight (kg) is required"),
+  pricePerKg: z.number().min(0).optional(),
   category: z.string().optional(),
   size: z.string().optional(),
-  defaultWarehouse: z.string().optional(),
   lowStockThreshold: z.number().min(0),
   isActive: z.boolean(),
 });
@@ -67,7 +66,6 @@ export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<CatalogItem[]>([]);
   const [sizes, setSizes] = useState<CatalogItem[]>([]);
-  const [warehouses, setWarehouses] = useState<CatalogItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -82,29 +80,29 @@ export default function ProductsPage() {
       description: "",
       unitLabel: "pcs",
       family: "hub",
-      weightKg: undefined,
-      sellingPrice: 0,
+      weightKg: 0,
+      pricePerKg: 0,
       category: "",
       size: "",
-      defaultWarehouse: "",
       lowStockThreshold: 0,
       isActive: true,
     },
   });
 
+  const watchWeightKg = form.watch("weightKg");
+  const watchPricePerKg = form.watch("pricePerKg");
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [p, c, s, w] = await Promise.all([
+      const [p, c, s] = await Promise.all([
         listProducts(q.trim() ? { q: q.trim() } : undefined),
         listCategories(),
         listSizes(),
-        listWarehouses(),
       ]);
       setProducts(p);
       setCategories(c);
       setSizes(s);
-      setWarehouses(w);
     } catch (err) {
       toast.error(apiError(err, t("productsPage.loadFailed")));
     } finally {
@@ -125,11 +123,10 @@ export default function ProductsPage() {
       description: "",
       unitLabel: "pcs",
       family: "hub",
-      weightKg: undefined,
-      sellingPrice: 0,
+      weightKg: 0,
+      pricePerKg: 0,
       category: "",
       size: "",
-      defaultWarehouse: "",
       lowStockThreshold: 0,
       isActive: true,
     });
@@ -144,11 +141,10 @@ export default function ProductsPage() {
       description: product.description || "",
       unitLabel: product.unitLabel || "pcs",
       family: product.family || "hub",
-      weightKg: product.weightKg ?? undefined,
-      sellingPrice: product.sellingPrice ?? 0,
+      weightKg: product.weightKg ?? 0,
+      pricePerKg: product.pricePerKg ?? 0,
       category: refId(product.category),
       size: refId(product.size),
-      defaultWarehouse: refId(product.defaultWarehouse),
       lowStockThreshold: product.lowStockThreshold ?? 0,
       isActive: product.isActive,
     });
@@ -162,7 +158,6 @@ export default function ProductsPage() {
         ...values,
         category: values.category || null,
         size: values.size || null,
-        defaultWarehouse: values.defaultWarehouse || null,
       };
       if (editing) {
         await updateProduct(editing._id, body);
@@ -234,6 +229,7 @@ export default function ProductsPage() {
                   <TableHead>{t("common.category")}</TableHead>
                   <TableHead>{t("finished.col.size")}</TableHead>
                   <TableHead className="text-right">{t("productsPage.makeCost")}</TableHead>
+                  <TableHead className="text-right">{t("productsPage.pricePerKg")}</TableHead>
                   <TableHead className="text-right">{t("productsPage.sellingPrice")}</TableHead>
                   <TableHead className="text-right">{t("productsPage.colLowStock")}</TableHead>
                   <TableHead>{t("common.status")}</TableHead>
@@ -258,6 +254,9 @@ export default function ProductsPage() {
                     <TableCell className="font-data text-xs">{refName(p.size)}</TableCell>
                     <TableCell className="font-data text-right text-xs">
                       {formatMoney(Number(p.standardCost) || 0)}
+                    </TableCell>
+                    <TableCell className="font-data text-right text-xs">
+                      {formatMoney(Number(p.pricePerKg) || 0)}
                     </TableCell>
                     <TableCell className="font-data text-right text-xs">
                       {formatMoney(Number(p.sellingPrice) || 0)}
@@ -331,14 +330,23 @@ export default function ProductsPage() {
                 />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="sellingPrice">{t("productsPage.sellingPrice")}</Label>
+                <Label htmlFor="pricePerKg">{t("productsPage.pricePerKg")}</Label>
                 <Input
-                  id="sellingPrice"
+                  id="pricePerKg"
                   type="number"
                   step="0.01"
-                  {...form.register("sellingPrice", { valueAsNumber: true })}
+                  {...form.register("pricePerKg", { valueAsNumber: true })}
                 />
               </div>
+            </div>
+            <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
+              <p className="text-[11px] text-muted-foreground">{t("productsPage.sellingPrice")}</p>
+              <p className="font-data text-sm">
+                {formatMoney((Number(watchWeightKg) || 0) * (Number(watchPricePerKg) || 0))}
+              </p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                {t("productsPage.sellingPriceHint")}
+              </p>
             </div>
             {editing && (
               <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
@@ -378,20 +386,6 @@ export default function ProductsPage() {
                   ))}
                 </select>
               </div>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>{t("productsPage.defaultWarehouse")}</Label>
-              <select
-                className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
-                {...form.register("defaultWarehouse")}
-              >
-                <option value="">{t("productsPage.systemDefault")}</option>
-                {warehouses.map((w) => (
-                  <option key={w._id} value={w._id}>
-                    {w.name}
-                  </option>
-                ))}
-              </select>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">

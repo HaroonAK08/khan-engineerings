@@ -86,9 +86,9 @@ export function Topbar() {
           <Menu className="size-4" />
         </Button>
         <div className="min-w-0">
-          <p className="font-data text-[10px] tracking-[0.2em] text-sidebar-foreground/50">
+          {/* <p className="font-data text-[10px] tracking-[0.2em] text-sidebar-foreground/50">
             {t("topbar.ops")}
-          </p>
+          </p> */}
           <h2 className="text-nameplate truncate text-lg leading-tight">
             {t(currentTitleKey(pathname))}
           </h2>

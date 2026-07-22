@@ -65,19 +65,24 @@ async function normalizeItems(items) {
     const product = await Product.findById(raw.product);
     if (!product) throw httpError("Product not found", 404);
     const quantity = Number(raw.quantity);
-    const unitPrice = Number(raw.unitPrice);
+    const ratePerKg = Number(raw.ratePerKg);
     if (!Number.isFinite(quantity) || quantity <= 0) {
       throw httpError("Quantity must be greater than 0", 400);
     }
-    if (!Number.isFinite(unitPrice) || unitPrice < 0) {
-      throw httpError("Unit price is invalid", 400);
+    if (!Number.isFinite(ratePerKg) || ratePerKg < 0) {
+      throw httpError("Rate per kg is invalid", 400);
     }
+    if (!Number.isFinite(product.weightKg) || product.weightKg <= 0) {
+      throw httpError(`Set a weight (kg) on "${product.name}" before selling it`, 400);
+    }
+    const unitPrice = roundMoney(product.weightKg * ratePerKg);
     const lineTotal = roundMoney(quantity * unitPrice);
     totalAmount += lineTotal;
     normalized.push({
       product: product._id,
       quantity,
-      unitPrice: roundMoney(unitPrice),
+      ratePerKg: roundMoney(ratePerKg),
+      unitPrice,
       lineTotal,
       dispatchedQty: 0,
     });

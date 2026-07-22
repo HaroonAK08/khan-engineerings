@@ -45,7 +45,6 @@ export const NAV_ITEMS: NavItem[] = [
   { labelKey: "nav.inventory", href: "/dashboard/inventory", icon: Boxes, ready: true },
   { labelKey: "nav.production", href: "/dashboard/production", icon: Factory, ready: true },
   { labelKey: "nav.orders", href: "/dashboard/orders", icon: ClipboardList, ready: true },
-  { labelKey: "nav.claims", href: "/dashboard/claims", icon: RotateCcw, ready: true },
   {
     labelKey: "nav.expenses",
     href: "/dashboard/expenses",
@@ -53,6 +52,7 @@ export const NAV_ITEMS: NavItem[] = [
     ready: true,
     children: EXPENSES_CHILDREN,
   },
+  { labelKey: "nav.claims", href: "/dashboard/claims", icon: RotateCcw, ready: true },
   { labelKey: "nav.suppliers", href: "/dashboard/suppliers", icon: Truck, ready: true },
   { labelKey: "nav.customers", href: "/dashboard/customers", icon: Contact, ready: true },
   { labelKey: "nav.salesmen", href: "/dashboard/salesmen", icon: Handshake, ready: true },

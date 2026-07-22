@@ -153,7 +153,7 @@ export default function FinanceEntriesPage() {
             value={typeFilter}
             onValueChange={(v) => setTypeFilter(v ?? "all")}
           >
-            <SelectTrigger className="w-[140px]">
+            <SelectTrigger className="w-full sm:w-[140px]">
               <SelectValue placeholder={t("financeEntries.typePh")} />
             </SelectTrigger>
             <SelectContent>

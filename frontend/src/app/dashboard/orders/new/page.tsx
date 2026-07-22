@@ -22,8 +22,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useI18n } from "@/hooks/use-i18n";
 
-type Line = { product: string; quantity: number; unitPrice: number };
+type Line = { product: string; quantity: number; ratePerKg: number };
 type CommissionType = "amount" | "percent";
+
+function lineUnitPrice(products: Product[], line: Line) {
+  const product = products.find((p) => p._id === line.product);
+  const weightKg = Number(product?.weightKg) || 0;
+  return weightKg * (Number(line.ratePerKg) || 0);
+}
 
 const NEW_CUSTOMER = "__new__";
 
@@ -44,7 +50,7 @@ export default function NewOrderPage() {
   const [orderDate, setOrderDate] = useState(todayInput());
   const [dueDate, setDueDate] = useState("");
   const [notes, setNotes] = useState("");
-  const [lines, setLines] = useState<Line[]>([{ product: "", quantity: 1, unitPrice: 0 }]);
+  const [lines, setLines] = useState<Line[]>([{ product: "", quantity: 1, ratePerKg: 0 }]);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [newCustomerOpen, setNewCustomerOpen] = useState(false);
@@ -82,9 +88,9 @@ export default function NewOrderPage() {
   const total = useMemo(
     () =>
       Math.round(
-        lines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.unitPrice) || 0), 0) * 100
+        lines.reduce((s, l) => s + (Number(l.quantity) || 0) * lineUnitPrice(products, l), 0) * 100
       ) / 100,
-    [lines]
+    [lines, products]
   );
 
   const commissionPreview = useMemo(() => {
@@ -300,13 +306,19 @@ export default function NewOrderPage() {
           <CardContent className="flex flex-col gap-3">
             {lines.map((line, index) => {
               const selected = products.find((p) => p._id === line.product);
-              const normalPrice = selected?.sellingPrice;
+              const unitPrice = lineUnitPrice(products, line);
               return (
                 <div key={index} className="grid grid-cols-1 items-end gap-2 sm:grid-cols-12">
                   <select
                     className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm sm:col-span-5 dark:bg-input/30"
                     value={line.product}
-                    onChange={(e) => updateLine(index, { product: e.target.value })}
+                    onChange={(e) => {
+                      const product = products.find((p) => p._id === e.target.value);
+                      updateLine(index, {
+                        product: e.target.value,
+                        ratePerKg: Number(product?.pricePerKg) || 0,
+                      });
+                    }}
                   >
                     <option value="">{t("orderNew.productPh")}</option>
                     {products.map((p) => (
@@ -333,23 +345,21 @@ export default function NewOrderPage() {
                           </span>
                         </p>
                         <p>
-                          {t("orderNew.normalPrice")}:{" "}
-                          <span className="font-data">
-                            {formatMoney(Number(normalPrice) || 0)}
-                          </span>
+                          {t("orderNew.unitPriceComputed")}:{" "}
+                          <span className="font-data">{formatMoney(unitPrice)}</span>
                         </p>
                       </div>
                     )}
                     <Input
                       type="number"
                       step="0.01"
-                      value={line.unitPrice}
-                      onChange={(e) => updateLine(index, { unitPrice: Number(e.target.value) })}
-                      placeholder={t("orderNew.unitPricePh")}
+                      value={line.ratePerKg}
+                      onChange={(e) => updateLine(index, { ratePerKg: Number(e.target.value) })}
+                      placeholder={t("orderNew.ratePerKgPh")}
                     />
                   </div>
                   <div className="flex h-8 items-center justify-between gap-2 sm:col-span-2">
-                    <span className="font-data text-xs">{formatMoney(line.quantity * line.unitPrice)}</span>
+                    <span className="font-data text-xs">{formatMoney(line.quantity * unitPrice)}</span>
                     <Button
                       type="button"
                       size="icon-sm"
@@ -367,7 +377,7 @@ export default function NewOrderPage() {
               type="button"
               variant="outline"
               className="w-fit gap-2"
-              onClick={() => setLines((prev) => [...prev, { product: "", quantity: 1, unitPrice: 0 }])}
+              onClick={() => setLines((prev) => [...prev, { product: "", quantity: 1, ratePerKg: 0 }])}
             >
               <Plus className="size-4" />
               {t("orderNew.addLine")}

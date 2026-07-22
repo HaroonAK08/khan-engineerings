@@ -9,6 +9,7 @@ export type Product = {
   family: ProductFamily;
   weightKg?: number | null;
   standardCost?: number;
+  pricePerKg?: number;
   sellingPrice?: number;
   category?: { _id: string; name: string } | string | null;
   size?: { _id: string; name: string; code?: string } | string | null;

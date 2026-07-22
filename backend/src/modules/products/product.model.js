@@ -17,6 +17,8 @@ const productSchema = new mongoose.Schema(
     weightKg: { type: Number, min: 0, default: null },
     /** Weighted moving average make-cost; updated when batches finish (Phase B+) */
     standardCost: { type: Number, min: 0, default: 0 },
+    /** Price per kg entered by the user; sellingPrice is always derived from weightKg * pricePerKg */
+    pricePerKg: { type: Number, min: 0, default: 0 },
     sellingPrice: { type: Number, min: 0, default: 0 },
     category: { type: mongoose.Schema.Types.ObjectId, ref: "ProductCategory", default: null },
     size: { type: mongoose.Schema.Types.ObjectId, ref: "ProductSize", default: null },

@@ -4,6 +4,7 @@ const orderItemSchema = new mongoose.Schema(
   {
     product: { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: true },
     quantity: { type: Number, required: true, min: 0 },
+    ratePerKg: { type: Number, required: true, min: 0 },
     unitPrice: { type: Number, required: true, min: 0 },
     lineTotal: { type: Number, required: true, min: 0 },
     dispatchedQty: { type: Number, default: 0, min: 0 },

@@ -173,7 +173,7 @@ export default function SupplierDetailPage() {
             {supplier.isActive ? t("sup.status.active") : t("sup.status.inactive")}
           </Badge>
         </div>
-        <Card className="min-w-[200px] py-0">
+        <Card className="w-full sm:w-auto sm:min-w-[200px] py-0">
           <CardContent className="p-4">
             <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
               {t("supplierDetail.balanceOwed")}
