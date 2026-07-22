@@ -9,6 +9,7 @@ type Theme = "light" | "dark";
 
 function applyTheme(theme: Theme) {
   document.documentElement.classList.toggle("dark", theme === "dark");
+  document.documentElement.style.colorScheme = theme;
   localStorage.setItem(STORAGE_KEY, theme);
   window.dispatchEvent(new CustomEvent<Theme>(THEME_EVENT, { detail: theme }));
 }

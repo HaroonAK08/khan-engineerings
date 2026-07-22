@@ -151,7 +151,7 @@ export default function InventoryPage() {
       toast.success(
         purchase.invoiceNo
           ? `Purchase saved (${purchase.invoiceNo}) — due on supplier account`
-          : "Purchase recorded — amount due on supplier account"
+          : t("purchases.saved")
       );
       form.reset({
         supplier: values.supplier,
@@ -171,10 +171,10 @@ export default function InventoryPage() {
   }
 
   async function onDelete(id: string) {
-    if (!confirm("Delete this purchase? Stock and supplier account will update.")) return;
+    if (!confirm(t("purchases.deleteConfirm"))) return;
     try {
       await deletePurchase(id);
-      toast.success("Purchase deleted");
+      toast.success(t("purchases.deleted"));
       await load();
     } catch (err) {
       toast.error(apiError(err, "Failed to delete purchase"));
@@ -252,10 +252,7 @@ export default function InventoryPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-nameplate text-sm">{t("purchases.recordTitle")}</CardTitle>
-          <CardDescription>
-            Enter kg and either rate or total — the other calculates automatically. This adds
-            stock and what you owe the supplier. Pay later from Suppliers (not at purchase time).
-          </CardDescription>
+          <CardDescription>{t("purchases.recordDesc")}</CardDescription>
         </CardHeader>
         <CardContent>
           <form
@@ -263,13 +260,13 @@ export default function InventoryPage() {
             className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3"
           >
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="supplier">Supplier</Label>
+              <Label htmlFor="supplier">{t("purchases.supplier")}</Label>
               <select
                 id="supplier"
                 className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
                 {...form.register("supplier")}
               >
-                <option value="">Select supplier…</option>
+                <option value="">{t("purchases.selectSupplier")}</option>
                 {activeSuppliers.map((s) => (
                   <option key={s._id} value={s._id}>
                     {supplierName(s)}
@@ -283,25 +280,25 @@ export default function InventoryPage() {
               )}
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="materialType">Material</Label>
+              <Label htmlFor="materialType">{t("purchases.material")}</Label>
               <select
                 id="materialType"
                 className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
                 {...form.register("materialType")}
               >
-                <option value="scrap">Scrap</option>
-                <option value="daig">Daig</option>
+                <option value="scrap">{t("prod.scrap")}</option>
+                <option value="daig">{t("prod.daig")}</option>
               </select>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="quantityKg">Quantity (kg)</Label>
+              <Label htmlFor="quantityKg">{t("purchases.quantityKg")}</Label>
               <Input
                 id="quantityKg"
                 type="number"
                 min={1}
                 step={1}
                 inputMode="numeric"
-                placeholder="e.g. 100"
+                placeholder={t("purchases.phQuantity")}
                 value={Number.isFinite(qty) && qty > 0 ? qty : ""}
                 onChange={(e) => {
                   const raw = e.target.value;
@@ -322,13 +319,13 @@ export default function InventoryPage() {
               )}
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="ratePerKg">Rate per kg</Label>
+              <Label htmlFor="ratePerKg">{t("purchases.ratePerKg")}</Label>
               <Input
                 id="ratePerKg"
                 type="number"
                 step="0.01"
                 min={0}
-                placeholder="e.g. 80"
+                placeholder={t("purchases.phRate")}
                 value={Number.isFinite(rate) && rate > 0 ? rate : ""}
                 onChange={(e) => {
                   const v = e.target.valueAsNumber;
@@ -344,46 +341,50 @@ export default function InventoryPage() {
               )}
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="totalAmount">Total amount</Label>
+              <Label htmlFor="totalAmount">{t("purchases.totalAmount")}</Label>
               <Input
                 id="totalAmount"
                 readOnly
                 tabIndex={-1}
                 className="bg-muted/50"
                 value={totalAmount > 0 ? totalAmount : ""}
-                placeholder="Quantity × rate"
+                placeholder={t("purchases.phTotal")}
               />
               <p className="text-[11px] text-muted-foreground">
                 {qty > 0 && rate > 0
-                  ? `${qty} kg × ${formatMoney(rate)} = ${formatMoney(totalAmount)}`
-                  : "Fills automatically: quantity × rate per kg"}
+                  ? t("purchases.totalCalc", {
+                      qty,
+                      rate: formatMoney(rate),
+                      total: formatMoney(totalAmount),
+                    })
+                  : t("purchases.totalHint")}
               </p>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="purchaseDate">Purchase date</Label>
+              <Label htmlFor="purchaseDate">{t("purchases.purchaseDate")}</Label>
               <Input id="purchaseDate" type="date" {...form.register("purchaseDate")} />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="invoiceNo">Invoice No. (optional)</Label>
+              <Label htmlFor="invoiceNo">{t("purchases.invoiceOptional")}</Label>
               <Input
                 id="invoiceNo"
-                placeholder="Supplier bill no. — or leave blank"
+                placeholder={t("purchases.phInvoice")}
                 {...form.register("invoiceNo")}
               />
             </div>
             <div className="flex flex-col gap-1.5 md:col-span-2 xl:col-span-3">
-              <Label htmlFor="notes">Notes</Label>
+              <Label htmlFor="notes">{t("common.notes")}</Label>
               <Input id="notes" {...form.register("notes")} />
             </div>
             <div className="flex flex-col gap-2 md:col-span-2 xl:col-span-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="font-data text-sm text-muted-foreground">
-                Amount due to supplier:{" "}
+                {t("purchases.amountDue")}{" "}
                 <span className="text-foreground">{formatMoney(totalAmount)}</span>
-                <span className="ml-2 text-xs">(pay later from Suppliers)</span>
+                <span className="ms-2 text-xs">{t("purchases.payLater")}</span>
               </p>
               <Button type="submit" disabled={saving} className="gap-2">
                 {saving && <Loader2 className="size-4 animate-spin" />}
-                Save purchase
+                {t("purchases.save")}
               </Button>
             </div>
           </form>
@@ -393,9 +394,7 @@ export default function InventoryPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-nameplate text-sm">{t("purchases.history")}</CardTitle>
-          <CardDescription>
-            Search inbound scrap / daig. Balance = still owed to supplier.
-          </CardDescription>
+          <CardDescription>{t("purchases.historyDesc")}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -404,7 +403,7 @@ export default function InventoryPage() {
               value={supplierFilter}
               onChange={(e) => setSupplierFilter(e.target.value)}
             >
-              <option value="">All suppliers</option>
+              <option value="">{t("purchases.allSuppliers")}</option>
               {suppliers.map((s) => (
                 <option key={s._id} value={s._id}>
                   {supplierName(s)}
@@ -415,16 +414,16 @@ export default function InventoryPage() {
               type="date"
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
-              aria-label="From date"
+              aria-label={t("common.date")}
             />
             <Input
               type="date"
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
-              aria-label="To date"
+              aria-label={t("common.date")}
             />
             <Input
-              placeholder="Invoice / notes…"
+              placeholder={t("purchases.searchInvoice")}
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
@@ -435,19 +434,21 @@ export default function InventoryPage() {
               <Loader2 className="size-6 animate-spin text-primary" />
             </div>
           ) : purchases.length === 0 ? (
-            <p className="py-10 text-center text-sm text-muted-foreground">No purchases found</p>
+            <p className="py-10 text-center text-sm text-muted-foreground">
+              {t("purchases.noneFound")}
+            </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Material</TableHead>
-                  <TableHead>Supplier</TableHead>
-                  <TableHead className="text-right">Qty (kg)</TableHead>
-                  <TableHead className="text-right">Rate</TableHead>
-                  <TableHead className="text-right">Payable</TableHead>
-                  <TableHead className="text-right">Balance</TableHead>
-                  <TableHead>Invoice</TableHead>
+                  <TableHead>{t("purchases.col.date")}</TableHead>
+                  <TableHead>{t("purchases.col.material")}</TableHead>
+                  <TableHead>{t("purchases.col.supplier")}</TableHead>
+                  <TableHead className="text-right">{t("purchases.col.qty")}</TableHead>
+                  <TableHead className="text-right">{t("purchases.col.rate")}</TableHead>
+                  <TableHead className="text-right">{t("purchases.col.payable")}</TableHead>
+                  <TableHead className="text-right">{t("purchases.col.balance")}</TableHead>
+                  <TableHead>{t("purchases.col.invoice")}</TableHead>
                   <TableHead />
                 </TableRow>
               </TableHeader>
@@ -459,7 +460,9 @@ export default function InventoryPage() {
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className="font-data text-[10px] uppercase">
-                        {p.materialType || "scrap"}
+                        {(p.materialType || "scrap") === "daig"
+                          ? t("prod.daig")
+                          : t("prod.scrap")}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -491,8 +494,8 @@ export default function InventoryPage() {
                     <TableCell className="font-data text-xs">
                       {p.invoiceNo || "—"}
                       {p.notes ? (
-                        <Badge variant="outline" className="ml-2 font-data text-[9px]">
-                          NOTE
+                        <Badge variant="outline" className="ms-2 font-data text-[9px]">
+                          {t("purchases.noteBadge")}
                         </Badge>
                       ) : null}
                     </TableCell>
@@ -501,7 +504,7 @@ export default function InventoryPage() {
                         size="icon-sm"
                         variant="ghost"
                         onClick={() => onDelete(p._id)}
-                        aria-label="Delete purchase"
+                        aria-label={t("purchases.deleted")}
                       >
                         <Trash2 className="size-4 text-destructive" />
                       </Button>

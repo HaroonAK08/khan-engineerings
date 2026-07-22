@@ -218,21 +218,19 @@ export function SidebarBrand() {
 
   return (
     <div className="border-b border-sidebar-border px-5 py-5">
-      <div className="flex items-center gap-2">
-        <span className="relative flex size-2">
-          <span className="absolute inline-flex size-2 rounded-full bg-primary animate-status-pulse" />
-          <span className="relative inline-flex size-2 rounded-full bg-primary" />
-        </span>
-        <span className="font-data text-[10px] tracking-[0.2em] text-sidebar-foreground/60">
-          {t("brand.systemOnline")}
-        </span>
+      <div className="flex items-center gap-3">
+        <img
+          src="/logo.png"
+          alt={t("brand.khan")}
+          className="size-11 shrink-0 rounded-lg object-contain"
+        />
+        <h1 className="text-nameplate text-xl leading-snug text-sidebar-foreground">
+          {t("brand.khan")}
+          <br />
+          {t("brand.engineerings")}
+        </h1>
       </div>
-      <h1 className="text-nameplate mt-2 text-2xl leading-none text-sidebar-foreground">
-        {t("brand.khan")}
-        <br />
-        {t("brand.engineerings")}
-      </h1>
-      <div className="mt-2 h-px w-10 bg-primary" />
+      <div className="mt-3 h-px w-10 bg-primary" />
     </div>
   );
 }
@@ -245,9 +243,6 @@ export function Sidebar() {
       <SidebarBrand />
       <SidebarNav />
       <div className="border-t border-sidebar-border px-5 py-3">
-        <p className="font-data text-[10px] tracking-widest text-sidebar-foreground/40">
-          {t("brand.build")}
-        </p>
       </div>
     </aside>
   );

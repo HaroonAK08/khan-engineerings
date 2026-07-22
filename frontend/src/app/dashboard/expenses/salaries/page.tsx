@@ -528,7 +528,7 @@ export default function SalariesPage() {
                                     value={payUnitRate}
                                     onChange={(e) => setPayUnitRate(e.target.value)}
                                     className="h-11 text-base"
-                                    placeholder="Can change each time"
+                                    placeholder={t("sal.phUnitRate")}
                                   />
                                 </div>
                                 <div className="flex flex-col gap-1.5">
@@ -549,7 +549,7 @@ export default function SalariesPage() {
                                   value={payAmount}
                                   onChange={(e) => setPayAmount(e.target.value)}
                                   className="h-11 text-base"
-                                  placeholder="Enter amount — can differ each time"
+                                  placeholder={t("sal.phAmount")}
                                 />
                               </div>
                             )}

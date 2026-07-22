@@ -131,6 +131,10 @@
     scroll-behavior: smooth;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
   }
   body {
     @apply bg-background text-foreground text-base;
@@ -143,6 +147,25 @@
   textarea,
   button {
     font-size: inherit;
+  }
+  /* Native <select> popups follow theme (esp. Firefox dark mode) */
+  select {
+    background-color: var(--background);
+    color: var(--foreground);
+  }
+  select option,
+  select optgroup {
+    background-color: var(--card);
+    color: var(--card-foreground);
+  }
+  .dark select {
+    background-color: var(--card);
+    color: var(--card-foreground);
+  }
+  .dark select option,
+  .dark select optgroup {
+    background-color: oklch(0.22 0.012 255);
+    color: oklch(0.95 0.005 95);
   }
   /* Smooth, consistent hover/focus transitions across every interactive element */
   a,
@@ -203,23 +226,87 @@
 }
 
 html.locale-ur {
-  /* Nastaliq script needs a touch more size */
+  /* Nastaliq needs more size and vertical room */
   font-size: 19px;
 }
 
 html.locale-ur body {
   font-family: var(--font-urdu), var(--font-plex-sans), sans-serif;
-  line-height: 1.7;
+  line-height: 2;
 }
 
 html.locale-ur .text-nameplate {
   font-family: var(--font-urdu), var(--font-heading), sans-serif;
   letter-spacing: 0;
   text-transform: none;
+  line-height: 1.85 !important;
 }
 
 html.locale-ur .font-data {
   font-family: var(--font-mono), var(--font-urdu), monospace;
+  line-height: 1.7;
+}
+
+/* Labels / tiny text — Nastaliq clips with leading-none */
+html.locale-ur label,
+html.locale-ur [data-slot="label"] {
+  line-height: 1.9 !important;
+  min-height: 1.5em;
+  padding-block: 0.15em;
+}
+
+html.locale-ur .leading-none,
+html.locale-ur .leading-tight {
+  line-height: 1.85 !important;
+}
+
+/* Inputs & selects — taller so Urdu glyphs / placeholders breathe */
+html.locale-ur input:not([type="checkbox"]):not([type="radio"]),
+html.locale-ur select,
+html.locale-ur textarea {
+  height: auto !important;
+  min-height: 2.85rem;
+  line-height: 1.85;
+  padding-block: 0.6rem;
+}
+
+html.locale-ur textarea {
+  min-height: 5.5rem;
+}
+
+html.locale-ur .h-8:is(input, select, button),
+html.locale-ur input.h-8,
+html.locale-ur select.h-8,
+html.locale-ur button.h-8 {
+  height: auto !important;
+  min-height: 2.5rem;
+}
+
+/* Sidebar brand & nav spacing */
+html.locale-ur aside h1 {
+  line-height: 1.9 !important;
+}
+
+html.locale-ur nav a,
+html.locale-ur nav button {
+  line-height: 1.85;
+  padding-block: 0.55rem;
+  min-height: 2.6rem;
+}
+
+/* Card titles / descriptions */
+html.locale-ur [data-slot="card-title"],
+html.locale-ur [data-slot="card-description"] {
+  line-height: 1.9 !important;
+}
+
+html.locale-ur .text-xs,
+html.locale-ur .text-sm {
+  line-height: 1.85 !important;
+}
+
+html.locale-ur .gap-1\.5 {
+  gap: 0.5rem !important;
 }
 
 @keyframes status-pulse {

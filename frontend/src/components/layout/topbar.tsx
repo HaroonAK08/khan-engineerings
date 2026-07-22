@@ -89,7 +89,7 @@ export function Topbar() {
           {/* <p className="font-data text-[10px] tracking-[0.2em] text-sidebar-foreground/50">
             {t("topbar.ops")}
           </p> */}
-          <h2 className="text-nameplate truncate text-lg leading-tight">
+          <h2 className="text-nameplate truncate text-lg leading-snug">
             {t(currentTitleKey(pathname))}
           </h2>
         </div>

@@ -5,12 +5,7 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { InventorySubnav } from "@/components/layout/inventory-subnav";
 import { apiError } from "@/lib/materials-api";
-import {
-  getFinishedStock,
-  listWarehouses,
-  type CatalogItem,
-  type FinishedStockItem,
-} from "@/lib/inventory-api";
+import { getFinishedStock, type FinishedStockItem } from "@/lib/inventory-api";
 import { useI18n } from "@/hooks/use-i18n";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -28,27 +23,23 @@ export default function FinishedGoodsPage() {
   const { t } = useI18n();
   const [items, setItems] = useState<FinishedStockItem[]>([]);
   const [totalUnits, setTotalUnits] = useState(0);
-  const [warehouses, setWarehouses] = useState<CatalogItem[]>([]);
-  const [warehouse, setWarehouse] = useState("");
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const params: { warehouse?: string; q?: string } = {};
-      if (warehouse) params.warehouse = warehouse;
+      const params: { q?: string } = {};
       if (q.trim()) params.q = q.trim();
-      const [stock, wh] = await Promise.all([getFinishedStock(params), listWarehouses()]);
+      const stock = await getFinishedStock(params);
       setItems(stock.items);
       setTotalUnits(stock.totalUnits);
-      setWarehouses(wh);
     } catch (err) {
       toast.error(apiError(err, t("finished.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, [warehouse, q, t]);
+  }, [q, t]);
 
   useEffect(() => {
     const timer = setTimeout(load, 200);
@@ -70,25 +61,12 @@ export default function FinishedGoodsPage() {
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <select
-              className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
-              value={warehouse}
-              onChange={(e) => setWarehouse(e.target.value)}
-            >
-              <option value="">{t("finished.allWarehouses")}</option>
-              {warehouses.map((w) => (
-                <option key={w._id} value={w._id}>
-                  {w.name}
-                </option>
-              ))}
-            </select>
-            <Input
-              placeholder={t("finished.search")}
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-            />
-          </div>
+          <Input
+            className="max-w-md"
+            placeholder={t("finished.search")}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -106,7 +84,6 @@ export default function FinishedGoodsPage() {
                   <TableHead>{t("finished.col.product")}</TableHead>
                   <TableHead>{t("finished.col.category")}</TableHead>
                   <TableHead>{t("finished.col.size")}</TableHead>
-                  <TableHead>{t("finished.col.warehouse")}</TableHead>
                   <TableHead className="text-end">{t("finished.col.qty")}</TableHead>
                   <TableHead>{t("finished.col.status")}</TableHead>
                 </TableRow>
@@ -124,7 +101,6 @@ export default function FinishedGoodsPage() {
                     <TableCell className="font-data text-xs">
                       {item.size?.code || item.size?.name || "—"}
                     </TableCell>
-                    <TableCell className="text-sm">{item.warehouseName}</TableCell>
                     <TableCell className="font-data text-end text-xs">
                       {item.quantity} {item.unitLabel}
                     </TableCell>

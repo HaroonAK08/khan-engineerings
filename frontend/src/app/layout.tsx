@@ -32,6 +32,16 @@ const notoNastaliq = Noto_Nastaliq_Urdu({
 export const metadata: Metadata = {
   title: "Khan Engineerings",
   description: "Factory operations & management system",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon-16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: [{ url: "/icon-192.png", sizes: "180x180", type: "image/png" }],
+    shortcut: ["/favicon.ico"],
+  },
 };
 
 const THEME_INIT_SCRIPT = `
@@ -44,6 +54,7 @@ const THEME_INIT_SCRIPT = `
     var stored = localStorage.getItem("ke-theme");
     var theme = stored === "dark" ? "dark" : "light";
     document.documentElement.classList.toggle("dark", theme === "dark");
+    document.documentElement.style.colorScheme = theme;
 
     var locale = localStorage.getItem("ke-locale") === "ur" ? "ur" : "en";
     document.documentElement.lang = locale === "ur" ? "ur" : "en";
