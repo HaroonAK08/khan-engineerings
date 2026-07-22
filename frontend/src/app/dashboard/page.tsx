@@ -10,6 +10,7 @@ import {
   Factory,
   Loader2,
   Plus,
+  Receipt,
   RefreshCw,
   RotateCcw,
   TrendingDown,
@@ -82,7 +83,8 @@ function activityTypeLabel(type: string, t: (key: MessageKey) => string) {
 }
 
 const QUICK_ACTIONS: Array<{ href: string; labelKey: MessageKey; icon: typeof Truck }> = [
-  { href: "/dashboard/inventory/purchases", labelKey: "dash.qa.purchase", icon: Truck },
+  { href: "/dashboard/expenses", labelKey: "dash.qa.expenses", icon: Receipt },
+  { href: "/dashboard/inventory", labelKey: "dash.qa.purchase", icon: Truck },
   { href: "/dashboard/production", labelKey: "dash.qa.batch", icon: Factory },
   { href: "/dashboard/orders/new", labelKey: "dash.qa.order", icon: Plus },
   { href: "/dashboard/customers", labelKey: "dash.qa.payment", icon: Banknote },
@@ -270,6 +272,7 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
+      {/* Temporarily hidden: sales / expenses / production charts
       <div className="grid gap-6 lg:grid-cols-3">
         <Card>
           <CardHeader>
@@ -306,7 +309,9 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+      */}
 
+      {/* Temporarily hidden: outstanding payments + low stock alerts
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
@@ -400,7 +405,9 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+      */}
 
+      {/* Temporarily hidden: top customers / top suppliers / production summary
       <div className="grid gap-6 lg:grid-cols-3">
         <Card>
           <CardHeader>
@@ -501,7 +508,9 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+      */}
 
+      {/* Temporarily hidden: recent activity
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
@@ -537,6 +546,7 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
+      */}
     </div>
   );
 }

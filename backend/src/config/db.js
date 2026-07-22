@@ -42,7 +42,7 @@ async function connectDB() {
     throw new Error("MONGODB_URI is not set on this server (check Vercel Environment Variables)");
   }
 
-  if (/localhost|127\.0\.0\.1/.test(uri)) {
+  if (process.env.VERCEL && /localhost|127\.0\.0\.1/.test(uri)) {
     throw new Error(
       "MONGODB_URI points to localhost — Vercel cannot reach your PC. Use the Atlas mongodb+srv:// URI."
     );

@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { clearAuthToken } from "@/lib/auth-token";
 import { LocaleBootstrap } from "@/components/layout/locale-bootstrap";
 import { useAuthStore } from "@/stores/auth-store";
 import type { AuthUser } from "@/types/auth";
@@ -31,10 +32,13 @@ function AuthBootstrap({ children }: { children: React.ReactNode }) {
         if (!cancelled) setUser(res.data.user);
       })
       .catch((err) => {
-        // Leave loading immediately so GuestGuard can show the login form
-        if (!cancelled) setUser(null);
-        // Clear a stale cookie only on auth rejection, not on network/CORS failures
+        if (cancelled) return;
+        // Don't wipe a session established while this /me was still in flight
+        if (useAuthStore.getState().status === "authenticated") return;
+        setUser(null);
+        // Clear a stale token/cookie only on auth rejection, not network/CORS failures
         if (err?.response?.status === 401) {
+          clearAuthToken();
           api.post("/auth/logout").catch(() => {});
         }
       });
@@ -42,8 +46,6 @@ function AuthBootstrap({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-    // Intentionally omit `status` — including it re-ran this effect on
-    // setStatus("loading") and cancelled the in-flight /me before setUser ran.
   }, [setUser, setStatus]);
 
   return <>{children}</>;

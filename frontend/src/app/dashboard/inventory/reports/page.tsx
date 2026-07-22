@@ -185,7 +185,7 @@ export default function InventoryReportsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Link href="/dashboard/inventory/purchases" className="text-sm text-primary hover:underline">
+                <Link href="/dashboard/inventory" className="text-sm text-primary hover:underline">
                   Open purchases →
                 </Link>
               </CardContent>

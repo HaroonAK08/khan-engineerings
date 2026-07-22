@@ -32,7 +32,7 @@ async function register(req, res, next) {
   try {
     const { user, token } = await authService.register(req.body);
     res.cookie("token", token, cookieOptions());
-    res.status(201).json({ user: toPublicUser(user) });
+    res.status(201).json({ user: toPublicUser(user), token });
   } catch (err) {
     next(err);
   }
@@ -42,7 +42,7 @@ async function login(req, res, next) {
   try {
     const { user, token } = await authService.login(req.body);
     res.cookie("token", token, cookieOptions());
-    res.json({ user: toPublicUser(user) });
+    res.json({ user: toPublicUser(user), token });
   } catch (err) {
     next(err);
   }

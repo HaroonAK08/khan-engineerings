@@ -70,7 +70,7 @@ export default function InventoryAlertsPage() {
                     </p>
                   </div>
                 </div>
-                <Link href="/dashboard/inventory/purchases" className="text-sm text-primary hover:underline">
+                <Link href="/dashboard/inventory" className="text-sm text-primary hover:underline">
                   Buy scrap
                 </Link>
               </CardContent>

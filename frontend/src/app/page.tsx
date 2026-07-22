@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import axios from "axios";
 import { Loader2, ShieldCheck } from "lucide-react";
 import { api } from "@/lib/api";
+import { setAuthToken } from "@/lib/auth-token";
 import { useAuthStore } from "@/stores/auth-store";
 import type { AuthUser } from "@/types/auth";
 import { GuestGuard } from "@/components/auth/auth-guard";
@@ -40,7 +41,10 @@ function LoginForm() {
     }
     setSubmitting(true);
     try {
-      const { data } = await api.post<{ user: AuthUser }>("/auth/login", { pin });
+      const { data } = await api.post<{ user: AuthUser; token?: string }>("/auth/login", {
+        pin,
+      });
+      if (data.token) setAuthToken(data.token);
       setUser(data.user);
       toast.success("Access granted");
       router.push("/dashboard");

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { clearAuthToken } from "@/lib/auth-token";
 import type { AuthUser } from "@/types/auth";
 
 type AuthState = {
@@ -18,5 +19,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       status: user ? "authenticated" : "unauthenticated",
     }),
   setStatus: (status) => set({ status }),
-  clear: () => set({ user: null, status: "unauthenticated" }),
+  clear: () => {
+    clearAuthToken();
+    set({ user: null, status: "unauthenticated" });
+  },
 }));

@@ -7,8 +7,7 @@ import { useI18n } from "@/hooks/use-i18n";
 import type { MessageKey } from "@/lib/i18n/messages";
 
 const LINKS: Array<{ href: string; labelKey: MessageKey; exact?: boolean }> = [
-  { href: "/dashboard/inventory", labelKey: "inventory.overview", exact: true },
-  { href: "/dashboard/inventory/purchases", labelKey: "inventory.purchases" },
+  { href: "/dashboard/inventory", labelKey: "inventory.purchases", exact: true },
   { href: "/dashboard/inventory/finished", labelKey: "inventory.finished" },
 ];
 
