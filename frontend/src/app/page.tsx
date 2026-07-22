@@ -45,10 +45,18 @@ function LoginForm() {
       toast.success("Access granted");
       router.push("/dashboard");
     } catch (err) {
-      const message = axios.isAxiosError(err)
-        ? (err.response?.data as { message?: string } | undefined)?.message
-        : undefined;
-      toast.error(message ?? "Wrong code");
+      if (axios.isAxiosError(err)) {
+        const message = (err.response?.data as { message?: string } | undefined)?.message;
+        if (message) {
+          toast.error(message);
+        } else if (err.code === "ECONNABORTED" || !err.response) {
+          toast.error("Server unreachable — check API / MongoDB");
+        } else {
+          toast.error("Wrong code");
+        }
+      } else {
+        toast.error("Wrong code");
+      }
     } finally {
       setSubmitting(false);
     }

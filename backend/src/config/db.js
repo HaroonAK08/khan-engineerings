@@ -16,7 +16,13 @@ async function connectDB() {
   if (!cached.promise) {
     cached.promise = mongoose
       .connect(uri, {
-        serverSelectionTimeoutMS: 8000,
+        // Vercel serverless: IPv6 DNS can hang; force IPv4
+        family: 4,
+        serverSelectionTimeoutMS: 5000,
+        connectTimeoutMS: 5000,
+        maxPoolSize: 5,
+        minPoolSize: 0,
+        bufferCommands: false,
       })
       .then((m) => {
         console.log("MongoDB connected");
