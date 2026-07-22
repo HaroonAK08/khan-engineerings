@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ProductSearchSelect } from "@/components/products/product-search-select";
 import {
   Table,
   TableBody,
@@ -176,17 +177,15 @@ export default function MovementsPage() {
             {watchType === "finished_good" && (
               <div className="flex flex-col gap-1.5">
                 <Label>Product</Label>
-                <select
-                  className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
-                  {...form.register("product")}
-                >
-                  <option value="">Select…</option>
-                  {products.map((p) => (
-                    <option key={p._id} value={p._id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
+                <ProductSearchSelect
+                  products={products}
+                  value={form.watch("product") || ""}
+                  onChange={(id) => form.setValue("product", id, { shouldValidate: true })}
+                  placeholder="Select…"
+                  emptyLabel="Select…"
+                  showWeight
+                  showFamily
+                />
               </div>
             )}
             <div className="flex flex-col gap-1.5">

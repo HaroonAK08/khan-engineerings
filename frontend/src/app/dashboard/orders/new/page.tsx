@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { apiError, formatKg, formatMoney } from "@/lib/materials-api";
 import { listProducts } from "@/lib/production-api";
 import { createCustomer, createOrder, listCustomers, listSalesmen, type Customer, type Salesman } from "@/lib/sales-api";
@@ -58,6 +58,22 @@ export default function NewOrderPage() {
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
   const [newCustomerAddress, setNewCustomerAddress] = useState("");
   const [savingCustomer, setSavingCustomer] = useState(false);
+  const [productPickerIndex, setProductPickerIndex] = useState<number | null>(null);
+  const [productSearch, setProductSearch] = useState("");
+
+  const filteredProducts = useMemo(() => {
+    const q = productSearch.trim().toLowerCase();
+    let list = products.filter((p) => Number(p.weightKg) > 0);
+    if (q) {
+      list = list.filter(
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          p.family?.toLowerCase().includes(q) ||
+          String(p.weightKg).includes(q)
+      );
+    }
+    return list;
+  }, [products, productSearch]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -346,30 +362,80 @@ export default function NewOrderPage() {
                   key={index}
                   className="grid grid-cols-1 items-end gap-2 rounded-lg border border-border/60 p-3 sm:grid-cols-12 sm:border-0 sm:p-0"
                 >
-                  <div className="flex flex-col gap-1 sm:col-span-4">
+                  <div className="relative flex flex-col gap-1 sm:col-span-4">
                     <Label className="sm:hidden">{t("orderNew.col.product")}</Label>
-                    <select
-                      className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
-                      value={line.product}
-                      onChange={(e) => {
-                        const product = products.find((p) => p._id === e.target.value);
-                        updateLine(index, {
-                          product: e.target.value,
-                          ratePerKg:
-                            Number(product?.pricePerKg) > 0
-                              ? Number(product?.pricePerKg)
-                              : line.ratePerKg || 0,
-                        });
-                      }}
-                    >
-                      <option value="">{t("orderNew.productPh")}</option>
-                      {products.map((p) => (
-                        <option key={p._id} value={p._id} disabled={!(Number(p.weightKg) > 0)}>
-                          {p.name}
-                          {Number(p.weightKg) > 0 ? ` · ${formatKg(Number(p.weightKg))} kg` : ""}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="overflow-hidden rounded-lg border border-input">
+                      <button
+                        type="button"
+                        className="flex h-8 w-full items-center px-2.5 text-left text-sm hover:bg-muted/50"
+                        onClick={() => {
+                          const open = productPickerIndex === index ? null : index;
+                          setProductPickerIndex(open);
+                          setProductSearch("");
+                        }}
+                      >
+                        <span
+                          className={
+                            selected ? "truncate text-foreground" : "text-muted-foreground"
+                          }
+                        >
+                          {selected
+                            ? `${selected.name} · ${formatKg(weightKg)} kg`
+                            : t("orderNew.productPh")}
+                        </span>
+                      </button>
+                      {productPickerIndex === index && (
+                        <div className="border-t border-border bg-card">
+                          <div className="relative border-b border-border p-2">
+                            <Search className="pointer-events-none absolute top-1/2 left-4 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                            <Input
+                              className="h-8 pl-8"
+                              placeholder={t("prod.searchProduct")}
+                              value={productSearch}
+                              onChange={(e) => setProductSearch(e.target.value)}
+                              autoFocus
+                            />
+                          </div>
+                          <div className="max-h-48 overflow-y-auto">
+                            {filteredProducts.length === 0 ? (
+                              <p className="px-3 py-4 text-center text-xs text-muted-foreground">
+                                {t("prod.noMatchProduct")}
+                              </p>
+                            ) : (
+                              filteredProducts.map((p) => {
+                                const kg = Number(p.weightKg) || 0;
+                                const active = line.product === p._id;
+                                return (
+                                  <button
+                                    key={p._id}
+                                    type="button"
+                                    className={`flex w-full flex-col gap-0.5 px-3 py-2 text-left text-sm hover:bg-muted ${
+                                      active ? "bg-muted" : ""
+                                    }`}
+                                    onClick={() => {
+                                      updateLine(index, {
+                                        product: p._id,
+                                        ratePerKg:
+                                          Number(p.pricePerKg) > 0
+                                            ? Number(p.pricePerKg)
+                                            : line.ratePerKg || 0,
+                                      });
+                                      setProductPickerIndex(null);
+                                      setProductSearch("");
+                                    }}
+                                  >
+                                    <span className="font-medium">{p.name}</span>
+                                    <span className="font-data text-[10px] text-muted-foreground uppercase">
+                                      {p.family} · {formatKg(kg)} kg
+                                    </span>
+                                  </button>
+                                );
+                              })
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <div className="flex flex-col gap-1 sm:col-span-2">
                     <Label className="sm:hidden">{t("orderNew.col.qty")}</Label>

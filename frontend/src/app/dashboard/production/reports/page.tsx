@@ -9,6 +9,7 @@ import { getProductionReport, listProducts } from "@/lib/production-api";
 import type { Product, ProductionReport } from "@/types/production";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { ProductSearchSelect } from "@/components/products/product-search-select";
 import {
   Table,
   TableBody,
@@ -73,18 +74,15 @@ export default function ProductionReportsPage() {
         <CardContent className="grid grid-cols-1 gap-2 p-4 sm:grid-cols-3">
           <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
           <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-          <select
-            className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
+          <ProductSearchSelect
+            products={products}
             value={product}
-            onChange={(e) => setProduct(e.target.value)}
-          >
-            <option value="">{t("prodReports.allProducts")}</option>
-            {products.map((p) => (
-              <option key={p._id} value={p._id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+            onChange={setProduct}
+            placeholder={t("prodReports.allProducts")}
+            emptyLabel={t("prodReports.allProducts")}
+            showWeight
+            showFamily
+          />
         </CardContent>
       </Card>
 
