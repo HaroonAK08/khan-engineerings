@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, Plus, Trash2 } from "lucide-react";
-import { apiError, formatMoney } from "@/lib/materials-api";
+import { apiError, formatKg, formatMoney } from "@/lib/materials-api";
 import { listProducts } from "@/lib/production-api";
 import { createCustomer, createOrder, listCustomers, listSalesmen, type Customer, type Salesman } from "@/lib/sales-api";
 import type { Product } from "@/types/production";
@@ -157,6 +157,18 @@ export default function NewOrderPage() {
       toast.error(t("orderNew.addLineErr"));
       return;
     }
+    if (items.some((l) => !(Number(l.ratePerKg) > 0))) {
+      toast.error(t("orderNew.rateRequired"));
+      return;
+    }
+    const missingWeight = items.some((l) => {
+      const p = products.find((x) => x._id === l.product);
+      return !(Number(p?.weightKg) > 0);
+    });
+    if (missingWeight) {
+      toast.error(t("orderNew.noWeight"));
+      return;
+    }
     setSaving(true);
     try {
       const order = await createOrder({
@@ -269,11 +281,23 @@ export default function NewOrderPage() {
                   </Label>
                   <Input
                     type="number"
-                    step="0.01"
+                    step={commissionType === "percent" ? "1" : "0.01"}
                     min={0}
                     max={commissionType === "percent" ? 100 : undefined}
-                    value={commissionValue}
-                    onChange={(e) => setCommissionValue(Number(e.target.value))}
+                    value={commissionValue === 0 ? "" : commissionValue}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      if (raw === "") {
+                        setCommissionValue(0);
+                        return;
+                      }
+                      const n = Number(raw);
+                      if (!Number.isFinite(n) || n < 0) return;
+                      setCommissionValue(
+                        commissionType === "percent" ? Math.min(100, Math.round(n)) : n
+                      );
+                    }}
+                    placeholder="0"
                   />
                 </div>
                 {commissionPreview > 0 && (
@@ -304,62 +328,94 @@ export default function NewOrderPage() {
             <CardDescription>{t("orderNew.lineItemsDesc")}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
+            <div className="hidden grid-cols-12 gap-2 text-xs font-medium text-muted-foreground sm:grid">
+              <span className="col-span-4">{t("orderNew.col.product")}</span>
+              <span className="col-span-2">{t("orderNew.col.qty")}</span>
+              <span className="col-span-2">{t("orderNew.col.weight")}</span>
+              <span className="col-span-2">{t("orderNew.col.rate")}</span>
+              <span className="col-span-2 text-end">{t("orderNew.col.amount")}</span>
+            </div>
             {lines.map((line, index) => {
               const selected = products.find((p) => p._id === line.product);
+              const weightKg = Number(selected?.weightKg) || 0;
               const unitPrice = lineUnitPrice(products, line);
+              const lineAmount =
+                Math.round((Number(line.quantity) || 0) * unitPrice * 100) / 100;
               return (
-                <div key={index} className="grid grid-cols-1 items-end gap-2 sm:grid-cols-12">
-                  <select
-                    className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm sm:col-span-5 dark:bg-input/30"
-                    value={line.product}
-                    onChange={(e) => {
-                      const product = products.find((p) => p._id === e.target.value);
-                      updateLine(index, {
-                        product: e.target.value,
-                        ratePerKg: Number(product?.pricePerKg) || 0,
-                      });
-                    }}
-                  >
-                    <option value="">{t("orderNew.productPh")}</option>
-                    {products.map((p) => (
-                      <option key={p._id} value={p._id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                  <Input
-                    type="number"
-                    step="1"
-                    className="sm:col-span-2"
-                    value={line.quantity}
-                    onChange={(e) => updateLine(index, { quantity: Number(e.target.value) })}
-                    placeholder={t("orderNew.qtyPh")}
-                  />
-                  <div className="flex flex-col gap-0.5 sm:col-span-3">
-                    {selected && (
-                      <div className="space-y-0.5 text-[11px] leading-tight text-muted-foreground">
-                        <p>
-                          {t("orderNew.makeCost")}:{" "}
-                          <span className="font-data">
-                            {formatMoney(Number(selected.standardCost) || 0)}
-                          </span>
-                        </p>
-                        <p>
-                          {t("orderNew.unitPriceComputed")}:{" "}
-                          <span className="font-data">{formatMoney(unitPrice)}</span>
-                        </p>
-                      </div>
-                    )}
+                <div
+                  key={index}
+                  className="grid grid-cols-1 items-end gap-2 rounded-lg border border-border/60 p-3 sm:grid-cols-12 sm:border-0 sm:p-0"
+                >
+                  <div className="flex flex-col gap-1 sm:col-span-4">
+                    <Label className="sm:hidden">{t("orderNew.col.product")}</Label>
+                    <select
+                      className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
+                      value={line.product}
+                      onChange={(e) => {
+                        const product = products.find((p) => p._id === e.target.value);
+                        updateLine(index, {
+                          product: e.target.value,
+                          ratePerKg:
+                            Number(product?.pricePerKg) > 0
+                              ? Number(product?.pricePerKg)
+                              : line.ratePerKg || 0,
+                        });
+                      }}
+                    >
+                      <option value="">{t("orderNew.productPh")}</option>
+                      {products.map((p) => (
+                        <option key={p._id} value={p._id} disabled={!(Number(p.weightKg) > 0)}>
+                          {p.name}
+                          {Number(p.weightKg) > 0 ? ` · ${formatKg(Number(p.weightKg))} kg` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-1 sm:col-span-2">
+                    <Label className="sm:hidden">{t("orderNew.col.qty")}</Label>
+                    <Input
+                      type="number"
+                      step="1"
+                      min={1}
+                      value={line.quantity}
+                      onChange={(e) => updateLine(index, { quantity: Number(e.target.value) })}
+                      placeholder={t("orderNew.qtyPh")}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1 sm:col-span-2">
+                    <Label className="sm:hidden">{t("orderNew.col.weight")}</Label>
+                    <div className="font-data flex h-8 items-center rounded-lg border border-border bg-muted/40 px-2.5 text-sm">
+                      {selected
+                        ? weightKg > 0
+                          ? t("orderNew.weightLabel", { kg: formatKg(weightKg) })
+                          : t("orderNew.noWeight")
+                        : "—"}
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1 sm:col-span-2">
+                    <Label className="sm:hidden">{t("orderNew.col.rate")}</Label>
                     <Input
                       type="number"
                       step="0.01"
-                      value={line.ratePerKg}
-                      onChange={(e) => updateLine(index, { ratePerKg: Number(e.target.value) })}
+                      min={0}
+                      value={line.ratePerKg || ""}
+                      onChange={(e) =>
+                        updateLine(index, {
+                          ratePerKg: e.target.value === "" ? 0 : Number(e.target.value),
+                        })
+                      }
                       placeholder={t("orderNew.ratePerKgPh")}
                     />
                   </div>
-                  <div className="flex h-8 items-center justify-between gap-2 sm:col-span-2">
-                    <span className="font-data text-xs">{formatMoney(line.quantity * unitPrice)}</span>
+                  <div className="flex items-center justify-between gap-2 sm:col-span-2">
+                    <div className="min-w-0 text-end sm:flex-1">
+                      <p className="font-data text-sm font-medium">{formatMoney(lineAmount)}</p>
+                      {selected && weightKg > 0 && line.ratePerKg > 0 && (
+                        <p className="truncate text-[10px] text-muted-foreground">
+                          {t("orderNew.unitPriceComputed")}: {formatMoney(unitPrice)}
+                        </p>
+                      )}
+                    </div>
                     <Button
                       type="button"
                       size="icon-sm"
@@ -370,6 +426,16 @@ export default function NewOrderPage() {
                       <Trash2 className="size-4" />
                     </Button>
                   </div>
+                  {selected && weightKg > 0 && line.ratePerKg > 0 && line.quantity > 0 && (
+                    <p className="text-xs text-muted-foreground sm:col-span-12">
+                      {t("orderNew.calcHint", {
+                        qty: line.quantity,
+                        kg: formatKg(weightKg),
+                        rate: formatMoney(line.ratePerKg),
+                        amount: formatMoney(lineAmount),
+                      })}
+                    </p>
+                  )}
                 </div>
               );
             })}
