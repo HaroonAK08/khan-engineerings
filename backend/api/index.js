@@ -28,18 +28,62 @@ function requestPath(req) {
 }
 
 function isHealthRequest(req) {
-  const path = requestPath(req).toLowerCase();
-  return path.includes("health");
+  return requestPath(req).toLowerCase().includes("health");
 }
 
-let cachedHandler;
+function isDbCheckRequest(req) {
+  return requestPath(req).toLowerCase().includes("db-check");
+}
 
-async function getAppHandler() {
-  if (cachedHandler) return cachedHandler;
-  const serverless = require("serverless-http");
-  const app = require("../src/app");
-  cachedHandler = serverless(app);
-  return cachedHandler;
+function normalizeVercelBody(req) {
+  if (!process.env.VERCEL) return;
+  try {
+    if (Buffer.isBuffer(req.body)) {
+      const raw = req.body.toString("utf8");
+      req.body = raw ? JSON.parse(raw) : {};
+    } else if (typeof req.body === "string") {
+      req.body = req.body ? JSON.parse(req.body) : {};
+    } else if (req.body == null) {
+      req.body = {};
+    }
+  } catch {
+    req.body = {};
+  }
+}
+
+function runExpress(app, req, res) {
+  return new Promise((resolve, reject) => {
+    const done = () => {
+      cleanup();
+      resolve();
+    };
+    const fail = (err) => {
+      cleanup();
+      reject(err);
+    };
+    const cleanup = () => {
+      res.off("finish", done);
+      res.off("close", done);
+      res.off("error", fail);
+    };
+
+    res.on("finish", done);
+    res.on("close", done);
+    res.on("error", fail);
+
+    try {
+      app(req, res);
+    } catch (err) {
+      fail(err);
+    }
+  });
+}
+
+let app;
+
+function getApp() {
+  if (!app) app = require("../src/app");
+  return app;
 }
 
 module.exports = async (req, res) => {
@@ -51,7 +95,6 @@ module.exports = async (req, res) => {
       return;
     }
 
-    // Never load Express/Mongoose for health — proves the Vercel function is alive
     if (isHealthRequest(req)) {
       setCors(res);
       res.statusCode = 200;
@@ -69,9 +112,34 @@ module.exports = async (req, res) => {
     }
 
     const { connectDB } = require("../src/config/db");
+
+    if (isDbCheckRequest(req)) {
+      const started = Date.now();
+      try {
+        await connectDB();
+        setCors(res);
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ status: "db-ok", ms: Date.now() - started }));
+      } catch (err) {
+        setCors(res);
+        res.statusCode = 500;
+        res.setHeader("Content-Type", "application/json");
+        res.end(
+          JSON.stringify({
+            status: "db-fail",
+            ms: Date.now() - started,
+            message: err.message,
+            name: err.name,
+          })
+        );
+      }
+      return;
+    }
+
+    normalizeVercelBody(req);
     await connectDB();
-    const handler = await getAppHandler();
-    return handler(req, res);
+    await runExpress(getApp(), req, res);
   } catch (err) {
     console.error("API handler error:", err);
     if (!res.headersSent) {

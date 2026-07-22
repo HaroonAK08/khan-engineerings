@@ -1,4 +1,11 @@
+const dns = require("dns");
 const mongoose = require("mongoose");
+
+try {
+  dns.setDefaultResultOrder("ipv4first");
+} catch (_) {
+  /* Node < 17 */
+}
 
 let cached = global.__mongoose;
 if (!cached) {

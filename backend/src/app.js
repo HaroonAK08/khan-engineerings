@@ -27,7 +27,28 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json());
+
+// Vercel pre-parses JSON into req.body. Calling express.json() again can hang forever
+// waiting for a request stream that already ended (looks like CORS / provisional headers).
+app.use((req, _res, next) => {
+  if (process.env.VERCEL) {
+    try {
+      if (Buffer.isBuffer(req.body)) {
+        const raw = req.body.toString("utf8");
+        req.body = raw ? JSON.parse(raw) : {};
+      } else if (typeof req.body === "string") {
+        req.body = req.body ? JSON.parse(req.body) : {};
+      } else if (req.body == null) {
+        req.body = {};
+      }
+    } catch {
+      req.body = {};
+    }
+    return next();
+  }
+  return express.json()(req, _res, next);
+});
+
 app.use(cookieParser());
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
