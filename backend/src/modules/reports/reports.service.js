@@ -60,7 +60,7 @@ async function globalSearch({ q, limit = 8 } = {}) {
       .limit(lim)
       .lean(),
     Purchase.find({ $or: [{ invoiceNo: re }, { notes: re }] })
-      .populate("supplier", "name")
+      .populate("supplier", "name nameUr")
       .sort({ purchaseDate: -1 })
       .limit(lim)
       .lean(),

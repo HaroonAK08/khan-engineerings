@@ -6,6 +6,8 @@ const PAY_DAYS = ["monday", "thursday"];
 const workerSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
+    /** Urdu display name (shown when UI locale is Urdu) */
+    nameUr: { type: String, trim: true, default: "" },
     /**
      * Last / preferred pay style — not locked.
      * Each payment can pick weekly, monthly, or per unit independently.

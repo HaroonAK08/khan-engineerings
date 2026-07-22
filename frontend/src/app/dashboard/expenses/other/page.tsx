@@ -65,8 +65,10 @@ export default function OtherExpensesPage() {
 
   const [category, setCategory] = useState("paint");
   const [trackQuantity, setTrackQuantity] = useState(true);
+  const [priceMode, setPriceMode] = useState<"rate" | "total">("rate");
   const [quantity, setQuantity] = useState("");
   const [quantityUnit, setQuantityUnit] = useState("kg");
+  const [rate, setRate] = useState("");
   const [amount, setAmount] = useState("");
   const [expenseDate, setExpenseDate] = useState(todayInput());
   const [note, setNote] = useState("");
@@ -77,8 +79,20 @@ export default function OtherExpensesPage() {
     if (amountOnlyCategory(id)) {
       setQuantity("");
       setQuantityUnit("kg");
+      setRate("");
+      setPriceMode("total");
+    } else {
+      setPriceMode("rate");
     }
   }
+
+  const calculatedTotal = useMemo(() => {
+    if (!trackQuantity || priceMode !== "rate") return null;
+    const qty = Number(quantity);
+    const r = Number(rate);
+    if (!Number.isFinite(qty) || qty <= 0 || !Number.isFinite(r) || r <= 0) return null;
+    return Math.round(qty * r * 100) / 100;
+  }, [trackQuantity, priceMode, quantity, rate]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -107,11 +121,21 @@ export default function OtherExpensesPage() {
   const total = useMemo(() => expenses.reduce((s, e) => s + e.amount, 0), [expenses]);
 
   async function onSave() {
-    const value = Number(amount);
-    if (!Number.isFinite(value) || value <= 0) {
-      toast.error("Enter the amount");
-      return;
+    let value: number;
+    if (trackQuantity && priceMode === "rate") {
+      if (calculatedTotal == null) {
+        toast.error("Enter quantity and rate");
+        return;
+      }
+      value = calculatedTotal;
+    } else {
+      value = Number(amount);
+      if (!Number.isFinite(value) || value <= 0) {
+        toast.error("Enter the amount");
+        return;
+      }
     }
+
     let qty: number | undefined;
     let unit: string | undefined;
     if (trackQuantity) {
@@ -127,13 +151,20 @@ export default function OtherExpensesPage() {
       }
       unit = quantityUnit.trim() || "kg";
     }
+
+    const rateNote =
+      trackQuantity && priceMode === "rate" && rate.trim()
+        ? `@ ${rate.trim()}/${unit}`
+        : "";
+    const combinedNotes = [note.trim(), rateNote].filter(Boolean).join(" · ") || undefined;
+
     setBusyId(category);
     try {
       await createFactoryExpense({
         category,
         amount: value,
         expenseDate,
-        notes: note.trim() || undefined,
+        notes: combinedNotes,
         ...(trackQuantity && qty != null
           ? { quantity: qty, quantityUnit: unit }
           : {}),
@@ -141,10 +172,12 @@ export default function OtherExpensesPage() {
       toast.success("Expense saved");
       setQuantity("");
       setQuantityUnit("kg");
+      setRate("");
       setAmount("");
       setNote("");
       setExpenseDate(todayInput());
       setTrackQuantity(categoryUsesQuantityByDefault(category));
+      setPriceMode(categoryUsesQuantityByDefault(category) ? "rate" : "total");
       await load();
     } catch (err) {
       toast.error(apiError(err, "Save failed"));
@@ -217,7 +250,10 @@ export default function OtherExpensesPage() {
                 type="button"
                 size="sm"
                 variant={trackQuantity ? "default" : "outline"}
-                onClick={() => setTrackQuantity(true)}
+                onClick={() => {
+                  setTrackQuantity(true);
+                  setPriceMode("rate");
+                }}
               >
                 {t("other.withQty")}
               </Button>
@@ -228,6 +264,8 @@ export default function OtherExpensesPage() {
                 onClick={() => {
                   setTrackQuantity(false);
                   setQuantity("");
+                  setRate("");
+                  setPriceMode("total");
                 }}
               >
                 {t("other.amountOnly")}
@@ -238,6 +276,33 @@ export default function OtherExpensesPage() {
 
           {trackQuantity ? (
             <>
+              <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-4">
+                <Label>{t("other.priceMode")}</Label>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={priceMode === "rate" ? "default" : "outline"}
+                    onClick={() => {
+                      setPriceMode("rate");
+                      setAmount("");
+                    }}
+                  >
+                    {t("other.byRate")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={priceMode === "total" ? "default" : "outline"}
+                    onClick={() => {
+                      setPriceMode("total");
+                      setRate("");
+                    }}
+                  >
+                    {t("other.byTotal")}
+                  </Button>
+                </div>
+              </div>
               <div className="flex flex-col gap-1.5">
                 <Label>{t("other.quantity")}</Label>
                 <Input
@@ -266,20 +331,55 @@ export default function OtherExpensesPage() {
                   <option value="set">set</option>
                 </select>
               </div>
+              {priceMode === "rate" ? (
+                <>
+                  <div className="flex flex-col gap-1.5">
+                    <Label>{t("other.rate", { unit: quantityUnit || "kg" })}</Label>
+                    <Input
+                      type="number"
+                      step="any"
+                      min="0"
+                      placeholder={t("other.phRate")}
+                      value={rate}
+                      onChange={(e) => setRate(e.target.value)}
+                      className="h-11 text-base"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label>{t("other.totalCalc")}</Label>
+                    <div className="font-data flex h-11 items-center rounded-lg border border-border bg-muted/40 px-3 text-base">
+                      {calculatedTotal != null ? formatMoney(calculatedTotal) : "—"}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  <Label>{t("exp.amount")}</Label>
+                  <Input
+                    type="number"
+                    step="1"
+                    placeholder="0"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    className="h-11 text-base"
+                  />
+                </div>
+              )}
             </>
-          ) : null}
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              <Label>{t("exp.amount")}</Label>
+              <Input
+                type="number"
+                step="1"
+                placeholder="0"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className="h-11 text-base"
+              />
+            </div>
+          )}
 
-          <div className="flex flex-col gap-1.5">
-            <Label>{t("exp.amount")}</Label>
-            <Input
-              type="number"
-              step="1"
-              placeholder="0"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className="h-11 text-base"
-            />
-          </div>
           <div className="flex flex-col gap-1.5">
             <Label>{t("exp.date")}</Label>
             <Input

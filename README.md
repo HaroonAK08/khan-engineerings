@@ -138,15 +138,23 @@ Spec: `docs/MANUFACTURING_ERP_TECH_SPEC.md`.
 
 ### Local development
 
+Uses a **local MongoDB** (`mongodb://127.0.0.1:27017/khan-engineerings`) by default so testing never touches Atlas production data. Production URI lives in `backend/.env.production` (gitignored) and on Vercel.
+
+Ensure `mongod` is running locally (`systemctl start mongod` or your OS equivalent).
+
 ### Backend
 
 ```bash
 cd backend
-cp .env.example .env   # set MONGODB_URI and JWT_SECRET
+cp .env.example .env   # local URI is already set
 npm install
-npm run seed           # creates admin@khanengineerings.com / admin123
+npm run seed           # creates admin@khanengineerings.com / admin123 on local DB
 npm run migrate:mfg    # one-time Phase A data migration (after deploy/pull)
-npm run dev            # http://localhost:5000
+npm run dev            # http://localhost:5000 → local MongoDB
+
+# Optional: hit Atlas from your machine (careful — live data)
+# npm run dev:prod-db
+# npm run seed:prod-db
 ```
 
 ### Frontend

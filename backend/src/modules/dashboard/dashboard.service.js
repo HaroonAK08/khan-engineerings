@@ -103,7 +103,7 @@ async function recentActivity(limit = 12) {
       .limit(8)
       .lean(),
     Purchase.find()
-      .populate("supplier", "name")
+      .populate("supplier", "name nameUr")
       .sort({ createdAt: -1 })
       .limit(8)
       .lean(),
@@ -115,7 +115,7 @@ async function recentActivity(limit = 12) {
       .lean(),
     BatchExpense.find().sort({ createdAt: -1 }).limit(6).lean(),
     LedgerEntry.find({ type: "payment" })
-      .populate("supplier", "name")
+      .populate("supplier", "name nameUr")
       .sort({ createdAt: -1 })
       .limit(6)
       .lean(),

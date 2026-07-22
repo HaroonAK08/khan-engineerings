@@ -130,7 +130,7 @@ async function create(data) {
     });
   }
 
-  const populated = await Purchase.findById(purchase._id).populate("supplier", "name phone isActive");
+  const populated = await Purchase.findById(purchase._id).populate("supplier", "name nameUr phone isActive");
   try {
     const inventoryService = require("../inventory/inventory.service");
     await inventoryService.onPurchaseCreated(populated);
@@ -165,12 +165,12 @@ async function list({ supplier, dateFrom, dateTo, q, materialType } = {}) {
   }
 
   return Purchase.find(filter)
-    .populate("supplier", "name phone isActive")
+    .populate("supplier", "name nameUr phone isActive")
     .sort({ purchaseDate: -1, createdAt: -1 });
 }
 
 async function getById(id) {
-  const purchase = await Purchase.findById(id).populate("supplier", "name phone isActive");
+  const purchase = await Purchase.findById(id).populate("supplier", "name nameUr phone isActive");
   if (!purchase) throw httpError("Purchase not found", 404);
   return purchase;
 }
@@ -260,7 +260,7 @@ async function update(id, data) {
     console.error("Inventory movement (purchase update) failed:", e.message);
   }
 
-  return Purchase.findById(purchase._id).populate("supplier", "name phone isActive");
+  return Purchase.findById(purchase._id).populate("supplier", "name nameUr phone isActive");
 }
 
 async function remove(id) {

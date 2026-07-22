@@ -7,6 +7,8 @@ export type PayDay = "monday" | "thursday";
 export type Worker = {
   _id: string;
   name: string;
+  /** Urdu display name when UI is in Urdu */
+  nameUr: string;
   /** Last used pay style — suggestion only, not locked */
   payType: PayType | null;
   /** Last paid amount (or last per-unit rate) — suggestion only */
@@ -25,6 +27,7 @@ export async function listWorkers(params?: { active?: string }) {
 
 export async function createWorker(body: {
   name: string;
+  nameUr?: string;
   payType?: PayType | null;
   rate?: number | null;
   unitLabel?: string;
@@ -40,6 +43,7 @@ export async function updateWorker(
   id: string,
   body: Partial<{
     name: string;
+    nameUr: string;
     payType: PayType | null;
     rate: number | null;
     unitLabel: string;

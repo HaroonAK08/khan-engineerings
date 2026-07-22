@@ -38,8 +38,8 @@ import { useI18n } from "@/hooks/use-i18n";
 
 const supplierSchema = z.object({
   name: z.string().min(1, "Name is required"),
+  nameUr: z.string().optional(),
   phone: z.string().optional(),
-  email: z.string().email("Invalid email").optional().or(z.literal("")),
   address: z.string().optional(),
   notes: z.string().optional(),
   isActive: z.boolean(),
@@ -48,7 +48,7 @@ const supplierSchema = z.object({
 type SupplierForm = z.infer<typeof supplierSchema>;
 
 export default function SuppliersPage() {
-  const { t } = useI18n();
+  const { t, isUrdu } = useI18n();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -61,8 +61,8 @@ export default function SuppliersPage() {
     resolver: zodResolver(supplierSchema),
     defaultValues: {
       name: "",
+      nameUr: "",
       phone: "",
-      email: "",
       address: "",
       notes: "",
       isActive: true,
@@ -92,8 +92,8 @@ export default function SuppliersPage() {
     setEditing(null);
     form.reset({
       name: "",
+      nameUr: "",
       phone: "",
-      email: "",
       address: "",
       notes: "",
       isActive: true,
@@ -105,8 +105,8 @@ export default function SuppliersPage() {
     setEditing(supplier);
     form.reset({
       name: supplier.name,
+      nameUr: supplier.nameUr || "",
       phone: supplier.phone || "",
-      email: supplier.email || "",
       address: supplier.address || "",
       notes: supplier.notes || "",
       isActive: supplier.isActive,
@@ -207,7 +207,6 @@ export default function SuppliersPage() {
                 <TableRow>
                   <TableHead>{t("sup.col.name")}</TableHead>
                   <TableHead>{t("sup.col.phone")}</TableHead>
-                  <TableHead>{t("sup.col.email")}</TableHead>
                   <TableHead>{t("sup.col.status")}</TableHead>
                   <TableHead className="text-right">{t("sup.col.actions")}</TableHead>
                 </TableRow>
@@ -219,12 +218,12 @@ export default function SuppliersPage() {
                       <Link
                         href={`/dashboard/suppliers/${s._id}`}
                         className="hover:text-primary hover:underline"
+                        dir={isUrdu && s.nameUr?.trim() ? "rtl" : undefined}
                       >
-                        {s.name}
+                        {isUrdu && s.nameUr?.trim() ? s.nameUr.trim() : s.name}
                       </Link>
                     </TableCell>
                     <TableCell className="font-data text-xs">{s.phone || "—"}</TableCell>
-                    <TableCell className="font-data text-xs">{s.email || "—"}</TableCell>
                     <TableCell>
                       <Badge variant={s.isActive ? "secondary" : "outline"} className="font-data text-[10px]">
                         {s.isActive ? t("sup.status.active") : t("sup.status.inactive")}
@@ -270,15 +269,12 @@ export default function SuppliersPage() {
               )}
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="phone">{t("sup.col.phone")}</Label>
-              <Input id="phone" {...form.register("phone")} />
+              <Label htmlFor="nameUr">{t("sup.col.nameUr")}</Label>
+              <Input id="nameUr" dir="rtl" {...form.register("nameUr")} />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="email">{t("sup.col.email")}</Label>
-              <Input id="email" type="email" {...form.register("email")} />
-              {form.formState.errors.email && (
-                <p className="text-xs text-destructive">{form.formState.errors.email.message}</p>
-              )}
+              <Label htmlFor="phone">{t("sup.col.phone")}</Label>
+              <Input id="phone" {...form.register("phone")} />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="address">{t("sup.address")}</Label>

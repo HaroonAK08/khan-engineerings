@@ -55,6 +55,10 @@ function validateWorkerBody(data, { partial = false } = {}) {
     out.name = name;
   }
 
+  if (data.nameUr !== undefined) {
+    out.nameUr = String(data.nameUr || "").trim();
+  }
+
   if (data.payType !== undefined) {
     if (data.payType === null || data.payType === "") {
       out.payType = null;
@@ -210,7 +214,7 @@ async function listPayments({ dateFrom, dateTo, workerId } = {}) {
     }
   }
   return BatchExpense.find(match)
-    .populate("worker", "name payType rate job")
+    .populate("worker", "name nameUr payType rate job")
     .sort({ expenseDate: -1, createdAt: -1 });
 }
 

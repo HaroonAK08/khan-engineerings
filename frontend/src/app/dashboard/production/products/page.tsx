@@ -68,6 +68,7 @@ export default function ProductsPage() {
   const [sizes, setSizes] = useState<CatalogItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
+  const [familyFilter, setFamilyFilter] = useState<"all" | "hub" | "drum">("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [saving, setSaving] = useState(false);
@@ -95,8 +96,11 @@ export default function ProductsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      const params: { q?: string; family?: string } = {};
+      if (q.trim()) params.q = q.trim();
+      if (familyFilter !== "all") params.family = familyFilter;
       const [p, c, s] = await Promise.all([
-        listProducts(q.trim() ? { q: q.trim() } : undefined),
+        listProducts(Object.keys(params).length ? params : undefined),
         listCategories(),
         listSizes(),
       ]);
@@ -108,7 +112,7 @@ export default function ProductsPage() {
     } finally {
       setLoading(false);
     }
-  }, [q, t]);
+  }, [q, familyFilter, t]);
 
   useEffect(() => {
     const t = setTimeout(load, 200);
@@ -207,11 +211,55 @@ export default function ProductsPage() {
 
       <Card>
         <CardHeader className="pb-3">
-          <Input
-            placeholder={t("productsPage.searchPh")}
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
+          <div className="flex flex-col gap-4">
+            <div>
+              <p className="mb-2 text-sm font-medium text-foreground">
+                {t("prod.family")}:{" "}
+                <span className="text-muted-foreground">
+                  {familyFilter === "all"
+                    ? t("prod.filter.all")
+                    : familyFilter === "hub"
+                      ? t("prod.hub")
+                      : t("prod.drum")}
+                </span>
+              </p>
+              <div
+                className="grid grid-cols-3 gap-2"
+                role="group"
+                aria-label={t("prod.family")}
+              >
+                {(
+                  [
+                    { value: "all", label: t("prod.filter.all") },
+                    { value: "hub", label: t("prod.hub") },
+                    { value: "drum", label: t("prod.drum") },
+                  ] as const
+                ).map((opt) => {
+                  const active = familyFilter === opt.value;
+                  return (
+                    <Button
+                      key={opt.value}
+                      type="button"
+                      size="lg"
+                      variant={active ? "default" : "outline"}
+                      className={`h-12 text-base font-semibold uppercase tracking-wide ${
+                        active ? "shadow-sm" : "bg-background"
+                      }`}
+                      onClick={() => setFamilyFilter(opt.value)}
+                      aria-pressed={active}
+                    >
+                      {opt.label}
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
+            <Input
+              placeholder={t("productsPage.searchPh")}
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+          </div>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -226,8 +274,6 @@ export default function ProductsPage() {
                 <TableRow>
                   <TableHead>{t("common.name")}</TableHead>
                   <TableHead>{t("prod.family")}</TableHead>
-                  <TableHead>{t("common.category")}</TableHead>
-                  <TableHead>{t("finished.col.size")}</TableHead>
                   <TableHead className="text-right">{t("productsPage.makeCost")}</TableHead>
                   <TableHead className="text-right">{t("productsPage.pricePerKg")}</TableHead>
                   <TableHead className="text-right">{t("productsPage.sellingPrice")}</TableHead>
@@ -241,17 +287,15 @@ export default function ProductsPage() {
                   <TableRow key={p._id}>
                     <TableCell>
                       <div className="font-medium">{p.name}</div>
-                      <div className="font-data text-[10px] text-muted-foreground">
-                        {p.sku || "—"}
-                      </div>
+                      {p.sku ? (
+                        <div className="font-data text-[10px] text-muted-foreground">{p.sku}</div>
+                      ) : null}
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className="font-data text-[10px] uppercase">
                         {p.family || "hub"}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-sm">{refName(p.category)}</TableCell>
-                    <TableCell className="font-data text-xs">{refName(p.size)}</TableCell>
                     <TableCell className="font-data text-right text-xs">
                       {formatMoney(Number(p.standardCost) || 0)}
                     </TableCell>

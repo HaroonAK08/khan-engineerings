@@ -147,6 +147,7 @@ export type BatchExpense = {
     | {
         _id: string;
         name: string;
+        nameUr?: string;
         payType?: string;
         rate?: number;
         job?: string;

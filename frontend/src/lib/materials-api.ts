@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { useLocaleStore } from "@/stores/locale-store";
 import type { LedgerEntry, Purchase, PurchaseReport, StockSummary, Supplier } from "@/types/materials";
 
 export function apiError(err: unknown, fallback: string) {
@@ -132,5 +133,7 @@ export function formatDate(value: string) {
 export function supplierName(supplier: Purchase["supplier"]) {
   if (!supplier) return "—";
   if (typeof supplier === "string") return supplier;
+  const isUrdu = useLocaleStore.getState().locale === "ur";
+  if (isUrdu && supplier.nameUr?.trim()) return supplier.nameUr.trim();
   return supplier.name;
 }

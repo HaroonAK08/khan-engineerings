@@ -150,8 +150,8 @@ export default function InventoryPage() {
       });
       toast.success(
         purchase.invoiceNo
-          ? `Purchase saved (${purchase.invoiceNo}) — due on supplier ledger`
-          : "Purchase recorded — amount due on supplier ledger"
+          ? `Purchase saved (${purchase.invoiceNo}) — due on supplier account`
+          : "Purchase recorded — amount due on supplier account"
       );
       form.reset({
         supplier: values.supplier,
@@ -171,7 +171,7 @@ export default function InventoryPage() {
   }
 
   async function onDelete(id: string) {
-    if (!confirm("Delete this purchase? Stock and ledger will update.")) return;
+    if (!confirm("Delete this purchase? Stock and supplier account will update.")) return;
     try {
       await deletePurchase(id);
       toast.success("Purchase deleted");
@@ -272,7 +272,7 @@ export default function InventoryPage() {
                 <option value="">Select supplier…</option>
                 {activeSuppliers.map((s) => (
                   <option key={s._id} value={s._id}>
-                    {s.name}
+                    {supplierName(s)}
                   </option>
                 ))}
               </select>
@@ -407,7 +407,7 @@ export default function InventoryPage() {
               <option value="">All suppliers</option>
               {suppliers.map((s) => (
                 <option key={s._id} value={s._id}>
-                  {s.name}
+                  {supplierName(s)}
                 </option>
               ))}
             </select>

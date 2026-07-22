@@ -5,8 +5,10 @@
   "main": "src/server.js",
   "scripts": {
     "dev": "nodemon src/server.js",
+    "dev:prod-db": "node --env-file=.env.production ./node_modules/nodemon/bin/nodemon.js src/server.js",
     "start": "node src/server.js",
     "seed": "node src/scripts/seedAdmin.js",
+    "seed:prod-db": "node --env-file=.env.production src/scripts/seedAdmin.js",
     "migrate:mfg": "node src/scripts/migrate-to-mfg-erp.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

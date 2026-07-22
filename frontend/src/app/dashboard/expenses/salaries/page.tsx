@@ -37,14 +37,28 @@ function todayInput() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function workerName(w: BatchExpense["worker"]) {
+function displayWorkerName(
+  w: { name: string; nameUr?: string } | string | null | undefined,
+  isUrdu: boolean
+) {
   if (!w) return "";
   if (typeof w === "string") return w;
+  if (isUrdu && w.nameUr?.trim()) return w.nameUr.trim();
   return w.name;
 }
 
+function displayJob(
+  job: string,
+  t: (key: "sal.jobMolder" | "sal.jobHelper") => string
+) {
+  const key = job.trim().toLowerCase();
+  if (key === "molder") return t("sal.jobMolder");
+  if (key === "helper") return t("sal.jobHelper");
+  return job;
+}
+
 export default function SalariesPage() {
-  const { t } = useI18n();
+  const { t, isUrdu } = useI18n();
   const defaults = monthDefaults();
 
   function payTypeLabel(type: PayType | null | undefined) {
@@ -72,6 +86,7 @@ export default function SalariesPage() {
   const [search, setSearch] = useState("");
   const [showAddWorker, setShowAddWorker] = useState(false);
   const [newName, setNewName] = useState("");
+  const [newNameUr, setNewNameUr] = useState("");
   const [newJob, setNewJob] = useState("");
   const [newUnitLabel, setNewUnitLabel] = useState("hub");
 
@@ -118,6 +133,7 @@ export default function SalariesPage() {
     return workers.filter(
       (w) =>
         w.name.toLowerCase().includes(q) ||
+        (w.nameUr && w.nameUr.toLowerCase().includes(q)) ||
         (w.job && w.job.toLowerCase().includes(q))
     );
   }, [workers, search]);
@@ -179,7 +195,7 @@ export default function SalariesPage() {
           notes: payNote.trim() || undefined,
         });
       }
-      toast.success(`Paid ${w.name} · ${formatDate(payDate)}`);
+      toast.success(`Paid ${displayWorkerName(w, isUrdu)} · ${formatDate(payDate)}`);
       setPayingId(null);
       await load();
     } catch (err) {
@@ -199,11 +215,13 @@ export default function SalariesPage() {
     try {
       await createWorker({
         name,
+        nameUr: newNameUr.trim(),
         job: newJob.trim(),
         unitLabel: newUnitLabel.trim() || "piece",
       });
       toast.success("Worker added");
       setNewName("");
+      setNewNameUr("");
       setNewJob("");
       setShowAddWorker(false);
       await load();
@@ -226,7 +244,7 @@ export default function SalariesPage() {
   }
 
   async function onDeactivateWorker(w: Worker) {
-    if (!confirm(`Remove ${w.name} from the active list?`)) return;
+    if (!confirm(`Remove ${displayWorkerName(w, isUrdu)} from the active list?`)) return;
     try {
       await deactivateWorker(w._id);
       toast.success("Worker removed");
@@ -313,13 +331,22 @@ export default function SalariesPage() {
                 <CardTitle className="text-nameplate text-sm">{t("sal.newWorker")}</CardTitle>
                 <CardDescription>{t("sal.newWorkerDesc")}</CardDescription>
               </CardHeader>
-              <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="flex flex-col gap-1.5">
                   <Label>{t("sal.name")}</Label>
                   <Input
                     placeholder={t("sal.phName")}
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>{t("sal.nameUr")}</Label>
+                  <Input
+                    placeholder={t("sal.phNameUr")}
+                    value={newNameUr}
+                    onChange={(e) => setNewNameUr(e.target.value)}
+                    dir="rtl"
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
@@ -338,7 +365,7 @@ export default function SalariesPage() {
                     placeholder={t("sal.phUnit")}
                   />
                 </div>
-                <div className="flex items-end sm:col-span-2 lg:col-span-3">
+                <div className="flex items-end sm:col-span-2 lg:col-span-4">
                   <Button
                     type="button"
                     disabled={busyId === "add-worker"}
@@ -375,9 +402,14 @@ export default function SalariesPage() {
                     <CardContent className="flex flex-col gap-4 p-4 sm:p-5">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
-                          <p className="text-lg font-medium tracking-tight">{w.name}</p>
+                          <p
+                            className="text-lg font-medium tracking-tight"
+                            dir={isUrdu && w.nameUr?.trim() ? "rtl" : undefined}
+                          >
+                            {displayWorkerName(w, isUrdu)}
+                          </p>
                           <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                            {w.job ? <span>{w.job}</span> : null}
+                            {w.job ? <span>{displayJob(w.job, t)}</span> : null}
                             {last ? (
                               <span className="font-data text-xs">
                                 {t("sal.lastPaid", {
@@ -585,8 +617,17 @@ export default function SalariesPage() {
                   >
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-sm font-medium">
-                          {workerName(e.worker) || e.notes || "Salary"}
+                        <p
+                          className="truncate text-sm font-medium"
+                          dir={
+                            isUrdu &&
+                            typeof e.worker === "object" &&
+                            e.worker?.nameUr?.trim()
+                              ? "rtl"
+                              : undefined
+                          }
+                        >
+                          {displayWorkerName(e.worker, isUrdu) || e.notes || "Salary"}
                         </p>
                         {e.payType && (
                           <Badge variant="secondary">{payTypeLabel(e.payType)}</Badge>

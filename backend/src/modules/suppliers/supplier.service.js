@@ -13,6 +13,7 @@ async function create(data) {
 
   const supplier = await Supplier.create({
     name,
+    nameUr: data.nameUr?.trim() || "",
     phone: data.phone?.trim() || "",
     email: data.email?.trim().toLowerCase() || "",
     address: data.address?.trim() || "",
@@ -30,6 +31,7 @@ async function list({ q, active } = {}) {
     const term = q.trim();
     filter.$or = [
       { name: new RegExp(term, "i") },
+      { nameUr: new RegExp(term, "i") },
       { phone: new RegExp(term, "i") },
       { email: new RegExp(term, "i") },
     ];
@@ -67,6 +69,7 @@ async function update(id, data) {
     if (!name) throw httpError("Name is required", 400);
     supplier.name = name;
   }
+  if (data.nameUr !== undefined) supplier.nameUr = data.nameUr.trim();
   if (data.phone !== undefined) supplier.phone = data.phone.trim();
   if (data.email !== undefined) supplier.email = data.email.trim().toLowerCase();
   if (data.address !== undefined) supplier.address = data.address.trim();

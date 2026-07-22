@@ -110,7 +110,7 @@ async function listOverhead({ dateFrom, dateTo, category } = {}) {
     }
   }
   return BatchExpense.find(match)
-    .populate("worker", "name payType rate job")
+    .populate("worker", "name nameUr payType rate job")
     .sort({ expenseDate: -1, createdAt: -1 });
 }
 

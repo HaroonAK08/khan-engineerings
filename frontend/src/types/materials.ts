@@ -1,6 +1,8 @@
 export type Supplier = {
   _id: string;
   name: string;
+  /** Urdu display name when UI is in Urdu */
+  nameUr?: string;
   phone: string;
   email: string;
   address: string;

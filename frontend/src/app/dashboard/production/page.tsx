@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Loader2, Package, Plus } from "lucide-react";
+import { Loader2, Package, Plus, Search } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
 import { apiError, formatDate, formatKg, getStock } from "@/lib/materials-api";
 import { getFinishedStock, type FinishedStockItem } from "@/lib/inventory-api";
@@ -67,6 +67,9 @@ export default function ProductionPage() {
   const [saving, setSaving] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [familyFilter, setFamilyFilter] = useState<"all" | "hub" | "drum">("all");
+  const [produceFamily, setProduceFamily] = useState<"all" | "hub" | "drum">("all");
+  const [productSearch, setProductSearch] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const form = useForm<ProduceForm>({
     resolver: zodResolver(produceSchema),
@@ -139,6 +142,14 @@ export default function ProductionPage() {
     );
   }, [selectedProduct, form]);
 
+  useEffect(() => {
+    if (produceFamily === "hub") {
+      form.setValue("materialType", "scrap");
+    } else if (produceFamily === "drum") {
+      form.setValue("materialType", "daig");
+    }
+  }, [produceFamily, form]);
+
   function openProduce(product?: Product) {
     form.reset({
       productId: product?._id || "",
@@ -148,6 +159,9 @@ export default function ProductionPage() {
       productionDate: todayInput(),
       notes: "",
     });
+    setProduceFamily(product?.family === "hub" || product?.family === "drum" ? product.family : "all");
+    setProductSearch("");
+    setPickerOpen(!product);
     setDialogOpen(true);
   }
 
@@ -171,6 +185,7 @@ export default function ProductionPage() {
           : `Produced ${values.quantity} pcs`
       );
       setDialogOpen(false);
+      setPickerOpen(false);
       await load();
     } catch (err) {
       toast.error(apiError(err, "Failed to produce"));
@@ -183,6 +198,30 @@ export default function ProductionPage() {
     if (familyFilter === "all") return products;
     return products.filter((p) => p.family === familyFilter);
   }, [products, familyFilter]);
+
+  const produceProducts = useMemo(() => {
+    let list = products;
+    if (produceFamily !== "all") {
+      list = list.filter((p) => p.family === produceFamily);
+    }
+    const q = productSearch.trim().toLowerCase();
+    if (q) {
+      list = list.filter(
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          p.family.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [products, produceFamily, productSearch]);
+
+  useEffect(() => {
+    if (!productId || !selectedProduct) return;
+    if (produceFamily === "all") return;
+    if (selectedProduct.family !== produceFamily) {
+      form.setValue("productId", "");
+    }
+  }, [produceFamily, productId, selectedProduct, form]);
 
   const availableForMaterial =
     materialType === "daig"
@@ -379,7 +418,16 @@ export default function ProductionPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) {
+            setPickerOpen(false);
+            setProductSearch("");
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{t("prod.produceTitle")}</DialogTitle>
@@ -387,18 +435,90 @@ export default function ProductionPage() {
           <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
               <Label>{t("prod.col.product")}</Label>
-              <select
-                className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
-                {...form.register("productId")}
-              >
-                <option value="">{t("prod.selectProduct")}</option>
-                {products.map((p) => (
-                  <option key={p._id} value={p._id} disabled={!(Number(p.weightKg) > 0)}>
-                    {p.name} ({p.family}
-                    {Number(p.weightKg) > 0 ? ` · ${formatKg(Number(p.weightKg))} kg` : ""})
-                  </option>
+              <div className="flex gap-1">
+                {(
+                  [
+                    ["all", "prod.filter.all"],
+                    ["hub", "prod.hub"],
+                    ["drum", "prod.drum"],
+                  ] as const
+                ).map(([value, labelKey]) => (
+                  <Button
+                    key={value}
+                    type="button"
+                    size="sm"
+                    variant={produceFamily === value ? "default" : "outline"}
+                    onClick={() => setProduceFamily(value)}
+                  >
+                    {t(labelKey)}
+                  </Button>
                 ))}
-              </select>
+              </div>
+              <div className="overflow-hidden rounded-lg border border-input">
+                <button
+                  type="button"
+                  className="flex h-9 w-full items-center justify-between px-2.5 text-left text-sm hover:bg-muted/50"
+                  onClick={() => setPickerOpen((v) => !v)}
+                >
+                  <span className={selectedProduct ? "text-foreground" : "text-muted-foreground"}>
+                    {selectedProduct
+                      ? `${selectedProduct.name} (${selectedProduct.family}${
+                          Number(selectedProduct.weightKg) > 0
+                            ? ` · ${formatKg(Number(selectedProduct.weightKg))} kg`
+                            : ""
+                        })`
+                      : t("prod.selectProduct")}
+                  </span>
+                </button>
+                {pickerOpen && (
+                  <div className="border-t border-border">
+                    <div className="relative border-b border-border p-2">
+                      <Search className="pointer-events-none absolute top-1/2 left-4 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        className="h-8 pl-8"
+                        placeholder={t("prod.searchProduct")}
+                        value={productSearch}
+                        onChange={(e) => setProductSearch(e.target.value)}
+                        autoFocus
+                      />
+                    </div>
+                    <div className="max-h-48 overflow-y-auto">
+                      {produceProducts.length === 0 ? (
+                        <p className="px-3 py-4 text-center text-xs text-muted-foreground">
+                          {t("prod.noMatchProduct")}
+                        </p>
+                      ) : (
+                        produceProducts.map((p) => {
+                          const hasWeight = Number(p.weightKg) > 0;
+                          const active = productId === p._id;
+                          return (
+                            <button
+                              key={p._id}
+                              type="button"
+                              disabled={!hasWeight}
+                              className={`flex w-full flex-col gap-0.5 px-3 py-2 text-left text-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40 ${
+                                active ? "bg-muted" : ""
+                              }`}
+                              onClick={() => {
+                                form.setValue("productId", p._id, { shouldValidate: true });
+                                setPickerOpen(false);
+                                setProductSearch("");
+                              }}
+                            >
+                              <span className="font-medium">{p.name}</span>
+                              <span className="font-data text-[10px] text-muted-foreground uppercase">
+                                {p.family}
+                                {hasWeight ? ` · ${formatKg(Number(p.weightKg))} kg` : ""}
+                              </span>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <input type="hidden" {...form.register("productId")} />
               {form.formState.errors.productId && (
                 <p className="text-xs text-destructive">
                   {form.formState.errors.productId.message}
