@@ -67,6 +67,7 @@ export default function ProductionPage() {
   const [saving, setSaving] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [familyFilter, setFamilyFilter] = useState<"all" | "hub" | "drum">("all");
+  const [stockSearch, setStockSearch] = useState("");
   const [produceFamily, setProduceFamily] = useState<"all" | "hub" | "drum">("all");
   const [productSearch, setProductSearch] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -195,9 +196,18 @@ export default function ProductionPage() {
   }
 
   const filteredProducts = useMemo(() => {
-    if (familyFilter === "all") return products;
-    return products.filter((p) => p.family === familyFilter);
-  }, [products, familyFilter]);
+    let list = products;
+    if (familyFilter !== "all") {
+      list = list.filter((p) => p.family === familyFilter);
+    }
+    const q = stockSearch.trim().toLowerCase();
+    if (q) {
+      list = list.filter(
+        (p) => p.name.toLowerCase().includes(q) || p.family.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [products, familyFilter, stockSearch]);
 
   const produceProducts = useMemo(() => {
     let list = products;
@@ -294,20 +304,31 @@ export default function ProductionPage() {
       </div>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3">
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <CardTitle className="text-nameplate text-sm">{t("prod.stockTitle")}</CardTitle>
             <CardDescription>{t("prod.stockDesc")}</CardDescription>
           </div>
-          <select
-            className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
-            value={familyFilter}
-            onChange={(e) => setFamilyFilter(e.target.value as "all" | "hub" | "drum")}
-          >
-            <option value="all">{t("prod.filter.all")}</option>
-            <option value="hub">{t("prod.hub")}</option>
-            <option value="drum">{t("prod.drum")}</option>
-          </select>
+          <div className="flex gap-2">
+            <div className="relative">
+              <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="h-8 w-full pl-8 sm:w-48"
+                placeholder={t("prod.searchProduct")}
+                value={stockSearch}
+                onChange={(e) => setStockSearch(e.target.value)}
+              />
+            </div>
+            <select
+              className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
+              value={familyFilter}
+              onChange={(e) => setFamilyFilter(e.target.value as "all" | "hub" | "drum")}
+            >
+              <option value="all">{t("prod.filter.all")}</option>
+              <option value="hub">{t("prod.hub")}</option>
+              <option value="drum">{t("prod.drum")}</option>
+            </select>
+          </div>
         </CardHeader>
         <CardContent>
           {loading ? (
