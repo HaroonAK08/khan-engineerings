@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
-export default function ProductionProductsRedirect() {
+export default function InventoryProductsRedirect() {
   redirect("/dashboard/products");
 }

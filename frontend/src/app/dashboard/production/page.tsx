@@ -252,7 +252,7 @@ export default function ProductionPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
-            href="/dashboard/production/products"
+            href="/dashboard/products"
             className="inline-flex h-8 items-center gap-2 rounded-lg border border-border px-3 text-sm hover:bg-muted"
           >
             <Package className="size-4" />
@@ -338,7 +338,7 @@ export default function ProductionPage() {
           ) : filteredProducts.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">
               {t("prod.noProducts")}{" "}
-              <Link href="/dashboard/production/products" className="underline">
+              <Link href="/dashboard/products" className="underline">
                 {t("prod.products")}
               </Link>
             </p>

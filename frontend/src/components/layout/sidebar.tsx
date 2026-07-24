@@ -19,8 +19,9 @@ function isItemActive(item: NavItem, pathname: string | null) {
   return pathname.startsWith(item.href);
 }
 
-function isChildActive(href: string, pathname: string | null) {
+function isChildActive(href: string, pathname: string | null, exact?: boolean) {
   if (!pathname) return false;
+  if (exact) return pathname === href;
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
@@ -152,7 +153,7 @@ export function SidebarNav({ onNavigate, className }: SidebarNavProps) {
                 {expanded && (
                   <div className="ms-4 flex flex-col gap-0.5 border-s border-sidebar-border ps-2">
                     {item.children!.map((child) => {
-                      const childActive = isChildActive(child.href, activePath);
+                      const childActive = isChildActive(child.href, activePath, child.exact);
                       const ChildIcon = child.icon;
                       return (
                         <button

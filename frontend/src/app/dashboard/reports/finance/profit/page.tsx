@@ -142,7 +142,7 @@ export default function ProductProfitPage() {
                   <TableRow key={p.productId}>
                     <TableCell>
                       <Link
-                        href={`/dashboard/production/products`}
+                        href={`/dashboard/products`}
                         className="hover:text-primary hover:underline"
                       >
                         {i === 0 && (

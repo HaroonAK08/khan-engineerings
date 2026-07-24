@@ -16,6 +16,7 @@ import {
   MoreHorizontal,
   Receipt,
   Handshake,
+  Package,
 } from "lucide-react";
 import type { MessageKey } from "@/lib/i18n/messages";
 
@@ -23,6 +24,7 @@ export type NavChild = {
   labelKey: MessageKey;
   href: string;
   icon?: LucideIcon;
+  exact?: boolean;
 };
 
 export type NavItem = {
@@ -43,6 +45,7 @@ export const EXPENSES_CHILDREN: NavChild[] = [
 export const NAV_ITEMS: NavItem[] = [
   { labelKey: "nav.dashboard", href: "/dashboard", icon: LayoutDashboard, ready: true },
   { labelKey: "nav.inventory", href: "/dashboard/inventory", icon: Boxes, ready: true },
+  { labelKey: "nav.products", href: "/dashboard/products", icon: Package, ready: true },
   { labelKey: "nav.production", href: "/dashboard/production", icon: Factory, ready: true },
   {
     labelKey: "nav.expenses",

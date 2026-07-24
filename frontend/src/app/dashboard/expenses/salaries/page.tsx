@@ -127,6 +127,36 @@ export default function SalariesPage() {
     return map;
   }, [payments]);
 
+  const totalsByWorker = useMemo(() => {
+    const map = new Map<
+      string,
+      { total: number; count: number; worker: BatchExpense["worker"] }
+    >();
+    for (const p of payments) {
+      const id =
+        typeof p.worker === "string" ? p.worker : p.worker && "_id" in p.worker ? p.worker._id : "";
+      if (!id) continue;
+      const prev = map.get(id);
+      if (prev) {
+        prev.total += p.amount;
+        prev.count += 1;
+      } else {
+        map.set(id, { total: p.amount, count: 1, worker: p.worker });
+      }
+    }
+    return [...map.entries()]
+      .map(([id, row]) => ({ id, ...row }))
+      .sort((a, b) => b.total - a.total);
+  }, [payments]);
+
+  const totalPaidByWorkerId = useMemo(() => {
+    const map = new Map<string, { total: number; count: number }>();
+    for (const row of totalsByWorker) {
+      map.set(row.id, { total: row.total, count: row.count });
+    }
+    return map;
+  }, [totalsByWorker]);
+
   const filteredWorkers = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return workers;
@@ -397,6 +427,7 @@ export default function SalariesPage() {
               {filteredWorkers.map((w) => {
                 const isPaying = payingId === w._id;
                 const last = lastPayByWorker.get(w._id);
+                const periodPay = totalPaidByWorkerId.get(w._id);
                 return (
                   <Card key={w._id}>
                     <CardContent className="flex flex-col gap-4 p-4 sm:p-5">
@@ -410,6 +441,16 @@ export default function SalariesPage() {
                           </p>
                           <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                             {w.job ? <span>{displayJob(w.job, t)}</span> : null}
+                            {periodPay ? (
+                              <span className="font-data text-xs font-medium text-foreground">
+                                {t("sal.paidInPeriod", {
+                                  amount: formatMoney(periodPay.total),
+                                  count: periodPay.count,
+                                })}
+                              </span>
+                            ) : (
+                              <span className="text-xs">{t("sal.noPayPeriod")}</span>
+                            )}
                             {last ? (
                               <span className="font-data text-xs">
                                 {t("sal.lastPaid", {
@@ -418,9 +459,7 @@ export default function SalariesPage() {
                                 })}
                                 {last.payType ? ` · ${payTypeLabel(last.payType)}` : ""}
                               </span>
-                            ) : (
-                              <span className="text-xs">{t("sal.noPayPeriod")}</span>
-                            )}
+                            ) : null}
                             {w.rate != null && (
                               <span className="font-data text-xs text-muted-foreground/80">
                                 {t("sal.lastRemembered", { amount: formatMoney(w.rate) })}
@@ -601,6 +640,44 @@ export default function SalariesPage() {
                 );
               })}
             </div>
+          )}
+
+          {totalsByWorker.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-nameplate text-sm">{t("sal.byWorker")}</CardTitle>
+                <CardDescription>{t("sal.byWorkerDesc")}</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-2 px-4 pb-4">
+                {totalsByWorker.map((row) => (
+                  <div
+                    key={row.id}
+                    className="flex items-center justify-between gap-3 border-b border-border/50 py-2.5 last:border-0"
+                  >
+                    <div className="min-w-0">
+                      <p
+                        className="truncate text-sm font-medium"
+                        dir={
+                          isUrdu &&
+                          typeof row.worker === "object" &&
+                          row.worker?.nameUr?.trim()
+                            ? "rtl"
+                            : undefined
+                        }
+                      >
+                        {displayWorkerName(row.worker, isUrdu) || "—"}
+                      </p>
+                      <p className="font-data text-xs text-muted-foreground">
+                        {t("sal.paymentCount", { count: row.count })}
+                      </p>
+                    </div>
+                    <span className="font-data text-base font-medium">
+                      {formatMoney(row.total)}
+                    </span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
           )}
 
           {payments.length > 0 && (
