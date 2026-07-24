@@ -28,6 +28,22 @@ export async function createFactoryExpense(body: {
   return data.expense;
 }
 
+export async function updateFactoryExpense(
+  id: string,
+  body: Partial<{
+    amount: number;
+    expenseDate: string;
+    notes: string;
+    category: string;
+    stage: string;
+    quantity: number | null;
+    quantityUnit: string;
+  }>
+) {
+  const { data } = await api.patch<{ expense: BatchExpense }>(`/expenses/${id}`, body);
+  return data.expense;
+}
+
 export async function deleteFactoryExpense(id: string) {
   await api.delete(`/expenses/${id}`);
 }

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Loader2, Plus, Search, Trash2 } from "lucide-react";
-import { deleteFactoryExpense } from "@/lib/expenses-api";
+import { deleteFactoryExpense, updateFactoryExpense } from "@/lib/expenses-api";
 import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
 import {
   createWorker,
@@ -11,6 +11,7 @@ import {
   listSalaryPayments,
   listWorkers,
   payWorker,
+  updateWorker,
   type PayDay,
   type PayType,
   type Worker,
@@ -89,6 +90,17 @@ export default function SalariesPage() {
   const [newNameUr, setNewNameUr] = useState("");
   const [newJob, setNewJob] = useState("");
   const [newUnitLabel, setNewUnitLabel] = useState("hub");
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editNameUr, setEditNameUr] = useState("");
+  const [editJob, setEditJob] = useState("");
+  const [editUnitLabel, setEditUnitLabel] = useState("");
+
+  const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
+  const [editPayAmount, setEditPayAmount] = useState("");
+  const [editPayDate, setEditPayDate] = useState("");
+  const [editPayNote, setEditPayNote] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -169,6 +181,7 @@ export default function SalariesPage() {
   }, [workers, search]);
 
   function openPay(w: Worker) {
+    setEditingId(null);
     setPayingId(w._id);
     const preferred = w.payType || "weekly";
     setPayType(preferred);
@@ -184,6 +197,39 @@ export default function SalariesPage() {
           ? "thursday"
           : "monday";
     setPayDay(day);
+  }
+
+  function openEdit(w: Worker) {
+    setPayingId(null);
+    setEditingId(w._id);
+    setEditName(w.name);
+    setEditNameUr(w.nameUr || "");
+    setEditJob(w.job || "");
+    setEditUnitLabel(w.unitLabel || "piece");
+  }
+
+  async function onSaveEdit(w: Worker) {
+    const name = editName.trim();
+    if (!name) {
+      toast.error("Enter worker name");
+      return;
+    }
+    setBusyId(`edit-${w._id}`);
+    try {
+      await updateWorker(w._id, {
+        name,
+        nameUr: editNameUr.trim(),
+        job: editJob.trim(),
+        unitLabel: editUnitLabel.trim() || "piece",
+      });
+      toast.success(t("sal.workerUpdated"));
+      setEditingId(null);
+      await load();
+    } catch (err) {
+      toast.error(apiError(err, "Could not update worker"));
+    } finally {
+      setBusyId(null);
+    }
   }
 
   async function confirmPay(w: Worker) {
@@ -270,6 +316,40 @@ export default function SalariesPage() {
       await load();
     } catch (err) {
       toast.error(apiError(err, "Delete failed"));
+    }
+  }
+
+  function openEditPayment(e: BatchExpense) {
+    setEditingPaymentId(e._id);
+    setEditPayAmount(String(e.amount));
+    setEditPayDate(String(e.expenseDate).slice(0, 10));
+    setEditPayNote(e.notes || "");
+  }
+
+  async function onSavePayment(id: string) {
+    const amount = Number(editPayAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error("Enter a valid amount");
+      return;
+    }
+    if (!editPayDate) {
+      toast.error("Pick the pay date");
+      return;
+    }
+    setBusyId(`edit-pay-${id}`);
+    try {
+      await updateFactoryExpense(id, {
+        amount,
+        expenseDate: editPayDate,
+        notes: editPayNote.trim(),
+      });
+      toast.success(t("sal.paymentUpdated"));
+      setEditingPaymentId(null);
+      await load();
+    } catch (err) {
+      toast.error(apiError(err, "Could not update payment"));
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -426,6 +506,7 @@ export default function SalariesPage() {
             <div className="grid gap-3">
               {filteredWorkers.map((w) => {
                 const isPaying = payingId === w._id;
+                const isEditing = editingId === w._id;
                 const last = lastPayByWorker.get(w._id);
                 const periodPay = totalPaidByWorkerId.get(w._id);
                 return (
@@ -468,9 +549,18 @@ export default function SalariesPage() {
                           </div>
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          {!isPaying && (
+                          {!isPaying && !isEditing && (
                             <Button type="button" onClick={() => openPay(w)}>
                               {t("sal.payNow")}
+                            </Button>
+                          )}
+                          {!isEditing && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => openEdit(w)}
+                            >
+                              {t("sal.editWorker")}
                             </Button>
                           )}
                           <Button
@@ -484,6 +574,67 @@ export default function SalariesPage() {
                           </Button>
                         </div>
                       </div>
+
+                      {isEditing && (
+                        <div className="rounded-xl border border-border/80 bg-muted/30 p-4">
+                          <p className="mb-3 text-sm font-medium">{t("sal.editWorker")}</p>
+                          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                            <div className="flex flex-col gap-1.5">
+                              <Label>{t("sal.name")}</Label>
+                              <Input
+                                placeholder={t("sal.phName")}
+                                value={editName}
+                                onChange={(e) => setEditName(e.target.value)}
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1.5">
+                              <Label>{t("sal.nameUr")}</Label>
+                              <Input
+                                placeholder={t("sal.phNameUr")}
+                                value={editNameUr}
+                                onChange={(e) => setEditNameUr(e.target.value)}
+                                dir="rtl"
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1.5">
+                              <Label>{t("sal.job")}</Label>
+                              <Input
+                                placeholder={t("sal.phJob")}
+                                value={editJob}
+                                onChange={(e) => setEditJob(e.target.value)}
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1.5">
+                              <Label>{t("sal.unitName")}</Label>
+                              <Input
+                                value={editUnitLabel}
+                                onChange={(e) => setEditUnitLabel(e.target.value)}
+                                placeholder={t("sal.phUnit")}
+                              />
+                            </div>
+                          </div>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              className="gap-2"
+                              disabled={busyId === `edit-${w._id}`}
+                              onClick={() => void onSaveEdit(w)}
+                            >
+                              {busyId === `edit-${w._id}` && (
+                                <Loader2 className="size-4 animate-spin" />
+                              )}
+                              {t("sal.saveChanges")}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => setEditingId(null)}
+                            >
+                              {t("sal.cancel")}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
 
                       {isPaying && (
                         <div className="rounded-xl border border-border/80 bg-muted/30 p-4">
@@ -687,52 +838,125 @@ export default function SalariesPage() {
                 <CardDescription>{t("sal.historyDesc")}</CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-2 px-4 pb-4">
-                {payments.map((e) => (
-                  <div
-                    key={e._id}
-                    className="flex items-center justify-between gap-3 border-b border-border/50 py-2 last:border-0"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p
-                          className="truncate text-sm font-medium"
-                          dir={
-                            isUrdu &&
-                            typeof e.worker === "object" &&
-                            e.worker?.nameUr?.trim()
-                              ? "rtl"
-                              : undefined
-                          }
-                        >
-                          {displayWorkerName(e.worker, isUrdu) || e.notes || "Salary"}
-                        </p>
-                        {e.payType && (
-                          <Badge variant="secondary">{payTypeLabel(e.payType)}</Badge>
-                        )}
+                {payments.map((e) => {
+                  const isEditingPayment = editingPaymentId === e._id;
+                  return (
+                    <div
+                      key={e._id}
+                      className="border-b border-border/50 py-2 last:border-0"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p
+                              className="truncate text-sm font-medium"
+                              dir={
+                                isUrdu &&
+                                typeof e.worker === "object" &&
+                                e.worker?.nameUr?.trim()
+                                  ? "rtl"
+                                  : undefined
+                              }
+                            >
+                              {displayWorkerName(e.worker, isUrdu) || e.notes || "Salary"}
+                            </p>
+                            {e.payType && (
+                              <Badge variant="secondary">{payTypeLabel(e.payType)}</Badge>
+                            )}
+                          </div>
+                          <p className="font-data text-xs text-muted-foreground">
+                            {formatDate(e.expenseDate)}
+                            {e.units != null
+                              ? ` · ${e.units} units`
+                              : e.notes
+                                ? ` · ${e.notes}`
+                                : ""}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {!isEditingPayment && (
+                            <>
+                              <span className="font-data text-sm">
+                                {formatMoney(e.amount)}
+                              </span>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => openEditPayment(e)}
+                              >
+                                {t("sal.editPayment")}
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="size-8 text-muted-foreground"
+                                onClick={() => void onDelete(e._id)}
+                              >
+                                <Trash2 className="size-3.5" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </div>
-                      <p className="font-data text-xs text-muted-foreground">
-                        {formatDate(e.expenseDate)}
-                        {e.units != null
-                          ? ` · ${e.units} units`
-                          : e.notes
-                            ? ` · ${e.notes}`
-                            : ""}
-                      </p>
+
+                      {isEditingPayment && (
+                        <div className="mt-3 grid gap-3 rounded-xl border border-border/80 bg-muted/30 p-3 sm:grid-cols-3">
+                          <div className="flex flex-col gap-1.5">
+                            <Label>{t("sal.paymentAmount")}</Label>
+                            <Input
+                              type="number"
+                              step="1"
+                              min={1}
+                              value={editPayAmount}
+                              onChange={(ev) => setEditPayAmount(ev.target.value)}
+                              className="h-10"
+                            />
+                          </div>
+                          <div className="flex flex-col gap-1.5">
+                            <Label>{t("sal.payDate")}</Label>
+                            <Input
+                              type="date"
+                              value={editPayDate}
+                              onChange={(ev) => setEditPayDate(ev.target.value)}
+                              className="h-10"
+                            />
+                          </div>
+                          <div className="flex flex-col gap-1.5">
+                            <Label>{t("exp.noteOptional")}</Label>
+                            <Input
+                              value={editPayNote}
+                              onChange={(ev) => setEditPayNote(ev.target.value)}
+                              className="h-10"
+                              placeholder={t("sal.notePh")}
+                            />
+                          </div>
+                          <div className="flex flex-wrap gap-2 sm:col-span-3">
+                            <Button
+                              type="button"
+                              className="gap-2"
+                              disabled={busyId === `edit-pay-${e._id}`}
+                              onClick={() => void onSavePayment(e._id)}
+                            >
+                              {busyId === `edit-pay-${e._id}` && (
+                                <Loader2 className="size-4 animate-spin" />
+                              )}
+                              {t("sal.savePayment")}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => setEditingPaymentId(null)}
+                            >
+                              {t("sal.cancel")}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-data text-sm">{formatMoney(e.amount)}</span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-8 text-muted-foreground"
-                        onClick={() => void onDelete(e._id)}
-                      >
-                        <Trash2 className="size-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </CardContent>
             </Card>
           )}

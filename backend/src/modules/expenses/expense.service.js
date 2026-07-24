@@ -139,7 +139,7 @@ async function update(expenseId, data) {
   if (!expense) throw httpError("Expense not found", 404);
 
   const merged = {
-    stage: data.stage ?? expense.stage,
+    stage: data.stage !== undefined ? data.stage : expense.stage,
     category: data.category ?? expense.category,
     amount: data.amount ?? expense.amount,
     expenseDate: data.expenseDate ?? expense.expenseDate,
@@ -153,7 +153,27 @@ async function update(expenseId, data) {
   Object.assign(expense, fields);
   if (!fields.stage) expense.stage = undefined;
   if (fields.quantity == null) expense.quantity = null;
-  expense.quantityUnit = fields.quantityUnit || "kg";
+  expense.quantityUnit = fields.quantityUnit || expense.quantityUnit || "kg";
+
+  if (data.units !== undefined) {
+    if (data.units === null || data.units === "") {
+      expense.units = null;
+    } else {
+      const units = Number(data.units);
+      if (!Number.isFinite(units) || units < 0) {
+        throw httpError("Units must be 0 or greater", 400);
+      }
+      expense.units = units;
+    }
+  }
+  if (data.payType !== undefined) {
+    const allowed = ["weekly", "monthly", "per_unit", null, ""];
+    if (!allowed.includes(data.payType)) {
+      throw httpError("Invalid pay type", 400);
+    }
+    expense.payType = data.payType || null;
+  }
+
   await expense.save();
   return expense;
 }

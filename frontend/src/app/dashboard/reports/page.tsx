@@ -25,6 +25,7 @@ const MODULES: Array<{ href: string; titleKey: MessageKey; descKey: MessageKey }
     descKey: "rep.prodDesc",
   },
   { href: "/dashboard/reports/costs", titleKey: "rep.expTitle", descKey: "rep.expDesc" },
+  { href: "/dashboard/reports/salaries", titleKey: "rep.salTitle", descKey: "rep.salDesc" },
   { href: "/dashboard/reports/inventory", titleKey: "rep.invTitle", descKey: "rep.invDesc" },
   { href: "/dashboard/reports/statements", titleKey: "rep.stmtTitle", descKey: "rep.stmtDesc" },
   { href: "/dashboard/reports/finance", titleKey: "rep.finTitle", descKey: "rep.finDesc" },
