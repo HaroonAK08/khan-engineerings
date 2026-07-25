@@ -18,6 +18,15 @@ async function list(req, res, next) {
   }
 }
 
+async function listAllLedger(req, res, next) {
+  try {
+    const entries = await supplierService.listAllLedger();
+    res.json({ entries });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function getOne(req, res, next) {
   try {
     const result = await supplierService.getWithBalance(req.params.id);
@@ -45,4 +54,4 @@ async function remove(req, res, next) {
   }
 }
 
-module.exports = { create, list, getOne, update, remove };
+module.exports = { create, list, listAllLedger, getOne, update, remove };

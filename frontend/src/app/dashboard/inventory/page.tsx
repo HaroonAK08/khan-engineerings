@@ -6,35 +6,23 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Loader2, Trash2 } from "lucide-react";
+import { CalendarDays, Loader2 } from "lucide-react";
 import { InventorySubnav } from "@/components/layout/inventory-subnav";
 import { useI18n } from "@/hooks/use-i18n";
 import {
   apiError,
   createPurchase,
-  deletePurchase,
-  formatDate,
   formatKg,
   formatMoney,
   getStock,
-  listPurchases,
   listSuppliers,
   supplierName,
 } from "@/lib/materials-api";
-import type { Purchase, StockSummary, Supplier } from "@/types/materials";
-import { Badge } from "@/components/ui/badge";
+import type { StockSummary, Supplier } from "@/types/materials";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 
 const purchaseSchema = z.object({
   supplier: z.string().min(1, "Supplier is required"),
@@ -63,13 +51,8 @@ export default function InventoryPage() {
   const { t } = useI18n();
   const [stock, setStock] = useState<StockSummary | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [supplierFilter, setSupplierFilter] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [q, setQ] = useState("");
 
   const form = useForm<PurchaseForm>({
     resolver: zodResolver(purchaseSchema),
@@ -101,35 +84,18 @@ export default function InventoryPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const params: {
-        supplier?: string;
-        dateFrom?: string;
-        dateTo?: string;
-        q?: string;
-      } = {};
-      if (supplierFilter) params.supplier = supplierFilter;
-      if (dateFrom) params.dateFrom = dateFrom;
-      if (dateTo) params.dateTo = dateTo;
-      if (q.trim()) params.q = q.trim();
-
-      const [stockData, supplierData, purchaseData] = await Promise.all([
-        getStock(),
-        listSuppliers(),
-        listPurchases(params),
-      ]);
+      const [stockData, supplierData] = await Promise.all([getStock(), listSuppliers()]);
       setStock(stockData);
       setSuppliers(supplierData);
-      setPurchases(purchaseData);
     } catch (err) {
       toast.error(apiError(err, "Failed to load inventory"));
     } finally {
       setLoading(false);
     }
-  }, [supplierFilter, dateFrom, dateTo, q]);
+  }, []);
 
   useEffect(() => {
-    const t = setTimeout(load, 200);
-    return () => clearTimeout(t);
+    void load();
   }, [load]);
 
   async function onSubmit(values: PurchaseForm) {
@@ -170,17 +136,6 @@ export default function InventoryPage() {
     }
   }
 
-  async function onDelete(id: string) {
-    if (!confirm(t("purchases.deleteConfirm"))) return;
-    try {
-      await deletePurchase(id);
-      toast.success(t("purchases.deleted"));
-      await load();
-    } catch (err) {
-      toast.error(apiError(err, "Failed to delete purchase"));
-    }
-  }
-
   return (
     <div className="flex flex-col gap-6">
       <InventorySubnav />
@@ -191,63 +146,76 @@ export default function InventoryPage() {
           </p>
           <h1 className="text-nameplate text-xl">{t("purchases.title")}</h1>
         </div>
+        <Link
+          href="/dashboard/inventory/records"
+          className="inline-flex h-11 items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-4 text-sm font-semibold text-amber-300 shadow-md transition-colors hover:bg-slate-800 hover:text-amber-200 dark:border-slate-600 dark:bg-slate-950 dark:text-amber-300 dark:hover:bg-slate-900"
+        >
+          <CalendarDays className="size-4 text-amber-400" />
+          {t("purchases.openRecords")}
+        </Link>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {[
-          {
-            label: t("purchases.availableScrap"),
-            value: stock
-              ? `${formatKg(stock.byMaterial?.scrap?.availableKg ?? stock.totalKg)} kg`
-              : "—",
-            hint: stock?.byMaterial?.scrap?.consumedKg
-              ? `${formatKg(stock.byMaterial.scrap.purchasedKg ?? 0)} purchased − ${formatKg(stock.byMaterial.scrap.consumedKg)} used`
-              : t("purchases.afterConsumption"),
-            accent: "bg-chart-1",
-          },
-          {
-            label: t("purchases.availableDaig"),
-            value: stock?.byMaterial?.daig
-              ? `${formatKg(stock.byMaterial.daig.availableKg ?? stock.byMaterial.daig.totalKg)} kg`
-              : "—",
-            hint: t("purchases.daigOnHand"),
-            accent: "bg-chart-2",
-          },
-          {
-            label: t("purchases.totalSpend"),
-            value: stock
-              ? formatMoney(
-                  (stock.byMaterial?.scrap?.totalSpend ?? stock.totalSpend) +
-                    (stock.byMaterial?.daig?.totalSpend ?? 0)
-                )
-              : "—",
-            hint: t("purchases.allRecorded"),
-            accent: "bg-chart-3",
-          },
-          {
-            label: t("purchases.count"),
-            value: stock
-              ? String(
-                  (stock.byMaterial?.scrap?.purchaseCount ?? stock.purchaseCount) +
-                    (stock.byMaterial?.daig?.purchaseCount ?? 0)
-                )
-              : "—",
-            hint: t("purchases.entriesRecorded"),
-            accent: "bg-chart-4",
-          },
-        ].map((stat) => (
-          <Card key={stat.label} className="relative overflow-hidden py-0">
-            <span className={`absolute inset-x-0 top-0 h-1 ${stat.accent}`} aria-hidden />
-            <CardContent className="p-5">
-              <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
-                {stat.label}
-              </p>
-              <p className="font-data mt-2 text-2xl font-medium">{stat.value}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{stat.hint}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <Loader2 className="size-6 animate-spin text-primary" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            {
+              label: t("purchases.availableScrap"),
+              value: stock
+                ? `${formatKg(stock.byMaterial?.scrap?.availableKg ?? stock.totalKg)} kg`
+                : "—",
+              hint: stock?.byMaterial?.scrap?.consumedKg
+                ? `${formatKg(stock.byMaterial.scrap.purchasedKg ?? 0)} purchased − ${formatKg(stock.byMaterial.scrap.consumedKg)} used`
+                : t("purchases.afterConsumption"),
+              accent: "bg-chart-1",
+            },
+            {
+              label: t("purchases.availableDaig"),
+              value: stock?.byMaterial?.daig
+                ? `${formatKg(stock.byMaterial.daig.availableKg ?? stock.byMaterial.daig.totalKg)} kg`
+                : "—",
+              hint: t("purchases.daigOnHand"),
+              accent: "bg-chart-2",
+            },
+            {
+              label: t("purchases.totalSpend"),
+              value: stock
+                ? formatMoney(
+                    (stock.byMaterial?.scrap?.totalSpend ?? stock.totalSpend) +
+                      (stock.byMaterial?.daig?.totalSpend ?? 0)
+                  )
+                : "—",
+              hint: t("purchases.allRecorded"),
+              accent: "bg-chart-3",
+            },
+            {
+              label: t("purchases.count"),
+              value: stock
+                ? String(
+                    (stock.byMaterial?.scrap?.purchaseCount ?? stock.purchaseCount) +
+                      (stock.byMaterial?.daig?.purchaseCount ?? 0)
+                  )
+                : "—",
+              hint: t("purchases.entriesRecorded"),
+              accent: "bg-chart-4",
+            },
+          ].map((stat) => (
+            <Card key={stat.label} className="relative overflow-hidden py-0">
+              <span className={`absolute inset-x-0 top-0 h-1 ${stat.accent}`} aria-hidden />
+              <CardContent className="p-5">
+                <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
+                  {stat.label}
+                </p>
+                <p className="font-data mt-2 text-2xl font-medium">{stat.value}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{stat.hint}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       <Card>
         <CardHeader>
@@ -388,132 +356,6 @@ export default function InventoryPage() {
               </Button>
             </div>
           </form>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-nameplate text-sm">{t("purchases.history")}</CardTitle>
-          <CardDescription>{t("purchases.historyDesc")}</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            <select
-              className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
-              value={supplierFilter}
-              onChange={(e) => setSupplierFilter(e.target.value)}
-            >
-              <option value="">{t("purchases.allSuppliers")}</option>
-              {suppliers.map((s) => (
-                <option key={s._id} value={s._id}>
-                  {supplierName(s)}
-                </option>
-              ))}
-            </select>
-            <Input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              aria-label={t("common.date")}
-            />
-            <Input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              aria-label={t("common.date")}
-            />
-            <Input
-              placeholder={t("purchases.searchInvoice")}
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-            />
-          </div>
-
-          {loading ? (
-            <div className="flex justify-center py-12">
-              <Loader2 className="size-6 animate-spin text-primary" />
-            </div>
-          ) : purchases.length === 0 ? (
-            <p className="py-10 text-center text-sm text-muted-foreground">
-              {t("purchases.noneFound")}
-            </p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("purchases.col.date")}</TableHead>
-                  <TableHead>{t("purchases.col.material")}</TableHead>
-                  <TableHead>{t("purchases.col.supplier")}</TableHead>
-                  <TableHead className="text-right">{t("purchases.col.qty")}</TableHead>
-                  <TableHead className="text-right">{t("purchases.col.rate")}</TableHead>
-                  <TableHead className="text-right">{t("purchases.col.payable")}</TableHead>
-                  <TableHead className="text-right">{t("purchases.col.balance")}</TableHead>
-                  <TableHead>{t("purchases.col.invoice")}</TableHead>
-                  <TableHead />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {purchases.map((p) => (
-                  <TableRow key={p._id}>
-                    <TableCell className="font-data text-xs">
-                      {formatDate(p.purchaseDate)}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="font-data text-[10px] uppercase">
-                        {(p.materialType || "scrap") === "daig"
-                          ? t("prod.daig")
-                          : t("prod.scrap")}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {typeof p.supplier === "object" && p.supplier?._id ? (
-                        <Link
-                          href={`/dashboard/suppliers/${p.supplier._id}`}
-                          className="hover:text-primary hover:underline"
-                        >
-                          {supplierName(p.supplier)}
-                        </Link>
-                      ) : (
-                        supplierName(p.supplier)
-                      )}
-                    </TableCell>
-                    <TableCell className="font-data text-right text-xs">
-                      {formatKg(p.quantityKg)}
-                    </TableCell>
-                    <TableCell className="font-data text-right text-xs">
-                      {formatMoney(p.ratePerKg)}
-                    </TableCell>
-                    <TableCell className="font-data text-right text-xs">
-                      {formatMoney(
-                        p.payable ?? p.totalAmount + (p.freightAmount || 0)
-                      )}
-                    </TableCell>
-                    <TableCell className="font-data text-right text-xs">
-                      {formatMoney(p.balance ?? 0)}
-                    </TableCell>
-                    <TableCell className="font-data text-xs">
-                      {p.invoiceNo || "—"}
-                      {p.notes ? (
-                        <Badge variant="outline" className="ms-2 font-data text-[9px]">
-                          {t("purchases.noteBadge")}
-                        </Badge>
-                      ) : null}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        onClick={() => onDelete(p._id)}
-                        aria-label={t("purchases.deleted")}
-                      >
-                        <Trash2 className="size-4 text-destructive" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
         </CardContent>
       </Card>
     </div>

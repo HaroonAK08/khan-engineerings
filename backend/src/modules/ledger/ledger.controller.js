@@ -28,4 +28,26 @@ async function adjustment(req, res, next) {
   }
 }
 
-module.exports = { list, payment, adjustment };
+async function update(req, res, next) {
+  try {
+    const result = await ledgerService.updateEntry(
+      req.params.supplierId,
+      req.params.entryId,
+      req.body
+    );
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function remove(req, res, next) {
+  try {
+    const result = await ledgerService.removeEntry(req.params.supplierId, req.params.entryId);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { list, payment, adjustment, update, remove };

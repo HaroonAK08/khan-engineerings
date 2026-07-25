@@ -39,6 +39,16 @@ async function list({ q, active } = {}) {
   return Supplier.find(filter).sort({ name: 1 });
 }
 
+async function listAllLedger() {
+  return LedgerEntry.find({})
+    .populate("supplier", "name nameUr")
+    .populate(
+      "purchase",
+      "quantityKg ratePerKg invoiceNo materialType totalAmount purchaseDate notes"
+    )
+    .sort({ entryDate: -1, createdAt: -1 });
+}
+
 async function getById(id) {
   const supplier = await Supplier.findById(id);
   if (!supplier) throw httpError("Supplier not found", 404);
@@ -92,4 +102,13 @@ async function remove(id) {
   return { ok: true };
 }
 
-module.exports = { create, list, getById, getWithBalance, getBalance, update, remove };
+module.exports = {
+  create,
+  list,
+  listAllLedger,
+  getById,
+  getWithBalance,
+  getBalance,
+  update,
+  remove,
+};

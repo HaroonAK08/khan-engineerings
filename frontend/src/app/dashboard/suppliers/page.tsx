@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Loader2, Plus, Search, Truck } from "lucide-react";
+import { CalendarDays, Loader2, Plus, Search, Truck } from "lucide-react";
 import {
   apiError,
   createSupplier,
@@ -49,6 +50,7 @@ type SupplierForm = z.infer<typeof supplierSchema>;
 
 export default function SuppliersPage() {
   const { t, isUrdu } = useI18n();
+  const router = useRouter();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -152,10 +154,19 @@ export default function SuppliersPage() {
           </p>
           <h1 className="text-nameplate text-xl">{t("sup.title")}</h1>
         </div>
-        <Button onClick={openCreate} className="gap-2">
-          <Plus className="size-4" />
-          {t("sup.add")}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/dashboard/suppliers/records"
+            className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-4 text-sm font-semibold text-amber-300 shadow-md transition-colors hover:bg-slate-800 hover:text-amber-200 dark:border-slate-600 dark:bg-slate-950 dark:text-amber-300 dark:hover:bg-slate-900"
+          >
+            <CalendarDays className="size-4 text-amber-400" />
+            {t("sup.allRecords")}
+          </Link>
+          <Button onClick={openCreate} className="gap-2">
+            <Plus className="size-4" />
+            {t("sup.add")}
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -213,15 +224,16 @@ export default function SuppliersPage() {
               </TableHeader>
               <TableBody>
                 {suppliers.map((s) => (
-                  <TableRow key={s._id}>
-                    <TableCell className="font-medium">
-                      <Link
-                        href={`/dashboard/suppliers/${s._id}`}
-                        className="hover:text-primary hover:underline"
-                        dir={isUrdu && s.nameUr?.trim() ? "rtl" : undefined}
-                      >
-                        {isUrdu && s.nameUr?.trim() ? s.nameUr.trim() : s.name}
-                      </Link>
+                  <TableRow
+                    key={s._id}
+                    className="cursor-pointer"
+                    onClick={() => router.push(`/dashboard/suppliers/${s._id}`)}
+                  >
+                    <TableCell
+                      className="font-medium"
+                      dir={isUrdu && s.nameUr?.trim() ? "rtl" : undefined}
+                    >
+                      {isUrdu && s.nameUr?.trim() ? s.nameUr.trim() : s.name}
                     </TableCell>
                     <TableCell className="font-data text-xs">{s.phone || "—"}</TableCell>
                     <TableCell>
@@ -230,19 +242,16 @@ export default function SuppliersPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
+                      <div
+                        className="flex justify-end gap-1"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <Button size="sm" variant="ghost" onClick={() => openEdit(s)}>
                           {t("sup.edit")}
                         </Button>
                         <Button size="sm" variant="ghost" onClick={() => toggleActive(s)}>
                           {s.isActive ? t("sup.deactivate") : t("sup.activate")}
                         </Button>
-                        <Link
-                          href={`/dashboard/suppliers/${s._id}`}
-                          className="inline-flex h-7 items-center rounded-lg border border-border px-2.5 text-[0.8rem] hover:bg-muted"
-                        >
-                          {t("sup.ledger")}
-                        </Link>
                       </div>
                     </TableCell>
                   </TableRow>

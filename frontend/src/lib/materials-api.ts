@@ -61,6 +61,26 @@ export async function createPurchase(body: {
   return data.purchase;
 }
 
+export async function updatePurchase(
+  id: string,
+  body: Partial<{
+    supplier: string;
+    materialType: "scrap" | "daig";
+    quantityKg: number;
+    ratePerKg: number;
+    totalAmount: number;
+    freightAmount: number;
+    amountPaid: number;
+    vehicleNo: string;
+    purchaseDate: string;
+    invoiceNo: string;
+    notes: string;
+  }>
+) {
+  const { data } = await api.patch<{ purchase: Purchase }>(`/purchases/${id}`, body);
+  return data.purchase;
+}
+
 export async function deletePurchase(id: string) {
   await api.delete(`/purchases/${id}`);
 }
@@ -86,6 +106,11 @@ export async function getLedger(supplierId: string) {
   return data;
 }
 
+export async function getAllSupplierLedger() {
+  const { data } = await api.get<{ entries: LedgerEntry[] }>("/suppliers/ledger/all");
+  return data.entries;
+}
+
 export async function recordPayment(
   supplierId: string,
   body: { amount: number; entryDate?: string; notes?: string }
@@ -93,6 +118,25 @@ export async function recordPayment(
   const { data } = await api.post<{ entry: LedgerEntry; balance: number }>(
     `/suppliers/${supplierId}/ledger/payments`,
     body
+  );
+  return data;
+}
+
+export async function updateLedgerEntry(
+  supplierId: string,
+  entryId: string,
+  body: Partial<{ amount: number; entryDate: string; notes: string }>
+) {
+  const { data } = await api.patch<{ entry: LedgerEntry; balance: number }>(
+    `/suppliers/${supplierId}/ledger/${entryId}`,
+    body
+  );
+  return data;
+}
+
+export async function deleteLedgerEntry(supplierId: string, entryId: string) {
+  const { data } = await api.delete<{ balance: number }>(
+    `/suppliers/${supplierId}/ledger/${entryId}`
   );
   return data;
 }

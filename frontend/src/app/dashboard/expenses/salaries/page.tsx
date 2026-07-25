@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, Plus, Search, Trash2 } from "lucide-react";
-import { deleteFactoryExpense, updateFactoryExpense } from "@/lib/expenses-api";
+import { CalendarDays, Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
 import {
   createWorker,
@@ -12,27 +13,14 @@ import {
   listWorkers,
   payWorker,
   updateWorker,
-  type PayDay,
-  type PayType,
   type Worker,
 } from "@/lib/workers-api";
 import type { BatchExpense } from "@/types/production";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useI18n } from "@/hooks/use-i18n";
-
-function monthDefaults() {
-  const now = new Date();
-  const from = new Date(now.getFullYear(), now.getMonth(), 1);
-  const to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  return {
-    from: from.toISOString().slice(0, 10),
-    to: to.toISOString().slice(0, 10),
-  };
-}
 
 function todayInput() {
   return new Date().toISOString().slice(0, 10);
@@ -60,27 +48,15 @@ function displayJob(
 
 export default function SalariesPage() {
   const { t, isUrdu } = useI18n();
-  const defaults = monthDefaults();
+  const router = useRouter();
 
-  function payTypeLabel(type: PayType | null | undefined) {
-    if (type === "weekly") return t("sal.weekly");
-    if (type === "monthly") return t("sal.monthly");
-    if (type === "per_unit") return t("sal.perUnit");
-    return "—";
-  }
-  const [dateFrom, setDateFrom] = useState(defaults.from);
-  const [dateTo, setDateTo] = useState(defaults.to);
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [payments, setPayments] = useState<BatchExpense[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const [payingId, setPayingId] = useState<string | null>(null);
-  const [payType, setPayType] = useState<PayType>("weekly");
   const [payAmount, setPayAmount] = useState("");
-  const [payUnits, setPayUnits] = useState("");
-  const [payUnitRate, setPayUnitRate] = useState("");
-  const [payDay, setPayDay] = useState<PayDay>("monday");
   const [payDate, setPayDate] = useState(todayInput());
   const [payNote, setPayNote] = useState("");
 
@@ -97,17 +73,12 @@ export default function SalariesPage() {
   const [editJob, setEditJob] = useState("");
   const [editUnitLabel, setEditUnitLabel] = useState("");
 
-  const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
-  const [editPayAmount, setEditPayAmount] = useState("");
-  const [editPayDate, setEditPayDate] = useState("");
-  const [editPayNote, setEditPayNote] = useState("");
-
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const [w, p] = await Promise.all([
         listWorkers({ active: "true" }),
-        listSalaryPayments({ dateFrom, dateTo }),
+        listSalaryPayments(),
       ]);
       setWorkers(w);
       setPayments(p);
@@ -116,7 +87,7 @@ export default function SalariesPage() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo]);
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => void load(), 150);
@@ -127,47 +98,6 @@ export default function SalariesPage() {
     () => payments.reduce((s, e) => s + e.amount, 0),
     [payments]
   );
-
-  const lastPayByWorker = useMemo(() => {
-    const map = new Map<string, BatchExpense>();
-    for (const p of payments) {
-      const id =
-        typeof p.worker === "string" ? p.worker : p.worker && "_id" in p.worker ? p.worker._id : "";
-      if (!id || map.has(id)) continue;
-      map.set(id, p);
-    }
-    return map;
-  }, [payments]);
-
-  const totalsByWorker = useMemo(() => {
-    const map = new Map<
-      string,
-      { total: number; count: number; worker: BatchExpense["worker"] }
-    >();
-    for (const p of payments) {
-      const id =
-        typeof p.worker === "string" ? p.worker : p.worker && "_id" in p.worker ? p.worker._id : "";
-      if (!id) continue;
-      const prev = map.get(id);
-      if (prev) {
-        prev.total += p.amount;
-        prev.count += 1;
-      } else {
-        map.set(id, { total: p.amount, count: 1, worker: p.worker });
-      }
-    }
-    return [...map.entries()]
-      .map(([id, row]) => ({ id, ...row }))
-      .sort((a, b) => b.total - a.total);
-  }, [payments]);
-
-  const totalPaidByWorkerId = useMemo(() => {
-    const map = new Map<string, { total: number; count: number }>();
-    for (const row of totalsByWorker) {
-      map.set(row.id, { total: row.total, count: row.count });
-    }
-    return map;
-  }, [totalsByWorker]);
 
   const filteredWorkers = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -183,20 +113,9 @@ export default function SalariesPage() {
   function openPay(w: Worker) {
     setEditingId(null);
     setPayingId(w._id);
-    const preferred = w.payType || "weekly";
-    setPayType(preferred);
-    setPayAmount(preferred !== "per_unit" && w.rate != null ? String(w.rate) : "");
-    setPayUnits("");
-    setPayUnitRate(preferred === "per_unit" && w.rate != null ? String(w.rate) : "");
+    setPayAmount("");
     setPayDate(todayInput());
     setPayNote("");
-    const day =
-      w.payDays?.includes("monday")
-        ? "monday"
-        : w.payDays?.includes("thursday")
-          ? "thursday"
-          : "monday";
-    setPayDay(day);
   }
 
   function openEdit(w: Worker) {
@@ -237,40 +156,18 @@ export default function SalariesPage() {
       toast.error("Pick the pay date");
       return;
     }
+    const amount = Number(payAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error("Enter the amount for this pay");
+      return;
+    }
     setBusyId(w._id);
     try {
-      if (payType === "per_unit") {
-        const units = Number(payUnits);
-        const unitRate = Number(payUnitRate);
-        if (!Number.isFinite(units) || units <= 0) {
-          toast.error("Enter how many units");
-          return;
-        }
-        if (!Number.isFinite(unitRate) || unitRate <= 0) {
-          toast.error("Enter pay per unit");
-          return;
-        }
-        await payWorker(w._id, {
-          expenseDate: payDate,
-          payType,
-          units,
-          unitRate,
-          notes: payNote.trim() || undefined,
-        });
-      } else {
-        const amount = Number(payAmount);
-        if (!Number.isFinite(amount) || amount <= 0) {
-          toast.error("Enter the amount for this pay");
-          return;
-        }
-        await payWorker(w._id, {
-          expenseDate: payDate,
-          payType,
-          amount,
-          payDay: payType === "weekly" ? payDay : undefined,
-          notes: payNote.trim() || undefined,
-        });
-      }
+      await payWorker(w._id, {
+        expenseDate: payDate,
+        amount,
+        notes: payNote.trim() || undefined,
+      });
       toast.success(`Paid ${displayWorkerName(w, isUrdu)} · ${formatDate(payDate)}`);
       setPayingId(null);
       await load();
@@ -308,51 +205,6 @@ export default function SalariesPage() {
     }
   }
 
-  async function onDelete(id: string) {
-    if (!confirm("Remove this payment?")) return;
-    try {
-      await deleteFactoryExpense(id);
-      toast.success("Removed");
-      await load();
-    } catch (err) {
-      toast.error(apiError(err, "Delete failed"));
-    }
-  }
-
-  function openEditPayment(e: BatchExpense) {
-    setEditingPaymentId(e._id);
-    setEditPayAmount(String(e.amount));
-    setEditPayDate(String(e.expenseDate).slice(0, 10));
-    setEditPayNote(e.notes || "");
-  }
-
-  async function onSavePayment(id: string) {
-    const amount = Number(editPayAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      toast.error("Enter a valid amount");
-      return;
-    }
-    if (!editPayDate) {
-      toast.error("Pick the pay date");
-      return;
-    }
-    setBusyId(`edit-pay-${id}`);
-    try {
-      await updateFactoryExpense(id, {
-        amount,
-        expenseDate: editPayDate,
-        notes: editPayNote.trim(),
-      });
-      toast.success(t("sal.paymentUpdated"));
-      setEditingPaymentId(null);
-      await load();
-    } catch (err) {
-      toast.error(apiError(err, "Could not update payment"));
-    } finally {
-      setBusyId(null);
-    }
-  }
-
   async function onDeactivateWorker(w: Worker) {
     if (!confirm(`Remove ${displayWorkerName(w, isUrdu)} from the active list?`)) return;
     try {
@@ -363,11 +215,6 @@ export default function SalariesPage() {
       toast.error(apiError(err, "Could not remove worker"));
     }
   }
-
-  const unitPreview =
-    payType === "per_unit" && Number(payUnits) > 0 && Number(payUnitRate) > 0
-      ? Number(payUnits) * Number(payUnitRate)
-      : null;
 
   return (
     <div className="flex flex-col gap-8">
@@ -380,8 +227,13 @@ export default function SalariesPage() {
           <p className="mt-1 max-w-lg text-sm text-muted-foreground">{t("sal.desc")}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-          <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          <Link
+            href="/dashboard/expenses/salaries/calendar"
+            className="inline-flex h-11 items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-4 text-sm font-semibold text-amber-300 shadow-md transition-colors hover:bg-slate-800 hover:text-amber-200 dark:border-slate-600 dark:bg-slate-950 dark:text-amber-300 dark:hover:bg-slate-900"
+          >
+            <CalendarDays className="size-4 text-amber-400" />
+            {t("sal.openCalendar")}
+          </Link>
         </div>
       </div>
 
@@ -397,7 +249,7 @@ export default function SalariesPage() {
         <Card className="py-0">
           <CardContent className="p-4">
             <p className="font-data text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
-              {t("sal.paidPeriod")}
+              {t("sal.totalPaid")}
             </p>
             <p className="font-data mt-1 text-xl">{formatMoney(periodTotal)}</p>
           </CardContent>
@@ -413,7 +265,7 @@ export default function SalariesPage() {
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 className="text-nameplate text-base">{t("sal.workers")}</h2>
-              <p className="mt-1 text-sm text-muted-foreground">{t("sal.workersDesc")}</p>
+              {/* <p className="mt-1 text-sm text-muted-foreground">{t("sal.workersDesc")}</p> */}
             </div>
             <Button
               type="button"
@@ -425,14 +277,23 @@ export default function SalariesPage() {
             </Button>
           </div>
 
-          <div className="relative max-w-md">
-            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              className="pl-8"
-              placeholder={t("sal.search")}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+          <div className="max-w-md">
+            <Label
+              htmlFor="worker-search"
+              className="mb-1.5 block text-sm font-semibold text-red-700 dark:text-red-400"
+            >
+              {t("common.search")}
+            </Label>
+            <div className="relative">
+              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-red-600 dark:text-red-400" />
+              <Input
+                id="worker-search"
+                className="h-11 border-2 border-red-500 bg-red-50 pl-9 text-base text-foreground placeholder:text-red-700/60 focus-visible:border-red-600 focus-visible:ring-red-500/40 dark:border-red-500 dark:bg-red-950/40 dark:placeholder:text-red-300/60"
+                placeholder={t("sal.search")}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
           </div>
 
           {showAddWorker && (
@@ -503,60 +364,44 @@ export default function SalariesPage() {
               </CardContent>
             </Card>
           ) : (
-            <div className="grid gap-3">
+            <div className="grid gap-2">
               {filteredWorkers.map((w) => {
                 const isPaying = payingId === w._id;
                 const isEditing = editingId === w._id;
-                const last = lastPayByWorker.get(w._id);
-                const periodPay = totalPaidByWorkerId.get(w._id);
                 return (
-                  <Card key={w._id}>
-                    <CardContent className="flex flex-col gap-4 p-4 sm:p-5">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
+                  <Card
+                    key={w._id}
+                    className="cursor-pointer py-0 transition-colors hover:bg-muted/30"
+                    onClick={() => router.push(`/dashboard/expenses/salaries/${w._id}`)}
+                  >
+                    <CardContent className="flex flex-col gap-3 px-3.5 py-3.5 sm:px-4 sm:py-3.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2.5">
+                        <div className="min-w-0">
                           <p
-                            className="text-lg font-medium tracking-tight"
+                            className="truncate text-base font-medium tracking-tight"
                             dir={isUrdu && w.nameUr?.trim() ? "rtl" : undefined}
                           >
                             {displayWorkerName(w, isUrdu)}
                           </p>
-                          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                            {w.job ? <span>{displayJob(w.job, t)}</span> : null}
-                            {periodPay ? (
-                              <span className="font-data text-xs font-medium text-foreground">
-                                {t("sal.paidInPeriod", {
-                                  amount: formatMoney(periodPay.total),
-                                  count: periodPay.count,
-                                })}
-                              </span>
-                            ) : (
-                              <span className="text-xs">{t("sal.noPayPeriod")}</span>
-                            )}
-                            {last ? (
-                              <span className="font-data text-xs">
-                                {t("sal.lastPaid", {
-                                  date: formatDate(last.expenseDate),
-                                  amount: formatMoney(last.amount),
-                                })}
-                                {last.payType ? ` · ${payTypeLabel(last.payType)}` : ""}
-                              </span>
-                            ) : null}
-                            {w.rate != null && (
-                              <span className="font-data text-xs text-muted-foreground/80">
-                                {t("sal.lastRemembered", { amount: formatMoney(w.rate) })}
-                              </span>
-                            )}
-                          </div>
+                          {w.job ? (
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              {displayJob(w.job, t)}
+                            </p>
+                          ) : null}
                         </div>
-                        <div className="flex flex-wrap gap-2">
+                        <div
+                          className="flex flex-wrap gap-2"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           {!isPaying && !isEditing && (
-                            <Button type="button" onClick={() => openPay(w)}>
+                            <Button type="button" size="sm" onClick={() => openPay(w)}>
                               {t("sal.payNow")}
                             </Button>
                           )}
                           {!isEditing && (
                             <Button
                               type="button"
+                              size="sm"
                               variant="outline"
                               onClick={() => openEdit(w)}
                             >
@@ -566,7 +411,7 @@ export default function SalariesPage() {
                           <Button
                             type="button"
                             variant="ghost"
-                            size="icon"
+                            size="icon-sm"
                             className="text-muted-foreground"
                             onClick={() => void onDeactivateWorker(w)}
                           >
@@ -576,7 +421,10 @@ export default function SalariesPage() {
                       </div>
 
                       {isEditing && (
-                        <div className="rounded-xl border border-border/80 bg-muted/30 p-4">
+                        <div
+                          className="rounded-xl border border-border/80 bg-muted/30 p-4"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <p className="mb-3 text-sm font-medium">{t("sal.editWorker")}</p>
                           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                             <div className="flex flex-col gap-1.5">
@@ -637,112 +485,22 @@ export default function SalariesPage() {
                       )}
 
                       {isPaying && (
-                        <div className="rounded-xl border border-border/80 bg-muted/30 p-4">
-                          <div className="mb-3 flex flex-wrap gap-2">
-                            <span className="w-full text-sm text-muted-foreground">
-                              {t("sal.payType")}
-                            </span>
-                            {(
-                              [
-                                ["weekly", t("sal.weekly")],
-                                ["monthly", t("sal.monthly")],
-                                ["per_unit", t("sal.perUnit")],
-                              ] as const
-                            ).map(([id, label]) => (
-                              <Button
-                                key={id}
-                                type="button"
-                                size="lg"
-                                variant={payType === id ? "default" : "outline"}
-                                className="min-w-[110px]"
-                                onClick={() => {
-                                  setPayType(id);
-                                  if (id === "per_unit") {
-                                    setPayAmount("");
-                                    if (w.rate != null && w.payType === "per_unit") {
-                                      setPayUnitRate(String(w.rate));
-                                    }
-                                  } else if (w.rate != null && w.payType !== "per_unit") {
-                                    setPayAmount(String(w.rate));
-                                  }
-                                }}
-                              >
-                                {label}
-                              </Button>
-                            ))}
-                          </div>
-
-                          {payType === "weekly" && (
-                            <div className="mb-3 flex flex-wrap gap-2">
-                              <span className="w-full text-sm text-muted-foreground">
-                                {t("sal.payDay")}
-                              </span>
-                              {(
-                                [
-                                  ["monday", t("sal.monday")],
-                                  ["thursday", t("sal.thursday")],
-                                ] as const
-                              ).map(([id, label]) => (
-                                <Button
-                                  key={id}
-                                  type="button"
-                                  size="lg"
-                                  variant={payDay === id ? "default" : "outline"}
-                                  className="min-w-[120px]"
-                                  onClick={() => setPayDay(id)}
-                                >
-                                  {label}
-                                </Button>
-                              ))}
-                            </div>
-                          )}
-
+                        <div
+                          className="rounded-xl border border-border/80 bg-muted/30 p-4"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <div className="grid gap-3 sm:grid-cols-3">
-                            {payType === "per_unit" ? (
-                              <>
-                                <div className="flex flex-col gap-1.5">
-                                  <Label>How many {w.unitLabel || "units"}?</Label>
-                                  <Input
-                                    type="number"
-                                    min={1}
-                                    value={payUnits}
-                                    onChange={(e) => setPayUnits(e.target.value)}
-                                    className="h-11 text-base"
-                                  />
-                                </div>
-                                <div className="flex flex-col gap-1.5">
-                                  <Label>Pay per {w.unitLabel || "unit"}</Label>
-                                  <Input
-                                    type="number"
-                                    step="1"
-                                    value={payUnitRate}
-                                    onChange={(e) => setPayUnitRate(e.target.value)}
-                                    className="h-11 text-base"
-                                    placeholder={t("sal.phUnitRate")}
-                                  />
-                                </div>
-                                <div className="flex flex-col gap-1.5">
-                                  <Label>Total</Label>
-                                  <p className="font-data flex h-11 items-center text-lg">
-                                    {unitPreview != null ? formatMoney(unitPreview) : "—"}
-                                  </p>
-                                </div>
-                              </>
-                            ) : (
-                              <div className="flex flex-col gap-1.5">
-                                <Label>
-                                  {payType === "weekly" ? t("sal.weekAmount") : t("sal.monthAmount")}
-                                </Label>
-                                <Input
-                                  type="number"
-                                  step="1"
-                                  value={payAmount}
-                                  onChange={(e) => setPayAmount(e.target.value)}
-                                  className="h-11 text-base"
-                                  placeholder={t("sal.phAmount")}
-                                />
-                              </div>
-                            )}
+                            <div className="flex flex-col gap-1.5">
+                              <Label>{t("sal.paymentAmount")}</Label>
+                              <Input
+                                type="number"
+                                step="1"
+                                value={payAmount}
+                                onChange={(e) => setPayAmount(e.target.value)}
+                                className="h-11 text-base"
+                                placeholder={t("sal.phAmount")}
+                              />
+                            </div>
                             <div className="flex flex-col gap-1.5">
                               <Label>{t("sal.payDate")}</Label>
                               <Input
@@ -753,7 +511,7 @@ export default function SalariesPage() {
                                 required
                               />
                             </div>
-                            <div className="flex flex-col gap-1.5 sm:col-span-2">
+                            <div className="flex flex-col gap-1.5 sm:col-span-3">
                               <Label>{t("exp.noteOptional")}</Label>
                               <Input
                                 value={payNote}
@@ -791,174 +549,6 @@ export default function SalariesPage() {
                 );
               })}
             </div>
-          )}
-
-          {totalsByWorker.length > 0 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-nameplate text-sm">{t("sal.byWorker")}</CardTitle>
-                <CardDescription>{t("sal.byWorkerDesc")}</CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-2 px-4 pb-4">
-                {totalsByWorker.map((row) => (
-                  <div
-                    key={row.id}
-                    className="flex items-center justify-between gap-3 border-b border-border/50 py-2.5 last:border-0"
-                  >
-                    <div className="min-w-0">
-                      <p
-                        className="truncate text-sm font-medium"
-                        dir={
-                          isUrdu &&
-                          typeof row.worker === "object" &&
-                          row.worker?.nameUr?.trim()
-                            ? "rtl"
-                            : undefined
-                        }
-                      >
-                        {displayWorkerName(row.worker, isUrdu) || "—"}
-                      </p>
-                      <p className="font-data text-xs text-muted-foreground">
-                        {t("sal.paymentCount", { count: row.count })}
-                      </p>
-                    </div>
-                    <span className="font-data text-base font-medium">
-                      {formatMoney(row.total)}
-                    </span>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
-
-          {payments.length > 0 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-nameplate text-sm">{t("sal.history")}</CardTitle>
-                <CardDescription>{t("sal.historyDesc")}</CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-2 px-4 pb-4">
-                {payments.map((e) => {
-                  const isEditingPayment = editingPaymentId === e._id;
-                  return (
-                    <div
-                      key={e._id}
-                      className="border-b border-border/50 py-2 last:border-0"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p
-                              className="truncate text-sm font-medium"
-                              dir={
-                                isUrdu &&
-                                typeof e.worker === "object" &&
-                                e.worker?.nameUr?.trim()
-                                  ? "rtl"
-                                  : undefined
-                              }
-                            >
-                              {displayWorkerName(e.worker, isUrdu) || e.notes || "Salary"}
-                            </p>
-                            {e.payType && (
-                              <Badge variant="secondary">{payTypeLabel(e.payType)}</Badge>
-                            )}
-                          </div>
-                          <p className="font-data text-xs text-muted-foreground">
-                            {formatDate(e.expenseDate)}
-                            {e.units != null
-                              ? ` · ${e.units} units`
-                              : e.notes
-                                ? ` · ${e.notes}`
-                                : ""}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {!isEditingPayment && (
-                            <>
-                              <span className="font-data text-sm">
-                                {formatMoney(e.amount)}
-                              </span>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => openEditPayment(e)}
-                              >
-                                {t("sal.editPayment")}
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="size-8 text-muted-foreground"
-                                onClick={() => void onDelete(e._id)}
-                              >
-                                <Trash2 className="size-3.5" />
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </div>
-
-                      {isEditingPayment && (
-                        <div className="mt-3 grid gap-3 rounded-xl border border-border/80 bg-muted/30 p-3 sm:grid-cols-3">
-                          <div className="flex flex-col gap-1.5">
-                            <Label>{t("sal.paymentAmount")}</Label>
-                            <Input
-                              type="number"
-                              step="1"
-                              min={1}
-                              value={editPayAmount}
-                              onChange={(ev) => setEditPayAmount(ev.target.value)}
-                              className="h-10"
-                            />
-                          </div>
-                          <div className="flex flex-col gap-1.5">
-                            <Label>{t("sal.payDate")}</Label>
-                            <Input
-                              type="date"
-                              value={editPayDate}
-                              onChange={(ev) => setEditPayDate(ev.target.value)}
-                              className="h-10"
-                            />
-                          </div>
-                          <div className="flex flex-col gap-1.5">
-                            <Label>{t("exp.noteOptional")}</Label>
-                            <Input
-                              value={editPayNote}
-                              onChange={(ev) => setEditPayNote(ev.target.value)}
-                              className="h-10"
-                              placeholder={t("sal.notePh")}
-                            />
-                          </div>
-                          <div className="flex flex-wrap gap-2 sm:col-span-3">
-                            <Button
-                              type="button"
-                              className="gap-2"
-                              disabled={busyId === `edit-pay-${e._id}`}
-                              onClick={() => void onSavePayment(e._id)}
-                            >
-                              {busyId === `edit-pay-${e._id}` && (
-                                <Loader2 className="size-4 animate-spin" />
-                              )}
-                              {t("sal.savePayment")}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => setEditingPaymentId(null)}
-                            >
-                              {t("sal.cancel")}
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </CardContent>
-            </Card>
           )}
         </section>
       )}

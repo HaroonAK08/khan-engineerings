@@ -35,11 +35,23 @@ export type Purchase = {
 
 export type LedgerEntry = {
   _id: string;
-  supplier: string;
+  supplier: string | { _id: string; name: string; nameUr?: string };
   type: "purchase" | "payment" | "adjustment";
   amount: number;
   signedAmount?: number | null;
-  purchase?: { quantityKg: number; ratePerKg: number; invoiceNo: string } | string | null;
+  purchase?:
+    | string
+    | null
+    | {
+        _id: string;
+        quantityKg: number;
+        ratePerKg: number;
+        invoiceNo: string;
+        materialType?: MaterialType;
+        totalAmount?: number;
+        purchaseDate?: string;
+        notes?: string;
+      };
   entryDate: string;
   notes: string;
 };

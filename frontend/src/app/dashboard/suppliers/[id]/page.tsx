@@ -10,7 +10,6 @@ import { toast } from "sonner";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import {
   apiError,
-  formatDate,
   formatMoney,
   getLedger,
   getSupplier,
@@ -22,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SupplierHistoryCalendar } from "@/components/suppliers/supplier-history-calendar";
 import { useI18n } from "@/hooks/use-i18n";
 
 const paymentSchema = z.object({
@@ -38,15 +38,10 @@ const fixSchema = z.object({
 
 type PaymentForm = z.infer<typeof paymentSchema>;
 type FixForm = z.infer<typeof fixSchema>;
+type HistoryKind = "purchase" | "payment";
 
 function todayInput() {
   return new Date().toISOString().slice(0, 10);
-}
-
-function entryDelta(entry: LedgerEntry) {
-  if (entry.type === "purchase") return entry.amount;
-  if (entry.type === "payment") return -entry.amount;
-  return entry.signedAmount ?? 0;
 }
 
 function isInternalNote(notes: string) {
@@ -64,6 +59,7 @@ export default function SupplierDetailPage() {
   const [savingPayment, setSavingPayment] = useState(false);
   const [savingFix, setSavingFix] = useState(false);
   const [showFix, setShowFix] = useState(false);
+  const [historyKind, setHistoryKind] = useState<HistoryKind>("payment");
 
   const paymentForm = useForm<PaymentForm>({
     resolver: zodResolver(paymentSchema),
@@ -75,8 +71,8 @@ export default function SupplierDetailPage() {
     defaultValues: { amount: undefined as unknown as number, entryDate: todayInput(), notes: "" },
   });
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     try {
       const [detail, ledger] = await Promise.all([getSupplier(id), getLedger(id)]);
       setSupplier(detail.supplier);
@@ -85,12 +81,12 @@ export default function SupplierDetailPage() {
     } catch (err) {
       toast.error(apiError(err, t("supplierDetail.loadFailed")));
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   }, [id, t]);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   async function onPayment(values: PaymentForm) {
@@ -100,7 +96,7 @@ export default function SupplierDetailPage() {
       setBalance(result.balance);
       toast.success(t("supplierDetail.paymentRecorded"));
       paymentForm.reset({ amount: undefined as unknown as number, entryDate: todayInput(), notes: "" });
-      await load();
+      await load({ silent: true });
     } catch (err) {
       toast.error(apiError(err, t("supplierDetail.paymentFailed")));
     } finally {
@@ -116,18 +112,12 @@ export default function SupplierDetailPage() {
       toast.success(t("supplierDetail.adjustmentRecorded"));
       fixForm.reset({ amount: undefined as unknown as number, entryDate: todayInput(), notes: "" });
       setShowFix(false);
-      await load();
+      await load({ silent: true });
     } catch (err) {
       toast.error(apiError(err, t("supplierDetail.adjustmentFailed")));
     } finally {
       setSavingFix(false);
     }
-  }
-
-  function typeLabel(type: LedgerEntry["type"]) {
-    if (type === "purchase") return t("supplierDetail.typePurchase");
-    if (type === "payment") return t("supplierDetail.typePayment");
-    return t("supplierDetail.typeFix");
   }
 
   if (loading) {
@@ -158,7 +148,7 @@ export default function SupplierDetailPage() {
     supplier.notes && !isInternalNote(supplier.notes) ? supplier.notes : "";
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-8">
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
       <div>
         <Link
           href="/dashboard/suppliers"
@@ -268,36 +258,29 @@ export default function SupplierDetailPage() {
           </Card>
         )}
 
-        {entries.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
-            {t("supplierDetail.noLedger")}
-          </p>
-        ) : (
-          <ul className="divide-y divide-border rounded-xl border border-border">
-            {entries.map((e) => {
-              const delta = entryDelta(e);
-              return (
-                <li key={e._id} className="flex items-center justify-between gap-3 px-4 py-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">{typeLabel(e.type)}</p>
-                    <p className="font-data text-xs text-muted-foreground">
-                      {formatDate(e.entryDate)}
-                      {e.notes && !isInternalNote(e.notes) ? ` · ${e.notes}` : ""}
-                    </p>
-                  </div>
-                  <span
-                    className={`font-data shrink-0 text-sm ${
-                      delta < 0 ? "text-chart-3" : "text-foreground"
-                    }`}
-                  >
-                    {delta > 0 ? "+" : ""}
-                    {formatMoney(delta)}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+        <div className="mb-4 flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant={historyKind === "purchase" ? "default" : "outline"}
+            onClick={() => setHistoryKind("purchase")}
+          >
+            {t("supplierDetail.purchaseHistory")}
+          </Button>
+          <Button
+            type="button"
+            variant={historyKind === "payment" ? "default" : "outline"}
+            onClick={() => setHistoryKind("payment")}
+          >
+            {t("supplierDetail.paymentHistory")}
+          </Button>
+        </div>
+
+        <SupplierHistoryCalendar
+          supplierId={id}
+          kind={historyKind}
+          entries={entries}
+          onChanged={() => load({ silent: true })}
+        />
       </div>
     </div>
   );

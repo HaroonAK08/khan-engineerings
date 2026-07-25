@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
-import { Loader2, Paintbrush, Trash2 } from "lucide-react";
+import { History, Loader2, Paintbrush, Trash2 } from "lucide-react";
 import {
   createFactoryExpense,
   deleteFactoryExpense,
@@ -10,21 +11,11 @@ import {
 } from "@/lib/expenses-api";
 import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
 import type { BatchExpense } from "@/types/production";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useI18n, type MessageKey } from "@/hooks/use-i18n";
-
-function monthDefaults() {
-  const now = new Date();
-  const from = new Date(now.getFullYear(), now.getMonth(), 1);
-  const to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  return {
-    from: from.toISOString().slice(0, 10),
-    to: to.toISOString().slice(0, 10),
-  };
-}
 
 function todayInput() {
   return new Date().toISOString().slice(0, 10);
@@ -51,14 +42,11 @@ const categoryUsesQuantityByDefault = (id: string) => !amountOnlyCategory(id);
 
 export default function OtherExpensesPage() {
   const { t } = useI18n();
-  const defaults = monthDefaults();
 
   function categoryLabel(id: string) {
     const cat = OTHER_CATEGORIES.find((c) => c.id === id);
     return cat ? t(cat.labelKey) : id;
   }
-  const [dateFrom, setDateFrom] = useState(defaults.from);
-  const [dateTo, setDateTo] = useState(defaults.to);
   const [expenses, setExpenses] = useState<BatchExpense[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -97,7 +85,7 @@ export default function OtherExpensesPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const all = await listFactoryExpenses({ dateFrom, dateTo });
+      const all = await listFactoryExpenses();
       setExpenses(
         all.filter(
           (e) =>
@@ -111,7 +99,7 @@ export default function OtherExpensesPage() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo]);
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => void load(), 150);
@@ -205,18 +193,22 @@ export default function OtherExpensesPage() {
             {t("exp.eyebrow")}
           </p>
           <h1 className="text-nameplate text-xl">{t("other.title")}</h1>
-          <p className="mt-1 max-w-lg text-sm text-muted-foreground">{t("other.desc")}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-          <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          <Link
+            href="/dashboard/expenses/other/history"
+            className={buttonVariants({ variant: "outline", className: "gap-1.5" })}
+          >
+            <History className="size-4" />
+            {t("exp.showHistory")}
+          </Link>
         </div>
       </div>
 
       <Card className="py-0 max-w-xs">
         <CardContent className="p-4">
           <p className="font-data text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
-            {t("exp.periodTotal")}
+            {t("exp.totalSpent")}
           </p>
           <p className="font-data mt-1 text-xl">{formatMoney(total)}</p>
         </CardContent>

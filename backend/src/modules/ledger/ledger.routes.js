@@ -8,5 +8,7 @@ router.use(requireAuth);
 router.get("/", controller.list);
 router.post("/payments", controller.payment);
 router.post("/adjustments", controller.adjustment);
+router.patch("/:entryId", controller.update);
+router.delete("/:entryId", controller.remove);
 
 module.exports = router;

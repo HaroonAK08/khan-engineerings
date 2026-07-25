@@ -8,11 +8,9 @@ import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
 import {
   listSalaryPayments,
   listWorkers,
-  type PayType,
   type Worker,
 } from "@/lib/workers-api";
 import type { BatchExpense } from "@/types/production";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -60,13 +58,6 @@ export default function SalaryReportsPage() {
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [payments, setPayments] = useState<BatchExpense[]>([]);
   const [loading, setLoading] = useState(true);
-
-  function payTypeLabel(type: PayType | null | undefined) {
-    if (type === "weekly") return t("sal.weekly");
-    if (type === "monthly") return t("sal.monthly");
-    if (type === "per_unit") return t("sal.perUnit");
-    return "—";
-  }
 
   useEffect(() => {
     void (async () => {
@@ -277,7 +268,6 @@ export default function SalaryReportsPage() {
                     <TableRow>
                       <TableHead>{t("salReports.colDate")}</TableHead>
                       <TableHead>{t("salReports.colWorker")}</TableHead>
-                      <TableHead>{t("salReports.colType")}</TableHead>
                       <TableHead>{t("salReports.colNote")}</TableHead>
                       <TableHead className="text-right">{t("salReports.colAmount")}</TableHead>
                     </TableRow>
@@ -299,17 +289,8 @@ export default function SalaryReportsPage() {
                         >
                           {displayWorkerName(p.worker, isUrdu)}
                         </TableCell>
-                        <TableCell>
-                          {p.payType ? (
-                            <Badge variant="secondary">{payTypeLabel(p.payType)}</Badge>
-                          ) : (
-                            "—"
-                          )}
-                        </TableCell>
                         <TableCell className="max-w-[220px] truncate text-muted-foreground">
-                          {p.units != null
-                            ? `${p.units} units${p.notes ? ` · ${p.notes}` : ""}`
-                            : p.notes || "—"}
+                          {p.notes || "—"}
                         </TableCell>
                         <TableCell className="font-data text-right">
                           {formatMoney(p.amount)}

@@ -17,17 +17,6 @@ function parseDate(value, label = "Date") {
   return d;
 }
 
-const PAY_TYPE_LABEL = {
-  weekly: "Weekly",
-  monthly: "Monthly",
-  per_unit: "Per unit",
-};
-
-const PAY_DAY_LABEL = {
-  monday: "Monday",
-  thursday: "Thursday",
-};
-
 function resolvePayType(value) {
   if (value === "weekly" || value === "monthly" || value === "per_unit") return value;
   return null;
@@ -120,8 +109,7 @@ async function remove(id) {
 
 /**
  * Record a salary payment → factory expense (batch null).
- * Pay type + amount are chosen per payment (not locked on the worker).
- * expenseDate is required so every pay is dated in history.
+ * Only pay date + amount required; note optional.
  */
 async function pay(id, data) {
   const worker = await getOne(id);
@@ -130,48 +118,13 @@ async function pay(id, data) {
   if (!data.expenseDate) throw httpError("Pay date is required", 400);
   const expenseDate = parseDate(data.expenseDate, "Pay date");
 
-  const payType = resolvePayType(data.payType) || resolvePayType(worker.payType);
-  if (!payType) {
-    throw httpError("Select pay type: weekly, monthly, or per unit", 400);
+  const amount = data.amount != null ? Number(data.amount) : null;
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw httpError("Enter the amount for this pay", 400);
   }
 
-  let amount;
-  let units = null;
-  const noteParts = [worker.name, PAY_TYPE_LABEL[payType]];
-
-  if (payType === "per_unit") {
-    units = Number(data.units);
-    if (!Number.isFinite(units) || units <= 0) {
-      throw httpError("Enter how many units were made", 400);
-    }
-    const unitRate =
-      data.unitRate != null
-        ? Number(data.unitRate)
-        : data.amount != null
-          ? Number(data.amount) / units
-          : worker.rate;
-    amount = data.amount != null ? Number(data.amount) : units * Number(unitRate);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      throw httpError("Amount must be greater than 0", 400);
-    }
-    const unitLabel = worker.unitLabel || "piece";
-    noteParts.push(`${units} ${unitLabel} × ${roundMoney(amount / units)}`);
-  } else {
-    amount = data.amount != null ? Number(data.amount) : null;
-    if (!Number.isFinite(amount) || amount <= 0) {
-      throw httpError("Enter the amount for this pay", 400);
-    }
-    if (payType === "weekly") {
-      const payDay =
-        data.payDay === "thursday" ? "thursday" : data.payDay === "monday" ? "monday" : null;
-      if (payDay) noteParts.push(PAY_DAY_LABEL[payDay]);
-      else noteParts.push("week");
-    } else {
-      noteParts.push("month");
-    }
-  }
-
-  if (data.notes?.trim()) noteParts.push(data.notes.trim());
+  const note = data.notes?.trim() || "";
+  const notes = note ? `${worker.name} · ${note}` : worker.name;
 
   const expense = await BatchExpense.create({
     batch: null,
@@ -179,20 +132,11 @@ async function pay(id, data) {
     category: "fixed_salary",
     amount: roundMoney(amount),
     expenseDate,
-    notes: noteParts.join(" · "),
+    notes,
     worker: worker._id,
-    units,
-    payType,
+    units: null,
+    payType: null,
   });
-
-  // Remember last style/amount as a suggestion for next time — not a fixed salary.
-  worker.payType = payType;
-  if (payType === "per_unit" && units > 0) {
-    worker.rate = roundMoney(amount / units);
-  } else {
-    worker.rate = roundMoney(amount);
-  }
-  await worker.save();
 
   return { expense, worker };
 }
@@ -226,6 +170,4 @@ module.exports = {
   remove,
   pay,
   listPayments,
-  PAY_TYPE_LABEL,
-  PAY_DAY_LABEL,
 };

@@ -25,6 +25,11 @@ export async function listWorkers(params?: { active?: string }) {
   return data.workers;
 }
 
+export async function getWorker(id: string) {
+  const { data } = await api.get<{ worker: Worker }>(`/workers/${id}`);
+  return data.worker;
+}
+
 export async function createWorker(body: {
   name: string;
   nameUr?: string;
@@ -66,11 +71,7 @@ export async function payWorker(
   id: string,
   body: {
     expenseDate: string;
-    payType: PayType;
-    amount?: number;
-    units?: number;
-    unitRate?: number;
-    payDay?: PayDay;
+    amount: number;
     notes?: string;
   }
 ) {

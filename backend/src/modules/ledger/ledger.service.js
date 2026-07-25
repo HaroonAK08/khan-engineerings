@@ -26,7 +26,7 @@ async function listBySupplier(supplierId, { dateFrom, dateTo } = {}) {
     }
   }
   return LedgerEntry.find(filter)
-    .populate("purchase", "quantityKg ratePerKg invoiceNo")
+    .populate("purchase", "quantityKg ratePerKg invoiceNo materialType totalAmount purchaseDate notes")
     .sort({ entryDate: -1, createdAt: -1 });
 }
 
@@ -68,4 +68,56 @@ async function recordAdjustment(supplierId, { amount, entryDate, notes }) {
   return { entry, balance };
 }
 
-module.exports = { listBySupplier, getBalance, recordPayment, recordAdjustment };
+async function updateEntry(supplierId, entryId, data) {
+  await supplierService.getById(supplierId);
+  const entry = await LedgerEntry.findOne({ _id: entryId, supplier: supplierId });
+  if (!entry) throw httpError("Ledger entry not found", 404);
+  if (entry.type === "purchase") {
+    throw httpError("Edit this purchase from inventory / purchase history", 400);
+  }
+
+  if (data.amount !== undefined) {
+    const n = Number(data.amount);
+    if (entry.type === "payment") {
+      if (!Number.isFinite(n) || n <= 0) throw httpError("Payment amount must be greater than 0", 400);
+      entry.amount = Math.round(n * 100) / 100;
+      entry.signedAmount = null;
+    } else {
+      if (!Number.isFinite(n) || n === 0) throw httpError("Adjustment amount must be non-zero", 400);
+      const signed = Math.round(n * 100) / 100;
+      entry.signedAmount = signed;
+      entry.amount = Math.abs(signed);
+    }
+  }
+  if (data.entryDate !== undefined) {
+    entry.entryDate = parseDate(data.entryDate, "Entry date");
+  }
+  if (data.notes !== undefined) {
+    entry.notes = String(data.notes).trim();
+  }
+
+  await entry.save();
+  const balance = await getBalance(supplierId);
+  return { entry, balance };
+}
+
+async function removeEntry(supplierId, entryId) {
+  await supplierService.getById(supplierId);
+  const entry = await LedgerEntry.findOne({ _id: entryId, supplier: supplierId });
+  if (!entry) throw httpError("Ledger entry not found", 404);
+  if (entry.type === "purchase") {
+    throw httpError("Delete this purchase from inventory / purchase history", 400);
+  }
+  await entry.deleteOne();
+  const balance = await getBalance(supplierId);
+  return { balance };
+}
+
+module.exports = {
+  listBySupplier,
+  getBalance,
+  recordPayment,
+  recordAdjustment,
+  updateEntry,
+  removeEntry,
+};
