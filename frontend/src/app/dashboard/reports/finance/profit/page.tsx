@@ -8,6 +8,7 @@ import { FinanceSubnav } from "@/components/layout/finance-subnav";
 import { ReportsSubnav } from "@/components/layout/reports-subnav";
 import { apiError, formatMoney } from "@/lib/materials-api";
 import { getProductProfit } from "@/lib/finance-api";
+import { currentMonthRange } from "@/lib/date-range";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -21,19 +22,9 @@ import {
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
 
-function monthDefaults() {
-  const now = new Date();
-  const from = new Date(now.getFullYear(), now.getMonth(), 1);
-  const to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  return {
-    from: from.toISOString().slice(0, 10),
-    to: to.toISOString().slice(0, 10),
-  };
-}
-
 export default function ProductProfitPage() {
   const { t } = useI18n();
-  const defaults = monthDefaults();
+  const defaults = currentMonthRange();
   const [dateFrom, setDateFrom] = useState(defaults.from);
   const [dateTo, setDateTo] = useState(defaults.to);
   const [products, setProducts] = useState<

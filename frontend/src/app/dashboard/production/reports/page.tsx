@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { apiError, formatKg } from "@/lib/materials-api";
 import { getProductionReport, listProducts } from "@/lib/production-api";
+import { currentMonthRange } from "@/lib/date-range";
 import type { Product, ProductionReport } from "@/types/production";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -22,11 +23,12 @@ import { useI18n } from "@/hooks/use-i18n";
 
 export default function ProductionReportsPage() {
   const { t } = useI18n();
+  const d = currentMonthRange();
   const [report, setReport] = useState<ProductionReport | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [dateFrom, setDateFrom] = useState(d.from);
+  const [dateTo, setDateTo] = useState(d.to);
   const [product, setProduct] = useState("");
 
   const load = useCallback(async () => {

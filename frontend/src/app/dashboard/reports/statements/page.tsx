@@ -13,6 +13,7 @@ import {
   getSupplierStatement,
   type Statement,
 } from "@/lib/reports-api";
+import { currentMonthRange } from "@/lib/date-range";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,10 +36,11 @@ import { useI18n } from "@/hooks/use-i18n";
 
 export default function StatementsPage() {
   const { t } = useI18n();
+  const d = currentMonthRange();
   const [partyType, setPartyType] = useState<"customer" | "supplier">("customer");
   const [partyId, setPartyId] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [dateFrom, setDateFrom] = useState(d.from);
+  const [dateTo, setDateTo] = useState(d.to);
   const [customers, setCustomers] = useState<Array<{ _id: string; name: string }>>([]);
   const [suppliers, setSuppliers] = useState<Array<{ _id: string; name: string }>>([]);
   const [statement, setStatement] = useState<Statement | null>(null);

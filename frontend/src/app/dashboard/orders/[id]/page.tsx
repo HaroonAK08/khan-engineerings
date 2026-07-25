@@ -37,6 +37,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
+import { todayInput } from "@/lib/date-range";
 
 const paymentSchema = z.object({
   amount: z.number().positive("Amount must be greater than 0"),
@@ -46,10 +47,6 @@ const paymentSchema = z.object({
 });
 
 type PaymentForm = z.infer<typeof paymentSchema>;
-
-function todayInput() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 export default function OrderDetailPage() {
   const { t } = useI18n();

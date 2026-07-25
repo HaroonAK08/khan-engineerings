@@ -7,6 +7,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
+import { todayInput } from "@/lib/date-range";
 import { api } from "@/lib/api";
 import { apiError, formatDate } from "@/lib/materials-api";
 import { listProducts } from "@/lib/production-api";
@@ -48,10 +49,6 @@ const schema = z.object({
 });
 
 type Form = z.infer<typeof schema>;
-
-function todayInput() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 export default function ClaimsPage() {
   const { t } = useI18n();

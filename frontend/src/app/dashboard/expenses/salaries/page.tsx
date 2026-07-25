@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { CalendarDays, Loader2, Plus, Search, Trash2 } from "lucide-react";
+import { BookOpen, Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
 import {
   createWorker,
@@ -21,10 +21,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useI18n } from "@/hooks/use-i18n";
-
-function todayInput() {
-  return new Date().toISOString().slice(0, 10);
-}
+import { todayInput } from "@/lib/date-range";
 
 function displayWorkerName(
   w: { name: string; nameUr?: string } | string | null | undefined,
@@ -231,7 +228,7 @@ export default function SalariesPage() {
             href="/dashboard/expenses/salaries/calendar"
             className="inline-flex h-11 items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-4 text-sm font-semibold text-amber-300 shadow-md transition-colors hover:bg-slate-800 hover:text-amber-200 dark:border-slate-600 dark:bg-slate-950 dark:text-amber-300 dark:hover:bg-slate-900"
           >
-            <CalendarDays className="size-4 text-amber-400" />
+            <BookOpen className="size-4 text-amber-400" />
             {t("sal.openCalendar")}
           </Link>
         </div>

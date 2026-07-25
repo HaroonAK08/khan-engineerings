@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { useI18n } from "@/hooks/use-i18n";
+import { todayInput } from "@/lib/date-range";
 
 const entrySchema = z.object({
   type: z.enum(["income", "expense"]),
@@ -70,7 +71,7 @@ export default function FinanceEntriesPage() {
       type: "expense",
       category: "",
       amount: 0,
-      entryDate: new Date().toISOString().slice(0, 10),
+      entryDate: todayInput(),
       notes: "",
       reference: "",
     },
@@ -112,7 +113,7 @@ export default function FinanceEntriesPage() {
         type: "expense",
         category: "",
         amount: 0,
-        entryDate: new Date().toISOString().slice(0, 10),
+        entryDate: todayInput(),
         notes: "",
         reference: "",
       });

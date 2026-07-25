@@ -8,6 +8,7 @@ import { InventorySubnav } from "@/components/layout/inventory-subnav";
 import { useI18n } from "@/hooks/use-i18n";
 import { apiError, formatDate, formatKg, formatMoney, getPurchaseReport } from "@/lib/materials-api";
 import { getLiveInventoryReport, type InventoryReport } from "@/lib/inventory-api";
+import { currentMonthRange } from "@/lib/date-range";
 import type { PurchaseReport } from "@/types/materials";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,11 +24,12 @@ import {
 
 export default function InventoryReportsPage() {
   const { t } = useI18n();
+  const d = currentMonthRange();
   const [report, setReport] = useState<InventoryReport | null>(null);
   const [purchaseReport, setPurchaseReport] = useState<PurchaseReport | null>(null);
   const [loading, setLoading] = useState(true);
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [dateFrom, setDateFrom] = useState(d.from);
+  const [dateTo, setDateTo] = useState(d.to);
 
   const load = useCallback(async () => {
     setLoading(true);

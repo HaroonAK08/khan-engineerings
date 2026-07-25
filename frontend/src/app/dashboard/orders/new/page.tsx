@@ -21,6 +21,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useI18n } from "@/hooks/use-i18n";
+import { todayInput } from "@/lib/date-range";
 
 type Line = { product: string; quantity: number; ratePerKg: number };
 type CommissionType = "amount" | "percent";
@@ -32,10 +33,6 @@ function lineUnitPrice(products: Product[], line: Line) {
 }
 
 const NEW_CUSTOMER = "__new__";
-
-function todayInput() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 export default function NewOrderPage() {
   const { t } = useI18n();

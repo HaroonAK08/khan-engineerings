@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { ArrowLeft, Loader2, TrendingDown, TrendingUp } from "lucide-react";
 import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
 import { getCostReport } from "@/lib/production-api";
+import { currentMonthRange } from "@/lib/date-range";
 import type { CostReport } from "@/types/production";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,10 +23,11 @@ import { useI18n } from "@/hooks/use-i18n";
 
 export default function CostReportsPage() {
   const { t } = useI18n();
+  const d = currentMonthRange();
   const [report, setReport] = useState<CostReport | null>(null);
   const [loading, setLoading] = useState(true);
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [dateFrom, setDateFrom] = useState(d.from);
+  const [dateTo, setDateTo] = useState(d.to);
 
   const load = useCallback(async () => {
     setLoading(true);

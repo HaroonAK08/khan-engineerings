@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { InventorySubnav } from "@/components/layout/inventory-subnav";
 import { useI18n } from "@/hooks/use-i18n";
+import { todayInput } from "@/lib/date-range";
 import { apiError, formatDate } from "@/lib/materials-api";
 import { listProducts } from "@/lib/production-api";
 import {
@@ -44,10 +45,6 @@ const adjustSchema = z.object({
 });
 
 type AdjustForm = z.infer<typeof adjustSchema>;
-
-function todayInput() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 export default function MovementsPage() {
   const { t } = useI18n();

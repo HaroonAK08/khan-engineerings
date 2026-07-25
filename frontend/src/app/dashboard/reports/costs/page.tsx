@@ -9,6 +9,7 @@ import { apiError, formatMoney } from "@/lib/materials-api";
 import { getCostReport } from "@/lib/production-api";
 import type { CostReport } from "@/types/production";
 import { downloadReportExport } from "@/lib/reports-api";
+import { currentMonthRange } from "@/lib/date-range";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -21,17 +22,9 @@ import {
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
 
-function monthDefaults() {
-  const now = new Date();
-  return {
-    from: new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10),
-    to: new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10),
-  };
-}
-
 export default function ExpenseReportsPage() {
   const { t } = useI18n();
-  const d = monthDefaults();
+  const d = currentMonthRange();
   const [dateFrom, setDateFrom] = useState(d.from);
   const [dateTo, setDateTo] = useState(d.to);
   const [report, setReport] = useState<CostReport | null>(null);

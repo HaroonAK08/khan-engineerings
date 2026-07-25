@@ -8,6 +8,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { Loader2, Package, Plus, Search } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
+import { todayInput } from "@/lib/date-range";
 import { apiError, formatDate, formatKg, getStock } from "@/lib/materials-api";
 import { getFinishedStock, type FinishedStockItem } from "@/lib/inventory-api";
 import { listBatches, listProducts, produce } from "@/lib/production-api";
@@ -44,10 +45,6 @@ const produceSchema = z.object({
 });
 
 type ProduceForm = z.infer<typeof produceSchema>;
-
-function todayInput() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function qtyByProduct(items: FinishedStockItem[]) {
   const map = new Map<string, number>();

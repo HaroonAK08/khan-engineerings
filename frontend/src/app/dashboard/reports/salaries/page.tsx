@@ -11,6 +11,7 @@ import {
   type Worker,
 } from "@/lib/workers-api";
 import type { BatchExpense } from "@/types/production";
+import { currentMonthRange } from "@/lib/date-range";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,14 +32,6 @@ import {
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
 
-function monthDefaults() {
-  const now = new Date();
-  return {
-    from: new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10),
-    to: new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10),
-  };
-}
-
 function displayWorkerName(
   w: { name: string; nameUr?: string } | string | null | undefined,
   isUrdu: boolean
@@ -51,7 +44,7 @@ function displayWorkerName(
 
 export default function SalaryReportsPage() {
   const { t, isUrdu } = useI18n();
-  const d = monthDefaults();
+  const d = currentMonthRange();
   const [dateFrom, setDateFrom] = useState(d.from);
   const [dateTo, setDateTo] = useState(d.to);
   const [workerId, setWorkerId] = useState("all");

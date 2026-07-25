@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SupplierHistoryCalendar } from "@/components/suppliers/supplier-history-calendar";
 import { useI18n } from "@/hooks/use-i18n";
+import { todayInput } from "@/lib/date-range";
 
 const paymentSchema = z.object({
   amount: z.number().positive("Enter amount"),
@@ -39,10 +40,6 @@ const fixSchema = z.object({
 type PaymentForm = z.infer<typeof paymentSchema>;
 type FixForm = z.infer<typeof fixSchema>;
 type HistoryKind = "purchase" | "payment";
-
-function todayInput() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function isInternalNote(notes: string) {
   return /^sup-[a-z0-9-]+$/i.test(notes.trim());

@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { CalendarDays, Loader2 } from "lucide-react";
 import { InventorySubnav } from "@/components/layout/inventory-subnav";
 import { useI18n } from "@/hooks/use-i18n";
+import { todayInput } from "@/lib/date-range";
 import {
   apiError,
   createPurchase,
@@ -38,10 +39,6 @@ const purchaseSchema = z.object({
 });
 
 type PurchaseForm = z.infer<typeof purchaseSchema>;
-
-function todayInput() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function roundMoney(n: number) {
   return Math.round(n * 100) / 100;

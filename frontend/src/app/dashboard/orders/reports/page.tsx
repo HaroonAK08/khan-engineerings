@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
 import { getSalesReport, type SalesReport } from "@/lib/sales-api";
+import { currentMonthRange } from "@/lib/date-range";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -21,10 +22,11 @@ import { useI18n } from "@/hooks/use-i18n";
 
 export default function SalesReportsPage() {
   const { t } = useI18n();
+  const d = currentMonthRange();
   const [report, setReport] = useState<SalesReport | null>(null);
   const [loading, setLoading] = useState(true);
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [dateFrom, setDateFrom] = useState(d.from);
+  const [dateTo, setDateTo] = useState(d.to);
 
   const load = useCallback(async () => {
     setLoading(true);
