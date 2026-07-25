@@ -97,7 +97,7 @@ export function SidebarNav({ onNavigate, className }: SidebarNavProps) {
                 className="flex items-center gap-3 rounded-sm border-s-2 border-transparent px-3 py-2.5 text-base text-sidebar-foreground/35"
                 title={t("common.comingSoon")}
               >
-                <Icon className="size-4 shrink-0 opacity-50" />
+                <Icon className="size-5 shrink-0 opacity-50" />
                 <span className="flex-1">{label}</span>
                 <Badge
                   variant="secondary"
@@ -128,7 +128,7 @@ export function SidebarNav({ onNavigate, className }: SidebarNavProps) {
                   >
                     <Icon
                       className={cn(
-                        "size-4 shrink-0",
+                        "size-5 shrink-0",
                         active
                           ? "text-primary"
                           : "text-sidebar-foreground/50 group-hover:text-sidebar-foreground/80"
@@ -170,7 +170,7 @@ export function SidebarNav({ onNavigate, className }: SidebarNavProps) {
                           {ChildIcon ? (
                             <ChildIcon
                               className={cn(
-                                "size-3.5 shrink-0",
+                                "size-4 shrink-0",
                                 childActive ? "text-primary" : "opacity-60"
                               )}
                             />
@@ -199,7 +199,7 @@ export function SidebarNav({ onNavigate, className }: SidebarNavProps) {
             >
               <Icon
                 className={cn(
-                  "size-4 shrink-0",
+                  "size-5 shrink-0",
                   active
                     ? "text-primary"
                     : "text-sidebar-foreground/50 group-hover:text-sidebar-foreground/80"
@@ -240,7 +240,7 @@ export function Sidebar() {
   const { t } = useI18n();
 
   return (
-    <aside className="hidden h-svh w-72 shrink-0 flex-col border-e border-sidebar-border bg-sidebar text-sidebar-foreground shadow-[4px_0_24px_-12px_rgba(0,0,0,0.08)] md:flex">
+    <aside className="hidden h-svh w-80 shrink-0 flex-col border-e border-sidebar-border bg-sidebar text-sidebar-foreground shadow-[4px_0_24px_-12px_rgba(0,0,0,0.08)] md:flex">
       <SidebarBrand />
       <SidebarNav />
       <div className="border-t border-sidebar-border px-5 py-3">

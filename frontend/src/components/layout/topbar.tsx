@@ -74,7 +74,7 @@ export function Topbar() {
   }
 
   return (
-    <header className="flex h-[4.25rem] shrink-0 items-center justify-between border-b border-sidebar-border bg-sidebar px-4 text-sidebar-foreground sm:px-6">
+    <header className="flex h-[4.75rem] shrink-0 items-center justify-between border-b border-sidebar-border bg-sidebar px-4 text-sidebar-foreground sm:px-6">
       <div className="flex min-w-0 items-center gap-3">
         <Button
           variant="ghost"
@@ -83,13 +83,13 @@ export function Topbar() {
           onClick={() => setMobileOpen(true)}
           aria-label={t("topbar.openNav")}
         >
-          <Menu className="size-4" />
+          <Menu className="size-5" />
         </Button>
         <div className="min-w-0">
           {/* <p className="font-data text-[10px] tracking-[0.2em] text-sidebar-foreground/50">
             {t("topbar.ops")}
           </p> */}
-          <h2 className="text-nameplate truncate text-lg leading-snug">
+          <h2 className="text-nameplate truncate text-xl leading-snug">
             {t(currentTitleKey(pathname))}
           </h2>
         </div>
@@ -99,7 +99,7 @@ export function Topbar() {
         {user && (
           <Badge
             variant="secondary"
-            className="font-data hidden h-6 border-0 bg-sidebar-accent px-2 text-[10px] tracking-wider uppercase text-sidebar-accent-foreground sm:inline-flex"
+            className="font-data hidden h-7 border-0 bg-sidebar-accent px-2.5 text-sm tracking-wider uppercase text-sidebar-accent-foreground sm:inline-flex"
           >
             {user.role}
           </Badge>
@@ -112,19 +112,19 @@ export function Topbar() {
             className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-primary"
             aria-label="Account menu"
           >
-            <Avatar className="size-8 border border-sidebar-border">
-              <AvatarFallback className="bg-sidebar-accent font-data text-xs text-sidebar-accent-foreground">
+            <Avatar className="size-10 border border-sidebar-border">
+              <AvatarFallback className="bg-sidebar-accent font-data text-sm text-sidebar-accent-foreground">
                 {user ? getInitials(user.name) : "—"}
               </AvatarFallback>
             </Avatar>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-52">
+          <DropdownMenuContent align="end" className="min-w-56">
             <DropdownMenuGroup>
               <DropdownMenuLabel className="font-normal">
-                <p className="truncate text-sm font-medium text-foreground">
+                <p className="truncate text-base font-medium text-foreground">
                   {user?.name ?? t("topbar.account")}
                 </p>
-                <p className="font-data truncate text-[11px] text-muted-foreground">
+                <p className="font-data truncate text-sm text-muted-foreground">
                   {user?.email}
                 </p>
               </DropdownMenuLabel>
@@ -153,7 +153,7 @@ export function Topbar() {
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent
           side={isUrdu ? "right" : "left"}
-          className="w-72 gap-0 border-sidebar-border bg-sidebar p-0 text-sidebar-foreground"
+          className="w-80 gap-0 border-sidebar-border bg-sidebar p-0 text-sidebar-foreground"
           showCloseButton
         >
           <SheetHeader className="sr-only">

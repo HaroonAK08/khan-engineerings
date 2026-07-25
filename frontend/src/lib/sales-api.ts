@@ -47,7 +47,55 @@ export type SalesOrder = {
   status: string;
   paymentStatus: "unpaid" | "partial" | "paid";
   dispatchStatus: "pending" | "partial" | "dispatched";
+  builty?: BuiltyRef | string | null;
   notes: string;
+};
+
+export type BuiltyRef = {
+  _id: string;
+  builtyNo: string;
+  billNo?: string;
+  builtyDate?: string;
+  transporter?: string;
+  vehicleNo?: string;
+};
+
+export type BuiltyRow = {
+  _id: string;
+  builtyNo: string;
+  billNo?: string;
+  builtyDate: string;
+  customer: Customer | string;
+  orderCount: number;
+  orderDetails?: string[];
+  transporter: string;
+  vehicleNo: string;
+  freightAmount: number;
+  notes: string;
+  totalAmount: number;
+  amountPaid: number;
+  balance: number;
+  paymentStatus: "unpaid" | "partial" | "paid";
+};
+
+export type Builty = {
+  _id: string;
+  builtyNo: string;
+  billNo?: string;
+  builtyDate: string;
+  customer: Customer | string;
+  orders: SalesOrder[];
+  transporter: string;
+  vehicleNo: string;
+  freightAmount: number;
+  notes: string;
+};
+
+export type BuiltySummary = {
+  totalAmount: number;
+  amountPaid: number;
+  balance: number;
+  paymentStatus: "unpaid" | "partial" | "paid";
 };
 
 export type CustomerPayment = {
@@ -142,6 +190,10 @@ export async function updateCustomer(id: string, body: Partial<Customer>) {
   return data.customer;
 }
 
+export async function deleteCustomer(id: string) {
+  await api.delete(`/customers/${id}`);
+}
+
 export async function getCustomerLedger(id: string) {
   const { data } = await api.get<{ entries: CustomerLedgerEntry[]; balance: number }>(
     `/customers/${id}/ledger`
@@ -153,6 +205,7 @@ export async function listOrders(params?: {
   customer?: string;
   paymentStatus?: string;
   dispatchStatus?: string;
+  builty?: string;
   dateFrom?: string;
   dateTo?: string;
   q?: string;
@@ -245,6 +298,79 @@ export async function createDispatch(
 export async function listDispatches(params?: { order?: string; customer?: string }) {
   const { data } = await api.get<{ dispatches: Dispatch[] }>("/orders/dispatches", { params });
   return data.dispatches;
+}
+
+export async function listBuilties(params?: {
+  q?: string;
+  customer?: string;
+  paymentStatus?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}) {
+  const { data } = await api.get<{ builties: BuiltyRow[] }>("/builty", { params });
+  return data.builties;
+}
+
+export async function getBuilty(id: string) {
+  const { data } = await api.get<{ builty: Builty; summary: BuiltySummary }>(`/builty/${id}`);
+  return data;
+}
+
+export async function listBuiltyPendingOrders(customer: string) {
+  const { data } = await api.get<{ orders: SalesOrder[] }>("/builty/pending", {
+    params: { customer },
+  });
+  return data.orders;
+}
+
+export async function createBuilty(body: {
+  builtyNo: string;
+  billNo?: string;
+  customer: string;
+  orders: string[];
+  builtyDate: string;
+  amountPaid?: number;
+  method?: string;
+  vehicleNo?: string;
+  freightAmount?: number;
+  notes?: string;
+}) {
+  const { data } = await api.post<{ builty: Builty; summary: BuiltySummary }>("/builty", body);
+  return data;
+}
+
+export async function updateBuilty(
+  id: string,
+  body: Partial<{
+    builtyNo: string;
+    billNo: string;
+    builtyDate: string;
+    notes: string;
+  }>
+) {
+  const { data } = await api.patch<{ builty: Builty; summary: BuiltySummary }>(`/builty/${id}`, body);
+  return data;
+}
+
+export async function recordBuiltyPayment(
+  id: string,
+  body: { amount: number; paymentDate: string; method?: string; notes?: string }
+) {
+  const { data } = await api.post<{ builty: Builty; summary: BuiltySummary }>(
+    `/builty/${id}/payments`,
+    body
+  );
+  return data;
+}
+
+export async function deleteBuilty(id: string) {
+  await api.delete(`/builty/${id}`);
+}
+
+export function builtyNo(builty: SalesOrder["builty"]) {
+  if (!builty) return "";
+  if (typeof builty === "string") return builty;
+  return builty.builtyNo;
 }
 
 export async function getSalesReport(params?: { dateFrom?: string; dateTo?: string }) {

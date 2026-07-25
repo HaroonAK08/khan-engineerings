@@ -113,7 +113,7 @@ export async function getAllSupplierLedger() {
 
 export async function recordPayment(
   supplierId: string,
-  body: { amount: number; entryDate?: string; notes?: string }
+  body: { amount: number; entryDate?: string; notes?: string; purchaseId?: string }
 ) {
   const { data } = await api.post<{ entry: LedgerEntry; balance: number }>(
     `/suppliers/${supplierId}/ledger/payments`,

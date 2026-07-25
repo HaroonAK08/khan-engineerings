@@ -3,9 +3,8 @@ import {
   LayoutDashboard,
   Boxes,
   Factory,
-  ClipboardList,
   Truck,
-  Contact,
+  Users,
   BarChart3,
   // Settings,
   // UserRound,
@@ -17,6 +16,7 @@ import {
   Receipt,
   Handshake,
   Package,
+  ScrollText,
 } from "lucide-react";
 import type { MessageKey } from "@/lib/i18n/messages";
 
@@ -54,8 +54,8 @@ export const NAV_ITEMS: NavItem[] = [
     ready: true,
     children: EXPENSES_CHILDREN,
   },
-  { labelKey: "nav.orders", href: "/dashboard/orders", icon: ClipboardList, ready: true },
-  { labelKey: "nav.customers", href: "/dashboard/customers", icon: Contact, ready: true },
+  { labelKey: "nav.party", href: "/dashboard/party", icon: Users, ready: true },
+  { labelKey: "nav.builty", href: "/dashboard/builty", icon: ScrollText, ready: true },
   { labelKey: "nav.claims", href: "/dashboard/claims", icon: RotateCcw, ready: true },
   { labelKey: "nav.suppliers", href: "/dashboard/suppliers", icon: Truck, ready: true },
   { labelKey: "nav.salesmen", href: "/dashboard/salesmen", icon: Handshake, ready: true },

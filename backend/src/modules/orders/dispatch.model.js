@@ -14,6 +14,7 @@ const dispatchSchema = new mongoose.Schema(
     order: { type: mongoose.Schema.Types.ObjectId, ref: "SalesOrder", required: true, index: true },
     customer: { type: mongoose.Schema.Types.ObjectId, ref: "Customer", required: true, index: true },
     warehouse: { type: mongoose.Schema.Types.ObjectId, ref: "Warehouse", default: null },
+    builty: { type: mongoose.Schema.Types.ObjectId, ref: "Builty", default: null, index: true },
     items: { type: [dispatchItemSchema], default: [] },
     dispatchDate: { type: Date, required: true, index: true },
     biltyNo: { type: String, trim: true, default: "" },

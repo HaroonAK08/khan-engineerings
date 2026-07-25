@@ -3,16 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { History, Loader2, Paintbrush, Trash2 } from "lucide-react";
-import {
-  createFactoryExpense,
-  deleteFactoryExpense,
-  listFactoryExpenses,
-} from "@/lib/expenses-api";
-import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
+import { History, Loader2, Paintbrush } from "lucide-react";
+import { createFactoryExpense, listFactoryExpenses } from "@/lib/expenses-api";
+import { apiError, formatMoney } from "@/lib/materials-api";
 import type { BatchExpense } from "@/types/production";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useI18n, type MessageKey } from "@/hooks/use-i18n";
@@ -40,12 +36,7 @@ const categoryUsesQuantityByDefault = (id: string) => !amountOnlyCategory(id);
 export default function OtherExpensesPage() {
   const { t } = useI18n();
 
-  function categoryLabel(id: string) {
-    const cat = OTHER_CATEGORIES.find((c) => c.id === id);
-    return cat ? t(cat.labelKey) : id;
-  }
   const [expenses, setExpenses] = useState<BatchExpense[]>([]);
-  const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const [category, setCategory] = useState("paint");
@@ -80,7 +71,6 @@ export default function OtherExpensesPage() {
   }, [trackQuantity, priceMode, quantity, rate]);
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
       const all = await listFactoryExpenses();
       setExpenses(
@@ -93,8 +83,6 @@ export default function OtherExpensesPage() {
       );
     } catch (err) {
       toast.error(apiError(err, "Failed to load expenses"));
-    } finally {
-      setLoading(false);
     }
   }, []);
 
@@ -171,17 +159,6 @@ export default function OtherExpensesPage() {
     }
   }
 
-  async function onDelete(id: string) {
-    if (!confirm("Remove this expense?")) return;
-    try {
-      await deleteFactoryExpense(id);
-      toast.success("Removed");
-      await load();
-    } catch (err) {
-      toast.error(apiError(err, "Delete failed"));
-    }
-  }
-
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -194,9 +171,13 @@ export default function OtherExpensesPage() {
         <div className="flex flex-wrap items-center gap-2">
           <Link
             href="/dashboard/expenses/other/history"
-            className={buttonVariants({ variant: "outline", className: "gap-1.5" })}
+            className={buttonVariants({
+              variant: "default",
+              size: "lg",
+              className: "gap-2 min-w-44 px-8 text-base font-semibold shadow-sm",
+            })}
           >
-            <History className="size-4" />
+            <History className="size-5" />
             {t("exp.showHistory")}
           </Link>
         </div>
@@ -401,55 +382,6 @@ export default function OtherExpensesPage() {
           </div>
         </CardContent>
       </Card>
-
-      {loading ? (
-        <div className="flex justify-center py-16">
-          <Loader2 className="size-7 animate-spin text-primary" />
-        </div>
-      ) : expenses.length > 0 ? (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-nameplate text-sm">{t("other.history")}</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2 px-4 pb-4">
-            {expenses.map((e) => (
-              <div
-                key={e._id}
-                className="flex items-center justify-between gap-3 border-b border-border/50 py-2 last:border-0"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm">
-                    {e.notes || categoryLabel(e.category)}
-                  </p>
-                  <p className="font-data text-xs text-muted-foreground">
-                    {formatDate(e.expenseDate)} · {categoryLabel(e.category)}
-                    {e.quantity != null && e.quantity > 0
-                      ? ` · ${t("other.qtyLabel", {
-                          qty: e.quantity,
-                          unit: e.quantityUnit || "kg",
-                        })}`
-                      : ""}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-data text-sm">{formatMoney(e.amount)}</span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="size-8 text-muted-foreground"
-                    onClick={() => void onDelete(e._id)}
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      ) : (
-        <p className="text-sm text-muted-foreground">{t("other.empty")}</p>
-      )}
     </div>
   );
 }

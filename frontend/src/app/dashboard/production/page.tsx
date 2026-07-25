@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Loader2, Package, Plus, Search } from "lucide-react";
+import { Loader2, Plus, Search } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
 import { todayInput } from "@/lib/date-range";
 import { apiError, formatDate, formatKg, getStock } from "@/lib/materials-api";
@@ -41,7 +41,6 @@ const produceSchema = z.object({
   wastePercent: z.number().min(0).max(99),
   materialType: z.enum(["scrap", "daig"]),
   productionDate: z.string().min(1),
-  notes: z.string().optional(),
 });
 
 type ProduceForm = z.infer<typeof produceSchema>;
@@ -77,7 +76,6 @@ export default function ProductionPage() {
       wastePercent: 6,
       materialType: "scrap",
       productionDate: todayInput(),
-      notes: "",
     },
   });
 
@@ -155,7 +153,6 @@ export default function ProductionPage() {
       wastePercent: 6,
       materialType: product?.family === "drum" ? "daig" : "scrap",
       productionDate: todayInput(),
-      notes: "",
     });
     setProduceFamily(product?.family === "hub" || product?.family === "drum" ? product.family : "all");
     setProductSearch("");
@@ -172,7 +169,6 @@ export default function ProductionPage() {
         wastePercent: values.wastePercent,
         materialType: values.materialType,
         productionDate: values.productionDate,
-        notes: values.notes,
       });
       const calc = (batch as ProductionBatch & {
         produceCalc?: { chargedKg: number; materialType: string };
@@ -247,19 +243,10 @@ export default function ProductionPage() {
           <h1 className="text-nameplate text-xl">{t("prod.title")}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{t("prod.subtitle")}</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Link
-            href="/dashboard/products"
-            className="inline-flex h-8 items-center gap-2 rounded-lg border border-border px-3 text-sm hover:bg-muted"
-          >
-            <Package className="size-4" />
-            {t("prod.products")}
-          </Link>
-          <Button type="button" className="gap-2" onClick={() => openProduce()}>
-            <Plus className="size-4" />
-            {t("prod.produceBtn")}
-          </Button>
-        </div>
+        <Button type="button" className="gap-2" onClick={() => openProduce()}>
+          <Plus className="size-4" />
+          {t("prod.produceBtn")}
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -308,16 +295,16 @@ export default function ProductionPage() {
           </div>
           <div className="flex gap-2">
             <div className="relative">
-              <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                className="h-8 w-full pl-8 sm:w-48"
+                className="h-11 w-full pl-9 sm:w-56"
                 placeholder={t("prod.searchProduct")}
                 value={stockSearch}
                 onChange={(e) => setStockSearch(e.target.value)}
               />
             </div>
             <select
-              className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
+              className="h-11 rounded-lg border border-input bg-transparent px-3 text-base dark:bg-input/30"
               value={familyFilter}
               onChange={(e) => setFamilyFilter(e.target.value as "all" | "hub" | "drum")}
             >
@@ -453,7 +440,7 @@ export default function ProductionPage() {
           <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
               <Label>{t("prod.col.product")}</Label>
-              <div className="flex gap-1">
+              <div className="flex flex-wrap gap-2">
                 {(
                   [
                     ["all", "prod.filter.all"],
@@ -464,8 +451,9 @@ export default function ProductionPage() {
                   <Button
                     key={value}
                     type="button"
-                    size="sm"
+                    size="default"
                     variant={produceFamily === value ? "default" : "outline"}
+                    className="min-w-[4.5rem] flex-1 sm:flex-none"
                     onClick={() => setProduceFamily(value)}
                   >
                     {t(labelKey)}
@@ -475,7 +463,7 @@ export default function ProductionPage() {
               <div className="overflow-hidden rounded-lg border border-input">
                 <button
                   type="button"
-                  className="flex h-9 w-full items-center justify-between px-2.5 text-left text-sm hover:bg-muted/50"
+                  className="flex min-h-11 w-full items-center justify-between px-3 py-2.5 text-left text-base hover:bg-muted/50"
                   onClick={() => setPickerOpen((v) => !v)}
                 >
                   <span className={selectedProduct ? "text-foreground" : "text-muted-foreground"}>
@@ -491,18 +479,18 @@ export default function ProductionPage() {
                 {pickerOpen && (
                   <div className="border-t border-border">
                     <div className="relative border-b border-border p-2">
-                      <Search className="pointer-events-none absolute top-1/2 left-4 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                      <Search className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-muted-foreground" />
                       <Input
-                        className="h-8 pl-8"
+                        className="h-11 pl-9"
                         placeholder={t("prod.searchProduct")}
                         value={productSearch}
                         onChange={(e) => setProductSearch(e.target.value)}
                         autoFocus
                       />
                     </div>
-                    <div className="max-h-48 overflow-y-auto">
+                    <div className="max-h-56 overflow-y-auto">
                       {produceProducts.length === 0 ? (
-                        <p className="px-3 py-4 text-center text-xs text-muted-foreground">
+                        <p className="px-3 py-4 text-center text-sm text-muted-foreground">
                           {t("prod.noMatchProduct")}
                         </p>
                       ) : (
@@ -514,7 +502,7 @@ export default function ProductionPage() {
                               key={p._id}
                               type="button"
                               disabled={!hasWeight}
-                              className={`flex w-full flex-col gap-0.5 px-3 py-2 text-left text-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40 ${
+                              className={`flex w-full flex-col gap-0.5 px-3 py-2.5 text-left text-base hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40 ${
                                 active ? "bg-muted" : ""
                               }`}
                               onClick={() => {
@@ -524,7 +512,7 @@ export default function ProductionPage() {
                               }}
                             >
                               <span className="font-medium">{p.name}</span>
-                              <span className="font-data text-[10px] text-muted-foreground uppercase">
+                              <span className="font-data text-sm text-muted-foreground uppercase">
                                 {p.family}
                                 {hasWeight ? ` · ${formatKg(Number(p.weightKg))} kg` : ""}
                               </span>
@@ -564,28 +552,12 @@ export default function ProductionPage() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1.5">
-                <Label>{t("prod.chargeMaterial")}</Label>
-                <select
-                  className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
-                  {...form.register("materialType")}
-                >
-                  <option value="scrap">{t("prod.scrap")}</option>
-                  <option value="daig">{t("prod.daig")}</option>
-                </select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label>{t("prod.date")}</Label>
-                <Input type="date" {...form.register("productionDate")} />
-              </div>
-            </div>
             <div className="flex flex-col gap-1.5">
-              <Label>{t("prod.notes")}</Label>
-              <Input {...form.register("notes")} />
+              <Label>{t("prod.date")}</Label>
+              <Input type="date" {...form.register("productionDate")} />
             </div>
             {selectedProduct && (
-              <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm text-muted-foreground">
                 <p>
                   {t("prod.calcMetal")}: {formatKg(preview.metalKg)} kg · {t("prod.calcWaste")}:{" "}
                   {formatKg(preview.wasteKg)} kg

@@ -46,7 +46,6 @@ export default function NewOrderPage() {
   const [commissionValue, setCommissionValue] = useState(0);
   const [orderDate, setOrderDate] = useState(todayInput());
   const [dueDate, setDueDate] = useState("");
-  const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<Line[]>([{ product: "", quantity: 1, ratePerKg: 0 }]);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -188,7 +187,6 @@ export default function NewOrderPage() {
         customer,
         orderDate,
         dueDate: dueDate || undefined,
-        notes,
         items,
         ...(salesmanId
           ? {
@@ -199,7 +197,7 @@ export default function NewOrderPage() {
           : {}),
       });
       toast.success(t("orderNew.created"));
-      router.push(`/dashboard/orders/${order._id}`);
+      router.push(`/dashboard/party/orders/${order._id}`);
     } catch (err) {
       toast.error(apiError(err, t("orderNew.createFailed")));
     } finally {
@@ -219,7 +217,7 @@ export default function NewOrderPage() {
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
       <div>
         <Link
-          href="/dashboard/orders"
+          href="/dashboard/party?tab=orders"
           className="mb-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-3" />
@@ -327,10 +325,6 @@ export default function NewOrderPage() {
             <div className="flex flex-col gap-1.5">
               <Label>{t("orderNew.dueDate")}</Label>
               <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-            </div>
-            <div className="flex flex-col gap-1.5 sm:col-span-2">
-              <Label>{t("common.notes")}</Label>
-              <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
             </div>
           </CardContent>
         </Card>

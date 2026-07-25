@@ -16,7 +16,7 @@ export default function AllSuppliersRecordsPage() {
   const { t } = useI18n();
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [historyKind, setHistoryKind] = useState<HistoryKind>("payment");
+  const [historyKind, setHistoryKind] = useState<HistoryKind>("purchase");
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);

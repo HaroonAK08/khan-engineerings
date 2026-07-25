@@ -197,7 +197,7 @@ export default function StatementsPage() {
             <CardHeader>
               <CardTitle className="text-nameplate text-sm">{statement.party.name}</CardTitle>
               <CardDescription>
-                {[statement.party.phone, statement.party.email].filter(Boolean).join(" · ") ||
+                {[statement.party.phone].filter(Boolean).join(" · ") ||
                   t("statements.ledgerLines")}
               </CardDescription>
             </CardHeader>

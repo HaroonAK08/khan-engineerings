@@ -161,11 +161,21 @@ async function createOrder(data) {
     .populate("items.product", "name sku unitLabel");
 }
 
-async function listOrders({ customer, paymentStatus, dispatchStatus, dateFrom, dateTo, q } = {}) {
+async function listOrders({
+  customer,
+  paymentStatus,
+  dispatchStatus,
+  builty,
+  dateFrom,
+  dateTo,
+  q,
+} = {}) {
   const filter = { status: { $ne: "cancelled" } };
   if (customer) filter.customer = customer;
   if (paymentStatus) filter.paymentStatus = paymentStatus;
   if (dispatchStatus) filter.dispatchStatus = dispatchStatus;
+  if (builty === "none") filter.builty = null;
+  else if (builty) filter.builty = builty;
   if (dateFrom || dateTo) {
     filter.orderDate = {};
     if (dateFrom) filter.orderDate.$gte = parseDate(dateFrom, "dateFrom");
@@ -187,6 +197,7 @@ async function listOrders({ customer, paymentStatus, dispatchStatus, dateFrom, d
     .populate("customer", "name phone")
     .populate("salesmanRef", "name")
     .populate("items.product", "name sku")
+    .populate("builty", "builtyNo builtyDate")
     .sort({ orderDate: -1, createdAt: -1 });
 }
 
@@ -194,7 +205,8 @@ async function getOrder(id) {
   const order = await SalesOrder.findById(id)
     .populate("customer", "name phone email address")
     .populate("salesmanRef", "name phone")
-    .populate("items.product", "name sku unitLabel");
+    .populate("items.product", "name sku unitLabel")
+    .populate("builty", "builtyNo builtyDate transporter vehicleNo");
   if (!order) throw httpError("Order not found", 404);
   return order;
 }
@@ -204,6 +216,9 @@ async function cancelOrder(id) {
   if (!order) throw httpError("Order not found", 404);
   if (order.status === "cancelled") return order;
   if (order.amountPaid > 0) throw httpError("Cannot cancel an order with payments", 409);
+  if (order.builty) {
+    throw httpError("Cannot cancel an order that is already on a builty", 409);
+  }
   if (order.dispatchStatus !== "pending") {
     throw httpError("Cannot cancel an order that has been dispatched", 409);
   }
@@ -343,6 +358,7 @@ async function createDispatch(data) {
     order: order._id,
     customer: order.customer,
     warehouse,
+    builty: data.builty || null,
     items: dispatchItems,
     dispatchDate: parseDate(data.dispatchDate || new Date(), "Dispatch date"),
     biltyNo: data.biltyNo?.trim() || "",

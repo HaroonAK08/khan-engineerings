@@ -202,13 +202,11 @@ async function update(id, data) {
     ratePerKg: data.ratePerKg !== undefined ? data.ratePerKg : purchase.ratePerKg,
     totalAmount: hasTotal ? data.totalAmount : undefined,
     freightAmount: data.freightAmount !== undefined ? data.freightAmount : purchase.freightAmount,
-    amountPaid: data.amountPaid !== undefined ? data.amountPaid : purchase.amountPaid,
+    amountPaid: purchase.amountPaid,
   });
   purchase.ratePerKg = amounts.ratePerKg;
   purchase.totalAmount = amounts.totalAmount;
   purchase.freightAmount = amounts.freightAmount;
-  purchase.amountPaid = amounts.amountPaid;
-  purchase.balance = amounts.balance;
 
   if (data.purchaseDate !== undefined) {
     purchase.purchaseDate = parseDate(data.purchaseDate, "Purchase date");
@@ -231,27 +229,8 @@ async function update(id, data) {
     await ledger.save();
   }
 
-  // Sync initial payment ledger tied to this purchase (if any)
-  const paymentLedger = await LedgerEntry.findOne({ purchase: purchase._id, type: "payment" });
-  if (purchase.amountPaid > 0) {
-    if (paymentLedger) {
-      paymentLedger.amount = purchase.amountPaid;
-      paymentLedger.supplier = purchase.supplier;
-      paymentLedger.entryDate = purchase.purchaseDate;
-      await paymentLedger.save();
-    } else {
-      await LedgerEntry.create({
-        supplier: purchase.supplier,
-        type: "payment",
-        amount: purchase.amountPaid,
-        purchase: purchase._id,
-        entryDate: purchase.purchaseDate,
-        notes: "Payment on purchase",
-      });
-    }
-  } else if (paymentLedger) {
-    await paymentLedger.deleteOne();
-  }
+  const { syncPurchasePaid } = require("../ledger/ledger.service");
+  await syncPurchasePaid(purchase._id);
 
   try {
     const inventoryService = require("../inventory/inventory.service");

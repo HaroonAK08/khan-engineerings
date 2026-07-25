@@ -54,6 +54,12 @@ const salesOrderSchema = new mongoose.Schema(
       default: "pending",
       index: true,
     },
+    builty: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Builty",
+      default: null,
+      index: true,
+    },
     notes: { type: String, trim: true, default: "" },
   },
   { timestamps: true }

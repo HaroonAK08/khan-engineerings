@@ -86,7 +86,7 @@ export function ProductSearchSelect({
         <button
           type="button"
           disabled={disabled}
-          className="flex h-8 w-full items-center px-2.5 text-left text-sm hover:bg-muted/50 disabled:opacity-50"
+          className="flex min-h-11 w-full items-center px-3 py-2.5 text-left text-base hover:bg-muted/50 disabled:opacity-50"
           onClick={() => {
             setOpen((v) => !v);
             setSearch("");
@@ -101,21 +101,21 @@ export function ProductSearchSelect({
         {open && (
           <div className="border-t border-border bg-card">
             <div className="relative border-b border-border p-2">
-              <Search className="pointer-events-none absolute top-1/2 left-4 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Search className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                className="h-8 pl-8"
+                className="h-11 pl-9"
                 placeholder={t("prod.searchProduct")}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 autoFocus
               />
             </div>
-            <div className="max-h-48 overflow-y-auto">
+            <div className="max-h-56 overflow-y-auto">
               {emptyLabel != null && (
                 <button
                   type="button"
                   className={cn(
-                    "flex w-full px-3 py-2 text-left text-sm hover:bg-muted",
+                    "flex w-full px-3 py-2.5 text-left text-base hover:bg-muted",
                     !value ? "bg-muted" : ""
                   )}
                   onClick={() => {
@@ -128,7 +128,7 @@ export function ProductSearchSelect({
                 </button>
               )}
               {filtered.length === 0 ? (
-                <p className="px-3 py-4 text-center text-xs text-muted-foreground">
+                <p className="px-3 py-4 text-center text-sm text-muted-foreground">
                   {t("prod.noMatchProduct")}
                 </p>
               ) : (
@@ -140,7 +140,7 @@ export function ProductSearchSelect({
                       key={p._id}
                       type="button"
                       className={cn(
-                        "flex w-full flex-col gap-0.5 px-3 py-2 text-left text-sm hover:bg-muted",
+                        "flex w-full flex-col gap-0.5 px-3 py-2.5 text-left text-base hover:bg-muted",
                         active && "bg-muted"
                       )}
                       onClick={() => {
@@ -151,7 +151,7 @@ export function ProductSearchSelect({
                     >
                       <span className="font-medium">{p.name}</span>
                       {(showFamily || showWeight) && (
-                        <span className="font-data text-[10px] text-muted-foreground uppercase">
+                        <span className="font-data text-sm text-muted-foreground uppercase">
                           {[
                             showFamily ? p.family : null,
                             showWeight && kg > 0 ? `${formatKg(kg)} kg` : null,

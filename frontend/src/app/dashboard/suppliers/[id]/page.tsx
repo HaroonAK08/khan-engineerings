@@ -14,22 +14,15 @@ import {
   getLedger,
   getSupplier,
   recordAdjustment,
-  recordPayment,
 } from "@/lib/materials-api";
 import type { LedgerEntry, Supplier } from "@/types/materials";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SupplierHistoryCalendar } from "@/components/suppliers/supplier-history-calendar";
 import { useI18n } from "@/hooks/use-i18n";
 import { todayInput } from "@/lib/date-range";
-
-const paymentSchema = z.object({
-  amount: z.number().positive("Enter amount"),
-  entryDate: z.string().min(1, "Pick a date"),
-  notes: z.string().optional(),
-});
 
 const fixSchema = z.object({
   amount: z.number().refine((n) => Number.isFinite(n) && n !== 0, "Enter amount"),
@@ -37,7 +30,6 @@ const fixSchema = z.object({
   notes: z.string().optional(),
 });
 
-type PaymentForm = z.infer<typeof paymentSchema>;
 type FixForm = z.infer<typeof fixSchema>;
 type HistoryKind = "purchase" | "payment";
 
@@ -53,15 +45,9 @@ export default function SupplierDetailPage() {
   const [balance, setBalance] = useState(0);
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [savingPayment, setSavingPayment] = useState(false);
   const [savingFix, setSavingFix] = useState(false);
   const [showFix, setShowFix] = useState(false);
-  const [historyKind, setHistoryKind] = useState<HistoryKind>("payment");
-
-  const paymentForm = useForm<PaymentForm>({
-    resolver: zodResolver(paymentSchema),
-    defaultValues: { amount: undefined as unknown as number, entryDate: todayInput(), notes: "" },
-  });
+  const [historyKind, setHistoryKind] = useState<HistoryKind>("purchase");
 
   const fixForm = useForm<FixForm>({
     resolver: zodResolver(fixSchema),
@@ -85,21 +71,6 @@ export default function SupplierDetailPage() {
   useEffect(() => {
     void load();
   }, [load]);
-
-  async function onPayment(values: PaymentForm) {
-    setSavingPayment(true);
-    try {
-      const result = await recordPayment(id, values);
-      setBalance(result.balance);
-      toast.success(t("supplierDetail.paymentRecorded"));
-      paymentForm.reset({ amount: undefined as unknown as number, entryDate: todayInput(), notes: "" });
-      await load({ silent: true });
-    } catch (err) {
-      toast.error(apiError(err, t("supplierDetail.paymentFailed")));
-    } finally {
-      setSavingPayment(false);
-    }
-  }
 
   async function onFix(values: FixForm) {
     setSavingFix(true);
@@ -145,7 +116,7 @@ export default function SupplierDetailPage() {
     supplier.notes && !isInternalNote(supplier.notes) ? supplier.notes : "";
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
       <div>
         <Link
           href="/dashboard/suppliers"
@@ -173,45 +144,6 @@ export default function SupplierDetailPage() {
         <p className="font-data mt-1 text-3xl tracking-tight">{formatMoney(balance)}</p>
         <p className="mt-1 text-xs text-muted-foreground">{t("supplierDetail.balanceHint")}</p>
       </div>
-
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-nameplate text-base">
-            {t("supplierDetail.recordPayment")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form
-            onSubmit={paymentForm.handleSubmit(onPayment)}
-            className="flex flex-col gap-4 sm:flex-row sm:items-end"
-          >
-            <div className="flex flex-1 flex-col gap-1.5">
-              <Label htmlFor="pay-amount">{t("common.amount")}</Label>
-              <Input
-                id="pay-amount"
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="0"
-                {...paymentForm.register("amount", { valueAsNumber: true })}
-              />
-              {paymentForm.formState.errors.amount && (
-                <p className="text-xs text-destructive">
-                  {paymentForm.formState.errors.amount.message}
-                </p>
-              )}
-            </div>
-            <div className="flex flex-1 flex-col gap-1.5">
-              <Label htmlFor="pay-date">{t("common.date")}</Label>
-              <Input id="pay-date" type="date" {...paymentForm.register("entryDate")} />
-            </div>
-            <Button type="submit" disabled={savingPayment} className="gap-2 sm:min-w-[120px]">
-              {savingPayment && <Loader2 className="size-4 animate-spin" />}
-              {t("supplierDetail.submitPayment")}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
 
       <div>
         <div className="mb-3 flex items-end justify-between gap-3">

@@ -7,7 +7,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { Loader2, Plus } from "lucide-react";
 import { apiError, formatMoney } from "@/lib/materials-api";
-import { listCategories, listSizes, type CatalogItem } from "@/lib/inventory-api";
+import { getFinishedStock } from "@/lib/inventory-api";
 import { createProduct, listProducts, updateProduct } from "@/lib/production-api";
 import type { Product } from "@/types/production";
 import { Badge } from "@/components/ui/badge";
@@ -63,8 +63,7 @@ function refName(value: Product["category"] | Product["size"]) {
 export default function ProductsPage() {
   const { t } = useI18n();
   const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<CatalogItem[]>([]);
-  const [sizes, setSizes] = useState<CatalogItem[]>([]);
+  const [stockByProduct, setStockByProduct] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [familyFilter, setFamilyFilter] = useState<"all" | "hub" | "drum">("all");
@@ -89,23 +88,25 @@ export default function ProductsPage() {
     },
   });
 
-  const watchWeightKg = form.watch("weightKg");
-  const watchPricePerKg = form.watch("pricePerKg");
-
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const params: { q?: string; family?: string } = {};
       if (q.trim()) params.q = q.trim();
       if (familyFilter !== "all") params.family = familyFilter;
-      const [p, c, s] = await Promise.all([
+      const [p, stock] = await Promise.all([
         listProducts(Object.keys(params).length ? params : undefined),
-        listCategories(),
-        listSizes(),
+        getFinishedStock(),
       ]);
       setProducts(p);
-      setCategories(c);
-      setSizes(s);
+      const quantities = new Map<string, number>();
+      for (const item of stock.items || []) {
+        quantities.set(
+          item.productId,
+          (quantities.get(item.productId) || 0) + (item.quantity || 0)
+        );
+      }
+      setStockByProduct(quantities);
     } catch (err) {
       toast.error(apiError(err, t("productsPage.loadFailed")));
     } finally {
@@ -193,7 +194,6 @@ export default function ProductsPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-nameplate text-xl">{t("nav.products")}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{t("productsPage.subtitle")}</p>
         </div>
         <Button onClick={openCreate} className="gap-2">
           <Plus className="size-4" />
@@ -267,10 +267,7 @@ export default function ProductsPage() {
                   <TableHead>{t("common.name")}</TableHead>
                   <TableHead>{t("prod.family")}</TableHead>
                   <TableHead className="text-right">{t("productsPage.makeCost")}</TableHead>
-                  <TableHead className="text-right">{t("productsPage.pricePerKg")}</TableHead>
-                  <TableHead className="text-right">{t("productsPage.sellingPrice")}</TableHead>
-                  <TableHead className="text-right">{t("productsPage.colLowStock")}</TableHead>
-                  <TableHead>{t("common.status")}</TableHead>
+                  <TableHead className="text-right">{t("prod.col.onHand")}</TableHead>
                   <TableHead className="text-right">{t("common.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -291,22 +288,8 @@ export default function ProductsPage() {
                     <TableCell className="font-data text-right text-xs">
                       {formatMoney(Number(p.standardCost) || 0)}
                     </TableCell>
-                    <TableCell className="font-data text-right text-xs">
-                      {formatMoney(Number(p.pricePerKg) || 0)}
-                    </TableCell>
-                    <TableCell className="font-data text-right text-xs">
-                      {formatMoney(Number(p.sellingPrice) || 0)}
-                    </TableCell>
-                    <TableCell className="font-data text-right text-xs">
-                      {p.lowStockThreshold ?? 0}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={p.isActive ? "secondary" : "outline"}
-                        className="font-data text-[10px]"
-                      >
-                        {p.isActive ? t("sup.status.active") : t("sup.status.inactive")}
-                      </Badge>
+                    <TableCell className="font-data text-right text-xs font-semibold">
+                      {stockByProduct.get(p._id) || 0}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
@@ -343,108 +326,25 @@ export default function ProductsPage() {
               <Label htmlFor="name">{t("common.name")}</Label>
               <Input id="name" {...form.register("name")} />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="sku">{t("productsPage.sku")}</Label>
-                <Input id="sku" {...form.register("sku")} />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="family">{t("prod.family")}</Label>
-                <select
-                  id="family"
-                  className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
-                  {...form.register("family")}
-                >
-                  <option value="hub">{t("prod.hub")}</option>
-                  <option value="drum">{t("prod.drum")}</option>
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="weightKg">{t("productsPage.weightKg")}</Label>
-                <Input
-                  id="weightKg"
-                  type="number"
-                  step="0.001"
-                  {...form.register("weightKg", { valueAsNumber: true })}
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="pricePerKg">{t("productsPage.pricePerKg")}</Label>
-                <Input
-                  id="pricePerKg"
-                  type="number"
-                  step="0.01"
-                  {...form.register("pricePerKg", { valueAsNumber: true })}
-                />
-              </div>
-            </div>
-            <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
-              <p className="text-[11px] text-muted-foreground">{t("productsPage.sellingPrice")}</p>
-              <p className="font-data text-sm">
-                {formatMoney((Number(watchWeightKg) || 0) * (Number(watchPricePerKg) || 0))}
-              </p>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">
-                {t("productsPage.sellingPriceHint")}
-              </p>
-            </div>
-            {editing && (
-              <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
-                <p className="text-[11px] text-muted-foreground">{t("productsPage.makeCost")}</p>
-                <p className="font-data text-sm">{formatMoney(Number(editing.standardCost) || 0)}</p>
-                <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  {t("productsPage.makeCostHint")}
-                </p>
-              </div>
-            )}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1.5">
-                <Label>{t("common.category")}</Label>
-                <select
-                  className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
-                  {...form.register("category")}
-                >
-                  <option value="">{t("productsPage.none")}</option>
-                  {categories.map((c) => (
-                    <option key={c._id} value={c._id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label>{t("finished.col.size")}</Label>
-                <select
-                  className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
-                  {...form.register("size")}
-                >
-                  <option value="">{t("productsPage.none")}</option>
-                  {sizes.map((s) => (
-                    <option key={s._id} value={s._id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="unitLabel">{t("other.unit")}</Label>
-                <Input id="unitLabel" {...form.register("unitLabel")} />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="lowStockThreshold">{t("productsPage.lowStockAt")}</Label>
-                <Input
-                  id="lowStockThreshold"
-                  type="number"
-                  {...form.register("lowStockThreshold", { valueAsNumber: true })}
-                />
-              </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="family">{t("prod.family")}</Label>
+              <select
+                id="family"
+                className="h-11 rounded-lg border border-input bg-transparent px-3 text-base dark:bg-input/30"
+                {...form.register("family")}
+              >
+                <option value="hub">{t("prod.hub")}</option>
+                <option value="drum">{t("prod.drum")}</option>
+              </select>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="description">{t("productsPage.description")}</Label>
-              <Input id="description" {...form.register("description")} />
+              <Label htmlFor="weightKg">{t("productsPage.weightKg")}</Label>
+              <Input
+                id="weightKg"
+                type="number"
+                step="0.001"
+                {...form.register("weightKg", { valueAsNumber: true })}
+              />
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>

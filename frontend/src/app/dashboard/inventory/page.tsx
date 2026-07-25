@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { CalendarDays, Loader2 } from "lucide-react";
+import { History, Loader2 } from "lucide-react";
 import { InventorySubnav } from "@/components/layout/inventory-subnav";
 import { useI18n } from "@/hooks/use-i18n";
 import { todayInput } from "@/lib/date-range";
@@ -20,7 +20,7 @@ import {
   supplierName,
 } from "@/lib/materials-api";
 import type { StockSummary, Supplier } from "@/types/materials";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -136,7 +136,7 @@ export default function InventoryPage() {
   return (
     <div className="flex flex-col gap-6">
       <InventorySubnav />
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
             {t("purchases.eyebrow")}
@@ -144,11 +144,15 @@ export default function InventoryPage() {
           <h1 className="text-nameplate text-xl">{t("purchases.title")}</h1>
         </div>
         <Link
-          href="/dashboard/inventory/records"
-          className="inline-flex h-11 items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-4 text-sm font-semibold text-amber-300 shadow-md transition-colors hover:bg-slate-800 hover:text-amber-200 dark:border-slate-600 dark:bg-slate-950 dark:text-amber-300 dark:hover:bg-slate-900"
+          href="/dashboard/inventory/history"
+          className={buttonVariants({
+            variant: "default",
+            size: "lg",
+            className: "gap-2 min-w-44 px-8 text-base font-semibold shadow-sm",
+          })}
         >
-          <CalendarDays className="size-4 text-amber-400" />
-          {t("purchases.openRecords")}
+          <History className="size-5" />
+          {t("exp.showHistory")}
         </Link>
       </div>
 

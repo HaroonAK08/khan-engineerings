@@ -44,7 +44,7 @@ async function listAllLedger() {
     .populate("supplier", "name nameUr")
     .populate(
       "purchase",
-      "quantityKg ratePerKg invoiceNo materialType totalAmount purchaseDate notes"
+      "quantityKg ratePerKg invoiceNo materialType totalAmount freightAmount amountPaid balance purchaseDate notes"
     )
     .sort({ entryDate: -1, createdAt: -1 });
 }

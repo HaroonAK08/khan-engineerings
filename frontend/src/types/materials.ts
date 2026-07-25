@@ -49,6 +49,9 @@ export type LedgerEntry = {
         invoiceNo: string;
         materialType?: MaterialType;
         totalAmount?: number;
+        freightAmount?: number;
+        amountPaid?: number;
+        balance?: number;
         purchaseDate?: string;
         notes?: string;
       };

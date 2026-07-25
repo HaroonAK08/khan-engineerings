@@ -254,7 +254,7 @@ export default function FinanceOverviewPage() {
                     {topCustomers.map((c, i) => (
                       <li key={c.customerId} className="flex justify-between gap-2">
                         <Link
-                          href={`/dashboard/customers/${c.customerId}`}
+                          href={`/dashboard/party/customers/${c.customerId}`}
                           className="hover:text-primary hover:underline"
                         >
                           {i === 0 && (

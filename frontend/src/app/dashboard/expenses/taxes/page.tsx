@@ -3,16 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { History, Loader2, Receipt, Trash2 } from "lucide-react";
-import {
-  createFactoryExpense,
-  deleteFactoryExpense,
-  listFactoryExpenses,
-} from "@/lib/expenses-api";
-import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
+import { History, Loader2, Receipt } from "lucide-react";
+import { createFactoryExpense, listFactoryExpenses } from "@/lib/expenses-api";
+import { apiError, formatMoney } from "@/lib/materials-api";
 import type { BatchExpense } from "@/types/production";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useI18n } from "@/hooks/use-i18n";
@@ -21,7 +17,6 @@ import { todayInput } from "@/lib/date-range";
 export default function TaxesExpensesPage() {
   const { t } = useI18n();
   const [expenses, setExpenses] = useState<BatchExpense[]>([]);
-  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
   const [amount, setAmount] = useState("");
@@ -29,20 +24,17 @@ export default function TaxesExpensesPage() {
   const [note, setNote] = useState("");
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
       const all = await listFactoryExpenses();
       setExpenses(all.filter((e) => e.category === "taxes"));
     } catch (err) {
       toast.error(apiError(err, "Failed to load taxes"));
-    } finally {
-      setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    const t = setTimeout(() => void load(), 150);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => void load(), 150);
+    return () => clearTimeout(timer);
   }, [load]);
 
   const total = useMemo(() => expenses.reduce((s, e) => s + e.amount, 0), [expenses]);
@@ -51,6 +43,10 @@ export default function TaxesExpensesPage() {
     const value = Number(amount);
     if (!Number.isFinite(value) || value <= 0) {
       toast.error("Enter the tax amount");
+      return;
+    }
+    if (!taxDate) {
+      toast.error("Pick the date paid");
       return;
     }
     setBusy(true);
@@ -73,17 +69,6 @@ export default function TaxesExpensesPage() {
     }
   }
 
-  async function onDelete(id: string) {
-    if (!confirm("Remove this tax entry?")) return;
-    try {
-      await deleteFactoryExpense(id);
-      toast.success("Removed");
-      await load();
-    } catch (err) {
-      toast.error(apiError(err, "Delete failed"));
-    }
-  }
-
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -100,9 +85,13 @@ export default function TaxesExpensesPage() {
         <div className="flex flex-wrap items-center gap-2">
           <Link
             href="/dashboard/expenses/taxes/history"
-            className={buttonVariants({ variant: "outline", className: "gap-1.5" })}
+            className={buttonVariants({
+              variant: "default",
+              size: "lg",
+              className: "gap-2 min-w-44 px-8 text-base font-semibold shadow-sm",
+            })}
           >
-            <History className="size-4" />
+            <History className="size-5" />
             {t("exp.showHistory")}
           </Link>
         </div>
@@ -148,7 +137,7 @@ export default function TaxesExpensesPage() {
               className="h-11"
             />
           </div>
-          <div className="sm:col-span-4">
+          <div className="flex flex-wrap gap-2 sm:col-span-4">
             <Button
               type="button"
               size="lg"
@@ -162,47 +151,6 @@ export default function TaxesExpensesPage() {
           </div>
         </CardContent>
       </Card>
-
-      {loading ? (
-        <div className="flex justify-center py-16">
-          <Loader2 className="size-7 animate-spin text-primary" />
-        </div>
-      ) : expenses.length > 0 ? (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-nameplate text-sm">Tax history</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2 px-4 pb-4">
-            {expenses.map((e) => (
-              <div
-                key={e._id}
-                className="flex items-center justify-between gap-3 border-b border-border/50 py-2 last:border-0"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm">{e.notes || "Tax"}</p>
-                  <p className="font-data text-xs text-muted-foreground">
-                    {formatDate(e.expenseDate)}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-data text-sm">{formatMoney(e.amount)}</span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="size-8 text-muted-foreground"
-                    onClick={() => void onDelete(e._id)}
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      ) : (
-        <p className="text-sm text-muted-foreground">{t("tax.empty")}</p>
-      )}
     </div>
   );
 }
