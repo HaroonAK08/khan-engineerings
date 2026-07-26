@@ -1,22 +1,23 @@
 const authService = require("./auth.service");
 
 function cookieOptions() {
+  const insecure = process.env.COOKIE_INSECURE === "true";
   const options = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: process.env.NODE_ENV === "production" && !insecure,
     sameSite: "lax",
     maxAge: 7 * 24 * 60 * 60 * 1000,
     path: "/",
   };
 
-  // Shared parent domain (e.g. .haroonahmadkhan.dev)
+  // Shared parent domain (e.g. .haroonahmadkhan.dev) — never set for raw IP hosts
   if (process.env.COOKIE_DOMAIN) {
     options.domain = process.env.COOKIE_DOMAIN;
     return options;
   }
 
-  // Separate Vercel hosts (web.vercel.app → api.vercel.app) need cross-site cookies
-  if (process.env.NODE_ENV === "production") {
+  // Separate HTTPS hosts (e.g. Vercel web → api) need cross-site cookies
+  if (process.env.NODE_ENV === "production" && !insecure) {
     options.sameSite = "none";
     options.secure = true;
   }

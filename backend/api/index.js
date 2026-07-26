@@ -6,12 +6,21 @@ if (!process.env.VERCEL) {
   }
 }
 
-function setCors(res) {
-  const origin = process.env.CORS_ORIGIN || "http://localhost:3000";
+function setCors(res, req) {
+  const allowed = (process.env.CORS_ORIGIN || "http://localhost:3000")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+  const requestOrigin = req?.headers?.origin;
+  const origin =
+    requestOrigin && allowed.includes(requestOrigin)
+      ? requestOrigin
+      : allowed[0];
   res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Vary", "Origin");
 }
 
 function requestPath(req) {
@@ -89,14 +98,14 @@ function getApp() {
 module.exports = async (req, res) => {
   try {
     if (req.method === "OPTIONS") {
-      setCors(res);
+      setCors(res, req);
       res.statusCode = 204;
       res.end();
       return;
     }
 
     if (isHealthRequest(req)) {
-      setCors(res);
+      setCors(res, req);
       res.statusCode = 200;
       res.setHeader("Content-Type", "application/json");
       res.end(
@@ -117,12 +126,12 @@ module.exports = async (req, res) => {
       const started = Date.now();
       try {
         await connectDB();
-        setCors(res);
+        setCors(res, req);
         res.statusCode = 200;
         res.setHeader("Content-Type", "application/json");
         res.end(JSON.stringify({ status: "db-ok", ms: Date.now() - started }));
       } catch (err) {
-        setCors(res);
+        setCors(res, req);
         res.statusCode = 500;
         res.setHeader("Content-Type", "application/json");
         res.end(
@@ -143,7 +152,7 @@ module.exports = async (req, res) => {
   } catch (err) {
     console.error("API handler error:", err);
     if (!res.headersSent) {
-      setCors(res);
+      setCors(res, req);
       res.statusCode = 500;
       res.setHeader("Content-Type", "application/json");
       res.end(
