@@ -128,7 +128,7 @@ export default function SalesReportsHubPage() {
                       <TableRow key={o.orderId}>
                         <TableCell>
                           <Link
-                            href={`/dashboard/party/orders/${o.orderId}`}
+                            href={`/dashboard/builty/${o.orderId}`}
                             className="font-data text-xs hover:underline"
                           >
                             {o.invoiceNo}

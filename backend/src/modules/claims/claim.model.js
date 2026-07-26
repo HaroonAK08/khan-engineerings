@@ -18,11 +18,11 @@ const claimItemSchema = new mongoose.Schema(
 const claimSchema = new mongoose.Schema(
   {
     claimNo: { type: String, required: true, unique: true, trim: true },
-    order: { type: mongoose.Schema.Types.ObjectId, ref: "SalesOrder", required: true, index: true },
+    builty: { type: mongoose.Schema.Types.ObjectId, ref: "Builty", required: true, index: true },
     customer: { type: mongoose.Schema.Types.ObjectId, ref: "Customer", required: true, index: true },
     claimDate: { type: Date, required: true, index: true },
     items: { type: [claimItemSchema], default: [] },
-    replacementOrder: { type: mongoose.Schema.Types.ObjectId, ref: "SalesOrder", default: null },
+    replacementBuilty: { type: mongoose.Schema.Types.ObjectId, ref: "Builty", default: null },
     reworkBatch: { type: mongoose.Schema.Types.ObjectId, ref: "ProductionBatch", default: null },
     notes: { type: String, trim: true, default: "" },
     status: {

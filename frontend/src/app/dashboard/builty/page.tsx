@@ -131,9 +131,9 @@ export default function BuiltyPage() {
         </div>
         <Link
           href="/dashboard/builty/new"
-          className="inline-flex h-8 w-fit items-center gap-2 rounded-lg bg-primary px-3 text-sm text-primary-foreground"
+          className="inline-flex h-12 w-fit min-w-44 items-center justify-center gap-2 rounded-lg bg-primary px-8 text-base font-semibold text-primary-foreground shadow-sm"
         >
-          <Plus className="size-4" />
+          <Plus className="size-5" />
           {t("builty.new")}
         </Link>
       </div>
@@ -173,7 +173,7 @@ export default function BuiltyPage() {
                   <TableHead>{t("builty.col.no")}</TableHead>
                   <TableHead>{t("builty.col.billNo")}</TableHead>
                   <TableHead>{t("builty.col.customer")}</TableHead>
-                  <TableHead>{t("builty.col.orders")}</TableHead>
+                  <TableHead>{t("builty.col.items")}</TableHead>
                   <TableHead className="text-right">{t("builty.col.given")}</TableHead>
                   <TableHead className="text-right">{t("builty.col.total")}</TableHead>
                   <TableHead className="text-right">{t("builty.col.left")}</TableHead>
@@ -207,9 +207,9 @@ export default function BuiltyPage() {
                     </TableCell>
                     <TableCell>{customerName(row.customer)}</TableCell>
                     <TableCell className="max-w-[18rem]">
-                      {row.orderDetails && row.orderDetails.length > 0 ? (
+                      {row.itemDetails && row.itemDetails.length > 0 ? (
                         <div className="flex flex-col gap-0.5">
-                          {row.orderDetails.map((detail, index) => (
+                          {row.itemDetails.map((detail, index) => (
                             <span key={`${row._id}-${index}`} className="text-sm leading-snug">
                               {detail}
                             </span>
@@ -217,7 +217,7 @@ export default function BuiltyPage() {
                         </div>
                       ) : (
                         <span className="text-sm text-muted-foreground">
-                          {t("builty.col.ordersCount", { count: row.orderCount })}
+                          {t("builty.col.itemsCount", { count: row.itemCount })}
                         </span>
                       )}
                     </TableCell>

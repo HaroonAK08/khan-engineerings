@@ -1,6 +1,6 @@
 const { Router } = require("express");
 const controller = require("./customer.controller");
-const orderService = require("../orders/order.service");
+const customerService = require("./customer.service");
 const { requireAuth } = require("../../middleware/auth");
 
 const router = Router();
@@ -11,7 +11,7 @@ router.post("/", controller.create);
 
 router.get("/:id/ledger", async (req, res, next) => {
   try {
-    const result = await orderService.listLedger(req.params.id);
+    const result = await customerService.listLedger(req.params.id);
     res.json(result);
   } catch (err) {
     next(err);

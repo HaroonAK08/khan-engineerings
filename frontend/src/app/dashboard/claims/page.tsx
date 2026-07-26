@@ -27,19 +27,19 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-type OrderOption = { _id: string; orderNo: string; invoiceNo: string; customer?: { name: string } };
+type BuiltyOption = { _id: string; builtyNo: string; billNo?: string; customer?: { name: string } };
 type Claim = {
   _id: string;
   claimNo: string;
   claimDate: string;
   status: string;
   customer?: { name: string };
-  order?: { invoiceNo: string };
+  builty?: { builtyNo: string; billNo?: string };
   items: Array<{ quantity: number; disposition: string; product?: { name: string } }>;
 };
 
 const schema = z.object({
-  order: z.string().min(1, "Select invoice"),
+  order: z.string().min(1, "Select builty"),
   product: z.string().min(1),
   quantity: z.number().int().positive(),
   disposition: z.enum(["rework", "scrap_loss", "replacement"]),
@@ -53,7 +53,7 @@ type Form = z.infer<typeof schema>;
 export default function ClaimsPage() {
   const { t } = useI18n();
   const [claims, setClaims] = useState<Claim[]>([]);
-  const [orders, setOrders] = useState<OrderOption[]>([]);
+  const [orders, setOrders] = useState<BuiltyOption[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -74,13 +74,13 @@ export default function ClaimsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [claimsRes, ordersRes, productData] = await Promise.all([
+      const [claimsRes, builtyRes, productData] = await Promise.all([
         api.get<{ claims: Claim[] }>("/claims"),
-        api.get<{ orders: OrderOption[] }>("/orders"),
+        api.get<{ builties: BuiltyOption[] }>("/builty"),
         listProducts({ active: "true" }),
       ]);
       setClaims(claimsRes.data.claims);
-      setOrders(ordersRes.data.orders);
+      setOrders(builtyRes.data.builties);
       setProducts(productData);
     } catch (err) {
       toast.error(apiError(err, "Failed to load claims"));
@@ -97,7 +97,7 @@ export default function ClaimsPage() {
     setSaving(true);
     try {
       await api.post("/claims", {
-        order: values.order,
+        builty: values.order,
         claimDate: values.claimDate,
         items: [
           {
@@ -155,7 +155,7 @@ export default function ClaimsPage() {
                 <option value="">{t("claims.select")}</option>
                 {orders.map((o) => (
                   <option key={o._id} value={o._id}>
-                    {o.invoiceNo} · {o.customer?.name || ""}
+                    {o.builtyNo} · {o.customer?.name || ""}
                   </option>
                 ))}
               </select>
@@ -241,7 +241,7 @@ export default function ClaimsPage() {
                     <TableCell className="font-data text-xs">{c.claimNo}</TableCell>
                     <TableCell className="font-data text-xs">{formatDate(c.claimDate)}</TableCell>
                     <TableCell>{c.customer?.name || "—"}</TableCell>
-                    <TableCell className="font-data text-xs">{c.order?.invoiceNo || "—"}</TableCell>
+                    <TableCell className="font-data text-xs">{c.builty?.builtyNo || "—"}</TableCell>
                     <TableCell className="text-xs">
                       {c.items
                         .map(

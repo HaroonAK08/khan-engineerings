@@ -6,7 +6,8 @@ const router = Router();
 
 router.use(requireAuth);
 
-router.get("/pending", controller.pending);
+router.get("/reports", controller.report);
+router.get("/payments", controller.payments);
 
 router.get("/", controller.list);
 router.post("/", controller.create);

@@ -7,3 +7,9 @@ node_modules/
 .DS_Store
 .omc/
 .mongodb/
+.mongo-data/
+.mongo-logs/
+
+.mongo-prod-dump/
+.mongo-data/
+.mongo-logs/

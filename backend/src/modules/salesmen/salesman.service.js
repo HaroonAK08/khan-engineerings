@@ -1,5 +1,4 @@
 const Salesman = require("./salesman.model");
-const SalesOrder = require("../orders/order.model");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -54,10 +53,6 @@ async function update(id, data) {
 
 async function remove(id) {
   const salesman = await getById(id);
-  const orderCount = await SalesOrder.countDocuments({ salesmanRef: id });
-  if (orderCount > 0) {
-    throw httpError("Cannot delete salesman with orders. Deactivate instead.", 409);
-  }
   await salesman.deleteOne();
   return { ok: true };
 }

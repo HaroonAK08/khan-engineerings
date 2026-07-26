@@ -9,6 +9,7 @@ import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
 import {
   customerName,
   getBuilty,
+  productName,
   recordBuiltyPayment,
   type Builty,
   type BuiltySummary,
@@ -141,41 +142,34 @@ export default function BuiltyDetailPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-nameplate text-sm">{t("builtyDetail.orders")}</CardTitle>
+          <CardTitle className="text-nameplate text-sm">{t("builtyDetail.items")}</CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>{t("common.invoice")}</TableHead>
-                <TableHead>{t("common.date")}</TableHead>
-                <TableHead className="text-right">{t("common.total")}</TableHead>
-                <TableHead className="text-right">{t("builty.col.given")}</TableHead>
-                <TableHead className="text-right">{t("common.balance")}</TableHead>
+                <TableHead>{t("orderNew.col.product")}</TableHead>
+                <TableHead className="text-right">{t("orderNew.col.qty")}</TableHead>
+                <TableHead>{t("builtyNew.pricingMode")}</TableHead>
+                <TableHead className="text-right">{t("orderNew.col.rate")}</TableHead>
+                <TableHead className="text-right">{t("orderNew.col.amount")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {builty.orders.map((order) => (
-                <TableRow key={order._id}>
-                  <TableCell>
-                    <Link
-                      href={`/dashboard/party/orders/${order._id}`}
-                      className="font-data text-xs hover:text-primary hover:underline"
-                    >
-                      {order.invoiceNo}
-                    </Link>
-                  </TableCell>
+              {builty.items.map((item, index) => (
+                <TableRow key={item._id || index}>
+                  <TableCell>{productName(item.product)}</TableCell>
+                  <TableCell className="font-data text-right text-xs">{item.quantity}</TableCell>
                   <TableCell className="font-data text-xs">
-                    {formatDate(order.orderDate)}
+                    {item.pricingMode === "fixed"
+                      ? t("builtyNew.mode.fixed")
+                      : t("builtyNew.mode.rate")}
                   </TableCell>
                   <TableCell className="font-data text-right text-xs">
-                    {formatMoney(order.totalAmount)}
+                    {item.pricingMode === "fixed" ? "—" : formatMoney(item.ratePerKg)}
                   </TableCell>
                   <TableCell className="font-data text-right text-xs">
-                    {formatMoney(order.amountPaid)}
-                  </TableCell>
-                  <TableCell className="font-data text-right text-xs">
-                    {formatMoney(order.balance)}
+                    {formatMoney(item.lineTotal)}
                   </TableCell>
                 </TableRow>
               ))}
@@ -219,9 +213,9 @@ export default function BuiltyDetailPage() {
                   onChange={(e) => setMethod(e.target.value)}
                 >
                   <option value="cash">{t("common.cash")}</option>
-                  <option value="bank">{t("common.bank")}</option>
                   <option value="cheque">{t("common.cheque")}</option>
-                  <option value="other">{t("common.other")}</option>
+                  <option value="online">{t("common.online")}</option>
+                  <option value="bank">{t("common.bank")}</option>
                 </select>
               </div>
               <div className="flex flex-col gap-1.5">

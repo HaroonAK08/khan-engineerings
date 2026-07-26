@@ -1,5 +1,5 @@
 const Claim = require("./claim.model");
-const SalesOrder = require("../orders/order.model");
+const Builty = require("../builty/builty.model");
 const Product = require("../products/product.model");
 
 function httpError(message, statusCode) {
@@ -27,7 +27,7 @@ async function list({ customer, status, q } = {}) {
   if (q?.trim()) filter.claimNo = new RegExp(q.trim(), "i");
   return Claim.find(filter)
     .populate("customer", "name city phone")
-    .populate("order", "orderNo invoiceNo")
+    .populate("builty", "builtyNo billNo")
     .populate("items.product", "name sku family weightKg")
     .sort({ claimDate: -1, createdAt: -1 });
 }
@@ -35,7 +35,7 @@ async function list({ customer, status, q } = {}) {
 async function getById(id) {
   const claim = await Claim.findById(id)
     .populate("customer", "name city phone")
-    .populate("order", "orderNo invoiceNo items")
+    .populate("builty", "builtyNo billNo items")
     .populate("items.product", "name sku family weightKg")
     .populate("reworkBatch", "batchNo status");
   if (!claim) throw httpError("Claim not found", 404);
@@ -43,9 +43,10 @@ async function getById(id) {
 }
 
 async function create(data) {
-  if (!data.order) throw httpError("Order / invoice is required", 400);
-  const order = await SalesOrder.findById(data.order);
-  if (!order) throw httpError("Order not found", 404);
+  const builtyId = data.builty || data.order;
+  if (!builtyId) throw httpError("Builty is required", 400);
+  const builty = await Builty.findById(builtyId);
+  if (!builty) throw httpError("Builty not found", 404);
   if (!Array.isArray(data.items) || data.items.length === 0) {
     throw httpError("At least one claim item is required", 400);
   }
@@ -75,8 +76,8 @@ async function create(data) {
 
   const claim = await Claim.create({
     claimNo: data.claimNo?.trim() || (await nextClaimNo()),
-    order: order._id,
-    customer: order.customer,
+    builty: builty._id,
+    customer: builty.customer,
     claimDate: parseDate(data.claimDate || new Date(), "Claim date"),
     items,
     notes: data.notes?.trim() || "",
@@ -97,7 +98,9 @@ async function update(id, data) {
   }
   if (data.notes !== undefined) claim.notes = data.notes.trim();
   if (data.reworkBatch !== undefined) claim.reworkBatch = data.reworkBatch || null;
-  if (data.replacementOrder !== undefined) claim.replacementOrder = data.replacementOrder || null;
+  if (data.replacementBuilty !== undefined) {
+    claim.replacementBuilty = data.replacementBuilty || null;
+  }
   await claim.save();
   return getById(claim._id);
 }

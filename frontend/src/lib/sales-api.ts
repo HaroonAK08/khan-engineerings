@@ -18,46 +18,25 @@ export type Salesman = {
   isActive: boolean;
 };
 
-export type OrderItem = {
+export type ProductRef = {
+  _id: string;
+  name: string;
+  sku?: string;
+  unitLabel?: string;
+  weightKg?: number;
+};
+
+export type PricingMode = "rate_kg" | "fixed";
+
+export type BuiltyItem = {
   _id?: string;
-  product: { _id: string; name: string; sku?: string; unitLabel?: string } | string;
+  product: ProductRef | string;
   quantity: number;
+  pricingMode: PricingMode;
   ratePerKg: number;
+  weightKg: number;
   unitPrice: number;
   lineTotal: number;
-  dispatchedQty?: number;
-};
-
-export type SalesOrder = {
-  _id: string;
-  orderNo: string;
-  invoiceNo: string;
-  customer: Customer | string;
-  orderDate: string;
-  dueDate?: string | null;
-  salesman?: string;
-  salesmanRef?: Salesman | string | null;
-  commissionType?: "none" | "amount" | "percent";
-  commissionValue?: number;
-  commissionAmount?: number;
-  items: OrderItem[];
-  totalAmount: number;
-  amountPaid: number;
-  balance: number;
-  status: string;
-  paymentStatus: "unpaid" | "partial" | "paid";
-  dispatchStatus: "pending" | "partial" | "dispatched";
-  builty?: BuiltyRef | string | null;
-  notes: string;
-};
-
-export type BuiltyRef = {
-  _id: string;
-  builtyNo: string;
-  billNo?: string;
-  builtyDate?: string;
-  transporter?: string;
-  vehicleNo?: string;
 };
 
 export type BuiltyRow = {
@@ -66,11 +45,8 @@ export type BuiltyRow = {
   billNo?: string;
   builtyDate: string;
   customer: Customer | string;
-  orderCount: number;
-  orderDetails?: string[];
-  transporter: string;
-  vehicleNo: string;
-  freightAmount: number;
+  itemCount: number;
+  itemDetails?: string[];
   notes: string;
   totalAmount: number;
   amountPaid: number;
@@ -84,10 +60,12 @@ export type Builty = {
   billNo?: string;
   builtyDate: string;
   customer: Customer | string;
-  orders: SalesOrder[];
-  transporter: string;
-  vehicleNo: string;
-  freightAmount: number;
+  warehouse?: string | null;
+  items: BuiltyItem[];
+  totalAmount: number;
+  amountPaid: number;
+  balance: number;
+  paymentStatus: "unpaid" | "partial" | "paid";
   notes: string;
 };
 
@@ -101,7 +79,7 @@ export type BuiltySummary = {
 export type CustomerPayment = {
   _id: string;
   customer: Customer | string;
-  order: { _id: string; orderNo: string; invoiceNo: string } | string;
+  builty: { _id: string; builtyNo: string; billNo?: string } | string | null;
   amount: number;
   paymentDate: string;
   method: string;
@@ -114,19 +92,8 @@ export type CustomerLedgerEntry = {
   type: "invoice" | "payment" | "adjustment";
   amount: number;
   signedAmount?: number | null;
-  order?: { orderNo: string; invoiceNo: string } | null;
+  builty?: { builtyNo: string; billNo?: string } | null;
   entryDate: string;
-  notes: string;
-};
-
-export type Dispatch = {
-  _id: string;
-  dispatchNo: string;
-  order: { _id: string; orderNo: string; invoiceNo: string } | string;
-  customer: Customer | string;
-  warehouse?: { name: string } | string | null;
-  items: Array<{ product: { name: string } | string; quantity: number }>;
-  dispatchDate: string;
   notes: string;
 };
 
@@ -201,38 +168,6 @@ export async function getCustomerLedger(id: string) {
   return data;
 }
 
-export async function listOrders(params?: {
-  customer?: string;
-  paymentStatus?: string;
-  dispatchStatus?: string;
-  builty?: string;
-  dateFrom?: string;
-  dateTo?: string;
-  q?: string;
-}) {
-  const { data } = await api.get<{ orders: SalesOrder[] }>("/orders", { params });
-  return data.orders;
-}
-
-export async function getOrder(id: string) {
-  const { data } = await api.get<{ order: SalesOrder }>(`/orders/${id}`);
-  return data.order;
-}
-
-export async function createOrder(body: {
-  customer: string;
-  orderDate: string;
-  dueDate?: string;
-  notes?: string;
-  salesmanId?: string;
-  commissionType?: "none" | "amount" | "percent";
-  commissionValue?: number;
-  items: Array<{ product: string; quantity: number; ratePerKg: number }>;
-}) {
-  const { data } = await api.post<{ order: SalesOrder }>("/orders", body);
-  return data.order;
-}
-
 export async function listSalesmen(params?: { q?: string; active?: string }) {
   const { data } = await api.get<{ salesmen: Salesman[] }>("/salesmen", { params });
   return data.salesmen;
@@ -248,58 +183,6 @@ export async function updateSalesman(id: string, body: Partial<Salesman>) {
   return data.salesman;
 }
 
-export function salesmanName(
-  order: Pick<SalesOrder, "salesman" | "salesmanRef">
-) {
-  if (order.salesmanRef && typeof order.salesmanRef === "object") {
-    return order.salesmanRef.name;
-  }
-  return order.salesman || "";
-}
-
-export async function cancelOrder(id: string) {
-  const { data } = await api.post<{ order: SalesOrder }>(`/orders/${id}/cancel`);
-  return data.order;
-}
-
-export async function recordOrderPayment(
-  orderId: string,
-  body: { amount: number; paymentDate: string; method?: string; notes?: string; reference?: string }
-) {
-  const { data } = await api.post<{
-    payment: CustomerPayment;
-    order: SalesOrder;
-    balance: number;
-  }>(`/orders/${orderId}/payments`, body);
-  return data;
-}
-
-export async function listPayments(params?: { customer?: string; order?: string }) {
-  const { data } = await api.get<{ payments: CustomerPayment[] }>("/orders/payments", { params });
-  return data.payments;
-}
-
-export async function createDispatch(
-  orderId: string,
-  body: {
-    items: Array<{ itemId?: string; product?: string; quantity: number }>;
-    warehouse?: string;
-    dispatchDate: string;
-    notes?: string;
-  }
-) {
-  const { data } = await api.post<{ dispatch: Dispatch; order: SalesOrder }>(
-    `/orders/${orderId}/dispatch`,
-    body
-  );
-  return data;
-}
-
-export async function listDispatches(params?: { order?: string; customer?: string }) {
-  const { data } = await api.get<{ dispatches: Dispatch[] }>("/orders/dispatches", { params });
-  return data.dispatches;
-}
-
 export async function listBuilties(params?: {
   q?: string;
   customer?: string;
@@ -312,27 +195,31 @@ export async function listBuilties(params?: {
 }
 
 export async function getBuilty(id: string) {
-  const { data } = await api.get<{ builty: Builty; summary: BuiltySummary }>(`/builty/${id}`);
+  const { data } = await api.get<{
+    builty: Builty;
+    summary: BuiltySummary;
+    payments: CustomerPayment[];
+  }>(`/builty/${id}`);
   return data;
 }
 
-export async function listBuiltyPendingOrders(customer: string) {
-  const { data } = await api.get<{ orders: SalesOrder[] }>("/builty/pending", {
-    params: { customer },
-  });
-  return data.orders;
-}
+export type BuiltyLineInput = {
+  product: string;
+  quantity: number;
+  pricingMode: PricingMode;
+  ratePerKg?: number;
+  fixedAmount?: number;
+};
 
 export async function createBuilty(body: {
   builtyNo: string;
   billNo?: string;
   customer: string;
-  orders: string[];
   builtyDate: string;
+  items: BuiltyLineInput[];
+  previousPending?: number;
   amountPaid?: number;
   method?: string;
-  vehicleNo?: string;
-  freightAmount?: number;
   notes?: string;
 }) {
   const { data } = await api.post<{ builty: Builty; summary: BuiltySummary }>("/builty", body);
@@ -354,7 +241,7 @@ export async function updateBuilty(
 
 export async function recordBuiltyPayment(
   id: string,
-  body: { amount: number; paymentDate: string; method?: string; notes?: string }
+  body: { amount: number; paymentDate: string; method?: string; notes?: string; reference?: string }
 ) {
   const { data } = await api.post<{ builty: Builty; summary: BuiltySummary }>(
     `/builty/${id}/payments`,
@@ -367,24 +254,18 @@ export async function deleteBuilty(id: string) {
   await api.delete(`/builty/${id}`);
 }
 
-export function builtyNo(builty: SalesOrder["builty"]) {
-  if (!builty) return "";
-  if (typeof builty === "string") return builty;
-  return builty.builtyNo;
-}
-
 export async function getSalesReport(params?: { dateFrom?: string; dateTo?: string }) {
-  const { data } = await api.get<{ report: SalesReport }>("/orders/reports", { params });
+  const { data } = await api.get<{ report: SalesReport }>("/builty/reports", { params });
   return data.report;
 }
 
-export function customerName(customer: SalesOrder["customer"]) {
+export function customerName(customer: Customer | string | null | undefined) {
   if (!customer) return "—";
   if (typeof customer === "string") return customer;
   return customer.name;
 }
 
-export function productName(product: OrderItem["product"]) {
+export function productName(product: BuiltyItem["product"] | null | undefined) {
   if (!product) return "—";
   if (typeof product === "string") return product;
   return product.name;

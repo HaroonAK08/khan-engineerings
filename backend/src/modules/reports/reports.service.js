@@ -1,14 +1,14 @@
 const Customer = require("../customers/customer.model");
 const Supplier = require("../suppliers/supplier.model");
-const SalesOrder = require("../orders/order.model");
+const Builty = require("../builty/builty.model");
 const Purchase = require("../purchases/purchase.model");
 const ProductionBatch = require("../production/production.model");
 const Product = require("../products/product.model");
-const CustomerLedgerEntry = require("../orders/customer-ledger.model");
+const CustomerLedgerEntry = require("../customers/customer-ledger.model");
 const customerService = require("../customers/customer.service");
 const supplierService = require("../suppliers/supplier.service");
 const ledgerService = require("../ledger/ledger.service");
-const orderService = require("../orders/order.service");
+const builtyService = require("../builty/builty.service");
 const purchaseService = require("../purchases/purchase.service");
 const productionService = require("../production/production.service");
 const expenseService = require("../expenses/expense.service");
@@ -52,11 +52,11 @@ async function globalSearch({ q, limit = 8 } = {}) {
       .sort({ name: 1 })
       .limit(lim)
       .lean(),
-    SalesOrder.find({
-      $or: [{ orderNo: re }, { invoiceNo: re }, { notes: re }],
+    Builty.find({
+      $or: [{ builtyNo: re }, { billNo: re }, { notes: re }],
     })
       .populate("customer", "name")
-      .sort({ orderDate: -1 })
+      .sort({ builtyDate: -1 })
       .limit(lim)
       .lean(),
     Purchase.find({ $or: [{ invoiceNo: re }, { notes: re }] })
@@ -92,9 +92,9 @@ async function globalSearch({ q, limit = 8 } = {}) {
       })),
       orders: orders.map((o) => ({
         id: o._id,
-        label: `${o.orderNo} / ${o.invoiceNo}`,
+        label: o.billNo ? `${o.builtyNo} / ${o.billNo}` : o.builtyNo,
         meta: `${o.customer?.name || ""} · ${money(o.totalAmount)}`,
-        href: `/dashboard/orders/${o._id}`,
+        href: `/dashboard/builty/${o._id}`,
       })),
       purchases: purchases.map((p) => ({
         id: p._id,
@@ -132,7 +132,7 @@ async function customerStatement(customerId, { dateFrom, dateTo } = {}) {
   }
 
   const entries = await CustomerLedgerEntry.find(filter)
-    .populate("order", "orderNo invoiceNo")
+    .populate("builty", "builtyNo billNo")
     .populate("payment", "amount method")
     .sort({ entryDate: 1, createdAt: 1 });
 
@@ -173,7 +173,7 @@ async function customerStatement(customerId, { dateFrom, dateTo } = {}) {
       date: e.entryDate,
       type: e.type,
       reference:
-        e.order?.invoiceNo || e.order?.orderNo || e.notes || e.type,
+        e.builty?.builtyNo || e.builty?.billNo || e.notes || e.type,
       debit: Math.round(debit * 100) / 100,
       credit: Math.round(credit * 100) / 100,
       balance: Math.round(bal * 100) / 100,
@@ -268,11 +268,11 @@ async function supplierStatement(supplierId, { dateFrom, dateTo } = {}) {
 }
 
 async function exportSales(query, format, res) {
-  const report = await orderService.getSalesReport(query);
-  const columns = ["Invoice", "Order", "Customer", "Date", "Total", "Paid", "Balance", "Status"];
+  const report = await builtyService.getSalesReport(query);
+  const columns = ["Builty", "Bill", "Party", "Date", "Total", "Paid", "Balance", "Status"];
   const rows = (report.outstanding || []).map((o) => [
-    o.invoiceNo,
     o.orderNo,
+    o.invoiceNo,
     o.customer,
     fmtDate(o.orderDate),
     money(o.totalAmount),
@@ -282,7 +282,7 @@ async function exportSales(query, format, res) {
   ]);
   // Also include summary sheet style: prepend totals as meta
   const meta = {
-    "Order count": report.totals.orderCount,
+    "Builty count": report.totals.orderCount,
     "Total sales": money(report.totals.totalSales),
     "Total paid": money(report.totals.totalPaid),
     Outstanding: money(report.totals.outstanding),

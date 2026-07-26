@@ -1,10 +1,10 @@
 const financeService = require("../finance/finance.service");
 const inventoryService = require("../inventory/inventory.service");
-const orderService = require("../orders/order.service");
+const builtyService = require("../builty/builty.service");
 const purchaseService = require("../purchases/purchase.service");
 const productionService = require("../production/production.service");
-const SalesOrder = require("../orders/order.model");
-const CustomerPayment = require("../orders/payment.model");
+const Builty = require("../builty/builty.model");
+const CustomerPayment = require("../customers/customer-payment.model");
 const Purchase = require("../purchases/purchase.model");
 const ProductionBatch = require("../production/production.model");
 const BatchExpense = require("../expenses/expense.model");
@@ -91,8 +91,8 @@ async function productionSeries(months = 6) {
 }
 
 async function recentActivity(limit = 12) {
-  const [orders, payments, purchases, batches, expenses, ledgerPays] = await Promise.all([
-    SalesOrder.find({ status: { $ne: "cancelled" } })
+  const [builties, payments, purchases, batches, expenses, ledgerPays] = await Promise.all([
+    Builty.find()
       .populate("customer", "name")
       .sort({ createdAt: -1 })
       .limit(8)
@@ -123,20 +123,20 @@ async function recentActivity(limit = 12) {
 
   const events = [];
 
-  for (const o of orders) {
+  for (const b of builties) {
     events.push({
-      at: o.createdAt || o.orderDate,
+      at: b.createdAt || b.builtyDate,
       type: "sale",
-      message: `Order ${o.orderNo} · ${o.customer?.name || "Customer"} · ${roundMoney(o.totalAmount)}`,
-      href: `/dashboard/orders/${o._id}`,
+      message: `Builty ${b.builtyNo} · ${b.customer?.name || "Party"} · ${roundMoney(b.totalAmount)}`,
+      href: `/dashboard/builty/${b._id}`,
     });
   }
   for (const p of payments) {
     events.push({
       at: p.createdAt || p.paymentDate,
       type: "payment",
-      message: `Payment received · ${p.customer?.name || "Customer"} · ${roundMoney(p.amount)}`,
-      href: p.order ? `/dashboard/orders/${p.order}` : "/dashboard/orders",
+      message: `Payment received · ${p.customer?.name || "Party"} · ${roundMoney(p.amount)}`,
+      href: p.builty ? `/dashboard/builty/${p.builty}` : "/dashboard/builty",
     });
   }
   for (const p of purchases) {
@@ -222,16 +222,13 @@ async function getDashboard() {
     suppliersMonth,
   ] = await Promise.all([
     sumAmount(
-      SalesOrder,
-      {
-        orderDate: { $gte: today.from, $lte: today.to },
-        status: { $ne: "cancelled" },
-      },
+      Builty,
+      { builtyDate: { $gte: today.from, $lte: today.to } },
       "totalAmount"
     ),
     financeService.getOverview({ dateFrom: monthFrom, dateTo: monthTo }),
     getCashBalance(),
-    orderService.getSalesReport({ dateFrom: monthFrom, dateTo: monthTo }),
+    builtyService.getSalesReport({ dateFrom: monthFrom, dateTo: monthTo }),
     inventoryService.getOverview(),
     inventoryService.getAlerts(),
     productionService.getReport({ dateFrom: todayFrom, dateTo: todayTo }),
@@ -242,10 +239,7 @@ async function getDashboard() {
       { type: "expense", entryDate: { $gte: today.from, $lte: today.to } },
       "amount"
     ),
-    SalesOrder.countDocuments({
-      status: { $ne: "cancelled" },
-      dispatchStatus: { $in: ["pending", "partial"] },
-    }),
+    Builty.countDocuments({ paymentStatus: { $in: ["unpaid", "partial"] } }),
     financeService.getMonthly({ months: 6 }),
     productionSeries(6),
     recentActivity(14),

@@ -9,10 +9,19 @@ async function list(req, res, next) {
   }
 }
 
-async function pending(req, res, next) {
+async function report(req, res, next) {
   try {
-    const orders = await builtyService.pendingOrders(req.query.customer);
-    res.json({ orders });
+    const report = await builtyService.getSalesReport(req.query);
+    res.json({ report });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function payments(req, res, next) {
+  try {
+    const payments = await builtyService.listPayments(req.query);
+    res.json({ payments });
   } catch (err) {
     next(err);
   }
@@ -63,4 +72,4 @@ async function remove(req, res, next) {
   }
 }
 
-module.exports = { list, pending, getOne, create, update, pay, remove };
+module.exports = { list, report, payments, getOne, create, update, pay, remove };

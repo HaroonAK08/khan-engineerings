@@ -1,6 +1,6 @@
 const Customer = require("./customer.model");
-const CustomerLedgerEntry = require("../orders/customer-ledger.model");
-const SalesOrder = require("../orders/order.model");
+const CustomerLedgerEntry = require("./customer-ledger.model");
+const Builty = require("../builty/builty.model");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -57,8 +57,8 @@ async function getBalance(customerId) {
 async function getWithBalance(id) {
   const customer = await getById(id);
   const balance = await getBalance(id);
-  const orderStats = await SalesOrder.aggregate([
-    { $match: { customer: customer._id, status: { $ne: "cancelled" } } },
+  const stats = await Builty.aggregate([
+    { $match: { customer: customer._id } },
     {
       $group: {
         _id: null,
@@ -71,8 +71,18 @@ async function getWithBalance(id) {
   return {
     customer,
     balance,
-    stats: orderStats[0] || { orderCount: 0, totalSales: 0, totalPaid: 0 },
+    stats: stats[0] || { orderCount: 0, totalSales: 0, totalPaid: 0 },
   };
+}
+
+async function listLedger(customerId) {
+  await getById(customerId);
+  const entries = await CustomerLedgerEntry.find({ customer: customerId })
+    .populate("builty", "builtyNo billNo")
+    .populate("payment", "amount method")
+    .sort({ entryDate: -1, createdAt: -1 });
+  const balance = await getBalance(customerId);
+  return { entries, balance };
 }
 
 async function update(id, data) {
@@ -94,13 +104,13 @@ async function update(id, data) {
 
 async function remove(id) {
   const customer = await getById(id);
-  const orderCount = await SalesOrder.countDocuments({ customer: id });
-  if (orderCount > 0) {
-    throw httpError("Cannot delete customer with orders. Deactivate instead.", 409);
+  const builtyCount = await Builty.countDocuments({ customer: id });
+  if (builtyCount > 0) {
+    throw httpError("Cannot delete party with builties. Deactivate instead.", 409);
   }
   await CustomerLedgerEntry.deleteMany({ customer: id });
   await customer.deleteOne();
   return { ok: true };
 }
 
-module.exports = { create, list, getById, getWithBalance, getBalance, update, remove };
+module.exports = { create, list, getById, getWithBalance, getBalance, listLedger, update, remove };

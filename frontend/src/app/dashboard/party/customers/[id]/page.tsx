@@ -7,11 +7,10 @@ import { toast } from "sonner";
 import { ArrowLeft, Loader2, Plus } from "lucide-react";
 import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
 import {
-  builtyNo,
   getCustomer,
-  listOrders,
+  listBuilties,
+  type BuiltyRow,
   type Customer,
-  type SalesOrder,
 } from "@/lib/sales-api";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,20 +32,20 @@ export default function CustomerDetailPage() {
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [balance, setBalance] = useState(0);
   const [stats, setStats] = useState({ orderCount: 0, totalSales: 0, totalPaid: 0 });
-  const [orders, setOrders] = useState<SalesOrder[]>([]);
+  const [builties, setBuilties] = useState<BuiltyRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [detail, ords] = await Promise.all([
+      const [detail, rows] = await Promise.all([
         getCustomer(id),
-        listOrders({ customer: id }),
+        listBuilties({ customer: id }),
       ]);
       setCustomer(detail.customer);
       setBalance(detail.balance);
       setStats(detail.stats);
-      setOrders(ords);
+      setBuilties(rows);
     } catch (err) {
       toast.error(apiError(err, t("customerDetail.loadFailed")));
       setCustomer(null);
@@ -87,20 +86,19 @@ export default function CustomerDetailPage() {
             className="mb-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="size-3" />
-            {t("cus.title")}
+            {t("party.title")}
           </Link>
           <h1 className="text-nameplate text-xl">{customer.name}</h1>
           <p className="font-data mt-1 text-xs text-muted-foreground">
-            {[customer.phone].filter(Boolean).join(" · ") ||
-              t("customerDetail.noContact")}
+            {[customer.phone].filter(Boolean).join(" · ") || t("customerDetail.noContact")}
           </p>
         </div>
         <Link
-          href={`/dashboard/party/orders/new?customer=${id}`}
-          className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-base text-primary-foreground"
+          href={`/dashboard/builty/new?customer=${id}`}
+          className="inline-flex h-12 min-w-44 items-center justify-center gap-2 rounded-lg bg-primary px-8 text-base font-semibold text-primary-foreground shadow-sm"
         >
-          <Plus className="size-4" />
-          {t("customerDetail.newOrder")}
+          <Plus className="size-5" />
+          {t("builtyNew.title")}
         </Link>
       </div>
 
@@ -123,58 +121,54 @@ export default function CustomerDetailPage() {
 
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-nameplate text-sm">
-            {t("customerDetail.orderHistory")}
-          </CardTitle>
+          <CardTitle className="text-nameplate text-sm">{t("customerDetail.builtyHistory")}</CardTitle>
         </CardHeader>
         <CardContent>
-          {orders.length === 0 ? (
+          {builties.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">
-              {t("customerDetail.noOrders")}
+              {t("customerDetail.noBuilties")}
             </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>{t("orders.col.date")}</TableHead>
+                  <TableHead>{t("builty.col.no")}</TableHead>
                   <TableHead className="text-right">{t("orders.col.total")}</TableHead>
                   <TableHead className="text-right">{t("customerDetail.paid")}</TableHead>
                   <TableHead className="text-right">{t("orders.col.balance")}</TableHead>
                   <TableHead>{t("orders.col.payment")}</TableHead>
-                  <TableHead>{t("orderDetail.builty")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {orders.map((o) => (
+                {builties.map((b) => (
                   <TableRow
-                    key={o._id}
+                    key={b._id}
                     tabIndex={0}
                     className="cursor-pointer"
-                    onClick={() => router.push(`/dashboard/party/orders/${o._id}`)}
+                    onClick={() => router.push(`/dashboard/builty/${b._id}`)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
-                        router.push(`/dashboard/party/orders/${o._id}`);
+                        router.push(`/dashboard/builty/${b._id}`);
                       }
                     }}
                   >
-                    <TableCell className="font-data text-sm">{formatDate(o.orderDate)}</TableCell>
+                    <TableCell className="font-data text-sm">{formatDate(b.builtyDate)}</TableCell>
+                    <TableCell className="font-data text-sm">{b.builtyNo}</TableCell>
                     <TableCell className="font-data text-right text-sm">
-                      {formatMoney(o.totalAmount)}
+                      {formatMoney(b.totalAmount)}
                     </TableCell>
                     <TableCell className="font-data text-right text-sm">
-                      {formatMoney(o.amountPaid)}
+                      {formatMoney(b.amountPaid)}
                     </TableCell>
                     <TableCell className="font-data text-right text-sm">
-                      {formatMoney(o.balance)}
+                      {formatMoney(b.balance)}
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary" className="font-data uppercase">
-                        {o.paymentStatus}
+                        {b.paymentStatus}
                       </Badge>
-                    </TableCell>
-                    <TableCell className="font-data text-sm">
-                      {builtyNo(o.builty) || "—"}
                     </TableCell>
                   </TableRow>
                 ))}

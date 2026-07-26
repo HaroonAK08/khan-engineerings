@@ -1,6 +1,6 @@
 const FinanceEntry = require("./finance.model");
-const CustomerPayment = require("../orders/payment.model");
-const SalesOrder = require("../orders/order.model");
+const CustomerPayment = require("../customers/customer-payment.model");
+const Builty = require("../builty/builty.model");
 const Purchase = require("../purchases/purchase.model");
 const LedgerEntry = require("../ledger/ledger.model");
 const BatchExpense = require("../expenses/expense.model");
@@ -114,11 +114,7 @@ async function getOverview(query = {}) {
     materialEstimate,
   ] = await Promise.all([
     sumField(CustomerPayment, dateMatch("paymentDate", from, to), "amount"),
-    sumField(
-      SalesOrder,
-      { ...dateMatch("orderDate", from, to), status: { $ne: "cancelled" } },
-      "totalAmount"
-    ),
+    sumField(Builty, dateMatch("builtyDate", from, to), "totalAmount"),
     sumField(
       LedgerEntry,
       { ...dateMatch("entryDate", from, to), type: "payment" },
@@ -191,7 +187,7 @@ async function getOverview(query = {}) {
       net: cashFlow,
     },
     counts: {
-      salesOrders: salesInvoiced.count,
+      builties: salesInvoiced.count,
       customerPayments: customerRevenueCash.count,
       purchases: purchasesAccrual.count,
       manufacturingExpenses: manufacturingOps.count,
@@ -257,13 +253,8 @@ async function getMonthly(query = {}) {
 async function getCustomerRevenue(query = {}) {
   const { from, to } = periodBounds(query);
 
-  const byCustomer = await SalesOrder.aggregate([
-    {
-      $match: {
-        ...dateMatch("orderDate", from, to),
-        status: { $ne: "cancelled" },
-      },
-    },
+  const byCustomer = await Builty.aggregate([
+    { $match: dateMatch("builtyDate", from, to) },
     {
       $group: {
         _id: "$customer",
@@ -360,13 +351,8 @@ async function getSupplierExpenses(query = {}) {
 async function getProductProfitability(query = {}) {
   const { from, to } = periodBounds(query);
 
-  const sales = await SalesOrder.aggregate([
-    {
-      $match: {
-        ...dateMatch("orderDate", from, to),
-        status: { $ne: "cancelled" },
-      },
-    },
+  const sales = await Builty.aggregate([
+    { $match: dateMatch("builtyDate", from, to) },
     { $unwind: "$items" },
     {
       $group: {

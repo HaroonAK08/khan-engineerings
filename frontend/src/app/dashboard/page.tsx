@@ -86,7 +86,7 @@ const QUICK_ACTIONS: Array<{ href: string; labelKey: MessageKey; icon: typeof Tr
   { href: "/dashboard/expenses", labelKey: "dash.qa.expenses", icon: Receipt },
   { href: "/dashboard/inventory", labelKey: "dash.qa.purchase", icon: Truck },
   { href: "/dashboard/production", labelKey: "dash.qa.batch", icon: Factory },
-  { href: "/dashboard/party/orders/new", labelKey: "dash.qa.order", icon: Plus },
+  { href: "/dashboard/builty/new", labelKey: "dash.qa.order", icon: Plus },
   { href: "/dashboard/party", labelKey: "dash.qa.payment", icon: Banknote },
   { href: "/dashboard/claims", labelKey: "dash.qa.claim", icon: RotateCcw },
   { href: "/dashboard/reports", labelKey: "dash.qa.reports", icon: Wallet },
@@ -320,7 +320,7 @@ export default function DashboardPage() {
               <CardDescription>{t("dash.whoOwes")}</CardDescription>
             </div>
             <Link
-              href="/dashboard/party/orders/reports"
+              href="/dashboard/reports/sales"
               className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
             >
               {t("dash.viewAll")}
@@ -343,7 +343,7 @@ export default function DashboardPage() {
                     <TableRow key={o.orderId}>
                       <TableCell>
                         <Link
-                          href={`/dashboard/party/orders/${o.orderId}`}
+                          href={`/dashboard/builty/${o.orderId}`}
                           className="font-data text-xs hover:text-primary hover:underline"
                         >
                           {o.invoiceNo || o.orderNo}
