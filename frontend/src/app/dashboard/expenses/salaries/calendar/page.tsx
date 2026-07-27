@@ -25,6 +25,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { UrduPhoneticInput } from "@/components/ui/urdu-phonetic-input";
 import { Label } from "@/components/ui/label";
 import {
   Table,
@@ -492,9 +493,9 @@ export default function AllSalariesLedgerPage() {
             </div>
             <div className="flex flex-col gap-1.5">
               <Label>{t("exp.noteOptional")}</Label>
-              <Input
+              <UrduPhoneticInput
                 value={formNote}
-                onChange={(e) => setFormNote(e.target.value)}
+                onChange={setFormNote}
                 className="h-11"
                 placeholder={t("sal.notePh")}
               />

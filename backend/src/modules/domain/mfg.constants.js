@@ -49,6 +49,7 @@ const EXPENSE_CATEGORY_GROUPS = [
     items: [
       { id: "electricity", label: "Electricity" },
       { id: "lpg_gas", label: "LPG Gas" },
+      { id: "petrol", label: "Petrol" },
     ],
   },
   {

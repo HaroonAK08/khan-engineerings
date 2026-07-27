@@ -10,6 +10,7 @@ import type { BatchExpense } from "@/types/production";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { UrduPhoneticInput } from "@/components/ui/urdu-phonetic-input";
 import { Label } from "@/components/ui/label";
 import { useI18n, type MessageKey } from "@/hooks/use-i18n";
 import { todayInput } from "@/lib/date-range";
@@ -17,6 +18,7 @@ import { todayInput } from "@/lib/date-range";
 const OTHER_CATEGORIES: Array<{ id: string; labelKey: MessageKey }> = [
   { id: "paint", labelKey: "other.cat.paint" },
   { id: "lpg_gas", labelKey: "other.cat.lpg" },
+  { id: "petrol", labelKey: "other.cat.petrol" },
   { id: "silica_sand", labelKey: "other.cat.silica" },
   { id: "sheera", labelKey: "other.cat.sheera" },
   { id: "tools", labelKey: "other.cat.tools" },
@@ -47,11 +49,16 @@ export default function OtherExpensesPage() {
   const [rate, setRate] = useState("");
   const [amount, setAmount] = useState("");
   const [expenseDate, setExpenseDate] = useState(todayInput());
+  const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
 
   function selectCategory(id: string) {
     setCategory(id);
+    if (id !== "other") setTitle("");
     setTrackQuantity(categoryUsesQuantityByDefault(id));
+    if (id === "petrol" || id === "lpg_gas") {
+      setQuantityUnit("L");
+    }
     if (amountOnlyCategory(id)) {
       setQuantity("");
       setQuantityUnit("kg");
@@ -130,6 +137,11 @@ export default function OtherExpensesPage() {
         ? `@ ${rate.trim()}/${unit}`
         : "";
     const combinedNotes = [note.trim(), rateNote].filter(Boolean).join(" · ") || undefined;
+    const expenseTitle = category === "other" ? title.trim() : "";
+    if (category === "other" && !expenseTitle) {
+      toast.error(t("other.nameRequired"));
+      return;
+    }
 
     setBusyId(category);
     try {
@@ -137,6 +149,7 @@ export default function OtherExpensesPage() {
         category,
         amount: value,
         expenseDate,
+        ...(expenseTitle ? { title: expenseTitle } : {}),
         notes: combinedNotes,
         ...(trackQuantity && qty != null
           ? { quantity: qty, quantityUnit: unit }
@@ -147,6 +160,7 @@ export default function OtherExpensesPage() {
       setQuantityUnit("kg");
       setRate("");
       setAmount("");
+      setTitle("");
       setNote("");
       setExpenseDate(todayInput());
       setTrackQuantity(categoryUsesQuantityByDefault(category));
@@ -359,12 +373,23 @@ export default function OtherExpensesPage() {
               className="h-11"
             />
           </div>
+          {category === "other" ? (
+            <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-4">
+              <Label>{t("other.expenseName")}</Label>
+              <UrduPhoneticInput
+                placeholder={t("other.phExpenseName")}
+                value={title}
+                onChange={setTitle}
+                className="h-11"
+              />
+            </div>
+          ) : null}
           <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-4">
             <Label>{t("exp.noteOptional")}</Label>
-            <Input
+            <UrduPhoneticInput
               placeholder={t("other.phDetails")}
               value={note}
-              onChange={(e) => setNote(e.target.value)}
+              onChange={setNote}
               className="h-11"
             />
           </div>

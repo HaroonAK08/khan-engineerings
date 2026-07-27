@@ -24,6 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { UrduPhoneticInput } from "@/components/ui/urdu-phonetic-input";
 import { Label } from "@/components/ui/label";
 import {
   Table,
@@ -88,6 +89,7 @@ export function ExpenseCalendar({
     defaultCategory || categoryIds[0] || "other"
   );
   const [formAmount, setFormAmount] = useState("");
+  const [formTitle, setFormTitle] = useState("");
   const [formNote, setFormNote] = useState("");
   const [formDate, setFormDate] = useState("");
   const [saving, setSaving] = useState(false);
@@ -99,6 +101,10 @@ export function ExpenseCalendar({
       if (found) return t(found.labelKey);
     }
     return fallbackDetail;
+  }
+
+  function expenseLabel(e: BatchExpense) {
+    return e.title?.trim() || e.notes?.trim() || categoryLabel(e.category);
   }
 
   const load = useCallback(async () => {
@@ -134,6 +140,7 @@ export function ExpenseCalendar({
     setEditing(null);
     setFormCategory(defaultCategory || categoryIds[0] || "other");
     setFormAmount("");
+    setFormTitle("");
     setFormNote("");
     setFormDate(todayInput());
     setDialogOpen(true);
@@ -144,6 +151,7 @@ export function ExpenseCalendar({
     setEditing(e);
     setFormCategory(e.category);
     setFormAmount(String(e.amount));
+    setFormTitle(e.title?.trim() || "");
     setFormNote(e.notes?.trim() || "");
     setFormDate(toDateInput(new Date(e.expenseDate)));
     setDialogOpen(true);
@@ -166,6 +174,9 @@ export function ExpenseCalendar({
           category: formCategory,
           amount,
           expenseDate: formDate,
+          ...(formCategory === "other" && formTitle.trim()
+            ? { title: formTitle.trim() }
+            : {}),
           notes: formNote.trim() || undefined,
         });
         toast.success(t("exp.entryAdded"));
@@ -173,6 +184,7 @@ export function ExpenseCalendar({
         await updateFactoryExpense(editing._id, {
           amount,
           expenseDate: formDate,
+          title: formCategory === "other" ? formTitle.trim() : "",
           notes: formNote.trim(),
           ...(multiCategory ? { category: formCategory } : {}),
         });
@@ -390,12 +402,13 @@ export function ExpenseCalendar({
                       {formatDate(e.expenseDate)}
                     </TableCell>
                     <TableCell>
-                      <span className="font-medium">
-                        {e.notes?.trim() || categoryLabel(e.category)}
-                      </span>
-                      {multiCategory || (e.notes?.trim() && e.notes.trim() !== categoryLabel(e.category)) ? (
+                      <span className="font-medium">{expenseLabel(e)}</span>
+                      {multiCategory ||
+                      (e.title?.trim() && e.title.trim() !== categoryLabel(e.category)) ||
+                      (e.notes?.trim() && e.notes.trim() !== expenseLabel(e)) ? (
                         <p className="text-xs text-muted-foreground">
                           {categoryLabel(e.category)}
+                          {e.notes?.trim() && e.title?.trim() ? ` · ${e.notes.trim()}` : ""}
                         </p>
                       ) : null}
                     </TableCell>
@@ -494,11 +507,22 @@ export function ExpenseCalendar({
                 className="h-11"
               />
             </div>
+            {formCategory === "other" ? (
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("other.expenseName")}</Label>
+                <UrduPhoneticInput
+                  value={formTitle}
+                  onChange={setFormTitle}
+                  className="h-11"
+                  placeholder={t("other.phExpenseName")}
+                />
+              </div>
+            ) : null}
             <div className="flex flex-col gap-1.5">
               <Label>{t("exp.noteOptional")}</Label>
-              <Input
+              <UrduPhoneticInput
                 value={formNote}
-                onChange={(e) => setFormNote(e.target.value)}
+                onChange={setFormNote}
                 className="h-11"
               />
             </div>

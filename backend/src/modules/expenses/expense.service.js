@@ -74,6 +74,7 @@ function validateExpenseBody(data, { requireStage = true } = {}) {
     category: data.category,
     amount: roundMoney(amount),
     expenseDate: parseDate(data.expenseDate || new Date(), "Expense date"),
+    title: typeof data.title === "string" ? data.title.trim().slice(0, 120) : "",
     notes: data.notes?.trim() || "",
     quantity,
     quantityUnit,
@@ -121,6 +122,7 @@ async function createOverhead(data) {
     category: fields.category,
     amount: fields.amount,
     expenseDate: fields.expenseDate,
+    title: fields.title,
     notes: fields.notes,
   };
   if (fields.stage) doc.stage = fields.stage;
@@ -143,6 +145,7 @@ async function update(expenseId, data) {
     category: data.category ?? expense.category,
     amount: data.amount ?? expense.amount,
     expenseDate: data.expenseDate ?? expense.expenseDate,
+    title: data.title !== undefined ? data.title : expense.title,
     notes: data.notes !== undefined ? data.notes : expense.notes,
     quantity: data.quantity !== undefined ? data.quantity : expense.quantity,
     quantityUnit:

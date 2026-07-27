@@ -140,6 +140,7 @@ export type BatchExpense = {
   category: ExpenseCategoryId;
   amount: number;
   expenseDate: string;
+  title?: string;
   notes: string;
   worker?:
     | string

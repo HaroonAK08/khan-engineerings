@@ -10,6 +10,7 @@ import type { BatchExpense } from "@/types/production";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { UrduPhoneticInput } from "@/components/ui/urdu-phonetic-input";
 import { Label } from "@/components/ui/label";
 import { useI18n } from "@/hooks/use-i18n";
 import { todayInput } from "@/lib/date-range";
@@ -130,10 +131,10 @@ export default function TaxesExpensesPage() {
           </div>
           <div className="flex flex-col gap-1.5">
             <Label>{t("exp.noteOptional")}</Label>
-            <Input
+            <UrduPhoneticInput
               placeholder={t("tax.phNote")}
               value={note}
-              onChange={(e) => setNote(e.target.value)}
+              onChange={setNote}
               className="h-11"
             />
           </div>

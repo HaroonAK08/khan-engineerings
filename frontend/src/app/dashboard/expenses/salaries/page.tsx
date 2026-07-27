@@ -19,6 +19,7 @@ import type { BatchExpense } from "@/types/production";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { UrduPhoneticInput } from "@/components/ui/urdu-phonetic-input";
 import { Label } from "@/components/ui/label";
 import { useI18n } from "@/hooks/use-i18n";
 import { todayInput } from "@/lib/date-range";
@@ -310,19 +311,21 @@ export default function SalariesPage() {
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <Label>{t("sal.nameUr")}</Label>
-                  <Input
+                  <UrduPhoneticInput
                     placeholder={t("sal.phNameUr")}
                     value={newNameUr}
-                    onChange={(e) => setNewNameUr(e.target.value)}
-                    dir="rtl"
+                    onChange={setNewNameUr}
                   />
+                  {isUrdu && (
+                    <p className="text-[11px] text-muted-foreground">{t("common.urduTypeHint")}</p>
+                  )}
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <Label>{t("sal.job")}</Label>
-                  <Input
+                  <UrduPhoneticInput
                     placeholder={t("sal.phJob")}
                     value={newJob}
-                    onChange={(e) => setNewJob(e.target.value)}
+                    onChange={setNewJob}
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
@@ -434,19 +437,23 @@ export default function SalariesPage() {
                             </div>
                             <div className="flex flex-col gap-1.5">
                               <Label>{t("sal.nameUr")}</Label>
-                              <Input
+                              <UrduPhoneticInput
                                 placeholder={t("sal.phNameUr")}
                                 value={editNameUr}
-                                onChange={(e) => setEditNameUr(e.target.value)}
-                                dir="rtl"
+                                onChange={setEditNameUr}
                               />
+                              {isUrdu && (
+                                <p className="text-[11px] text-muted-foreground">
+                                  {t("common.urduTypeHint")}
+                                </p>
+                              )}
                             </div>
                             <div className="flex flex-col gap-1.5">
                               <Label>{t("sal.job")}</Label>
-                              <Input
+                              <UrduPhoneticInput
                                 placeholder={t("sal.phJob")}
                                 value={editJob}
-                                onChange={(e) => setEditJob(e.target.value)}
+                                onChange={setEditJob}
                               />
                             </div>
                             <div className="flex flex-col gap-1.5">
@@ -510,9 +517,9 @@ export default function SalariesPage() {
                             </div>
                             <div className="flex flex-col gap-1.5 sm:col-span-3">
                               <Label>{t("exp.noteOptional")}</Label>
-                              <Input
+                              <UrduPhoneticInput
                                 value={payNote}
-                                onChange={(e) => setPayNote(e.target.value)}
+                                onChange={setPayNote}
                                 className="h-11"
                                 placeholder={t("sal.notePh")}
                               />

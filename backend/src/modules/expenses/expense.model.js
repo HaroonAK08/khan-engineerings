@@ -15,6 +15,8 @@ const batchExpenseSchema = new mongoose.Schema(
     category: { type: String, enum: CATEGORY_IDS, required: true, index: true },
     amount: { type: Number, required: true, min: 0 },
     expenseDate: { type: Date, required: true, index: true },
+    /** Short label for miscellaneous / other expenses */
+    title: { type: String, trim: true, default: "" },
     notes: { type: String, trim: true, default: "" },
     /** Optional purchase qty for paint/tools/etc. (factory overhead) */
     quantity: { type: Number, min: 0, default: null },

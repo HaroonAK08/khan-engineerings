@@ -20,6 +20,7 @@ export async function createFactoryExpense(body: {
   amount: number;
   expenseDate: string;
   stage?: string;
+  title?: string;
   notes?: string;
   quantity?: number;
   quantityUnit?: string;
@@ -33,6 +34,7 @@ export async function updateFactoryExpense(
   body: Partial<{
     amount: number;
     expenseDate: string;
+    title: string;
     notes: string;
     category: string;
     stage: string;
