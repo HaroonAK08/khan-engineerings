@@ -240,7 +240,7 @@ export function Sidebar() {
   const { t } = useI18n();
 
   return (
-    <aside className="hidden h-svh w-80 shrink-0 flex-col border-e border-sidebar-border bg-sidebar text-sidebar-foreground shadow-[4px_0_24px_-12px_rgba(0,0,0,0.08)] md:flex">
+    <aside className="hidden h-svh w-72 shrink-0 flex-col border-e border-sidebar-border bg-sidebar text-sidebar-foreground shadow-[4px_0_24px_-12px_rgba(0,0,0,0.08)] md:flex lg:w-80">
       <SidebarBrand />
       <SidebarNav />
       <div className="border-t border-sidebar-border px-5 py-3">

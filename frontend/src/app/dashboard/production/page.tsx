@@ -233,6 +233,16 @@ export default function ProductionPage() {
         ? stock?.byMaterial?.scrap?.availableKg ?? stock?.availableKg ?? stock?.totalKg ?? 0
         : null;
 
+  const hubProductCount = useMemo(
+    () => products.filter((product) => product.family === "hub").length,
+    [products]
+  );
+
+  const drumProductCount = useMemo(
+    () => products.filter((product) => product.family === "drum").length,
+    [products]
+  );
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -249,7 +259,7 @@ export default function ProductionPage() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card className="relative overflow-hidden py-0">
           <span className="absolute inset-x-0 top-0 h-1 bg-chart-1" aria-hidden />
           <CardContent className="p-5">
@@ -283,6 +293,24 @@ export default function ProductionPage() {
               {t("prod.productsStat")}
             </p>
             <p className="font-data mt-2 text-2xl font-medium">{products.length}</p>
+          </CardContent>
+        </Card>
+        <Card className="relative overflow-hidden py-0">
+          <span className="absolute inset-x-0 top-0 h-1 bg-chart-4" aria-hidden />
+          <CardContent className="p-5">
+            <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
+              {t("prod.availableFamilies")}
+            </p>
+            <div className="mt-2 space-y-1">
+              <p className="flex items-center justify-between gap-3">
+                <span className="text-sm text-muted-foreground">{t("prod.hubAvailable")}</span>
+                <span className="font-data text-xl font-medium">{hubProductCount}</span>
+              </p>
+              <p className="flex items-center justify-between gap-3">
+                <span className="text-sm text-muted-foreground">{t("prod.drumAvailable")}</span>
+                <span className="font-data text-xl font-medium">{drumProductCount}</span>
+              </p>
+            </div>
           </CardContent>
         </Card>
       </div>

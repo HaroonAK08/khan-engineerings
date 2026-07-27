@@ -261,23 +261,23 @@ export default function ProductsPage() {
           ) : products.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">{t("productsPage.empty")}</p>
           ) : (
-            <Table>
+            <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead>{t("common.name")}</TableHead>
-                  <TableHead>{t("prod.family")}</TableHead>
-                  <TableHead className="text-right">{t("productsPage.makeCost")}</TableHead>
-                  <TableHead className="text-right">{t("prod.col.onHand")}</TableHead>
-                  <TableHead className="text-right">{t("common.actions")}</TableHead>
+                  <TableHead className="w-[35%]">{t("common.name")}</TableHead>
+                  <TableHead className="w-[16%]">{t("prod.family")}</TableHead>
+                  <TableHead className="w-[16%] text-right">{t("productsPage.makeCost")}</TableHead>
+                  <TableHead className="w-[13%] text-right">{t("prod.col.onHand")}</TableHead>
+                  <TableHead className="w-[20%] text-right">{t("common.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {products.map((p) => (
                   <TableRow key={p._id}>
-                    <TableCell>
-                      <div className="font-medium">{p.name}</div>
+                    <TableCell className="whitespace-normal">
+                      <div className="font-medium break-words">{p.name}</div>
                       {p.sku ? (
-                        <div className="font-data text-[10px] text-muted-foreground">{p.sku}</div>
+                        <div className="font-data break-all text-[10px] text-muted-foreground">{p.sku}</div>
                       ) : null}
                     </TableCell>
                     <TableCell>
@@ -292,14 +292,14 @@ export default function ProductsPage() {
                       {stockByProduct.get(p._id) || 0}
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button size="sm" variant="ghost" onClick={() => openEdit(p)}>
+                      <div className="flex flex-col items-end gap-1 md:flex-row md:justify-end">
+                        <Button size="sm" variant="ghost" className="px-2" onClick={() => openEdit(p)}>
                           {t("sup.edit")}
                         </Button>
                         <Button
                           size="sm"
                           variant="ghost"
-                          className={p.isActive ? "text-destructive hover:text-destructive" : undefined}
+                          className={`px-2 ${p.isActive ? "text-destructive hover:text-destructive" : ""}`}
                           onClick={() => toggleActive(p)}
                         >
                           {p.isActive ? t("productsPage.delete") : t("sup.activate")}
