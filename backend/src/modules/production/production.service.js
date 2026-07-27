@@ -622,9 +622,140 @@ async function remove(id) {
   return { ok: true };
 }
 
+async function updateProduce(id, data) {
+  const batch = await ProductionBatch.findById(id);
+  if (!batch) throw httpError("Production batch not found", 404);
+  if (batch.status !== "completed") {
+    throw httpError("Only completed produce runs can be updated this way", 400);
+  }
+
+  const productId =
+    data.productId || data.product || batch.outputs?.[0]?.product || batch.product;
+  if (!productId) throw httpError("Product is required", 400);
+
+  const product = await Product.findById(productId);
+  if (!product) throw httpError("Product not found", 404);
+  if (product.isActive === false) throw httpError("Product is inactive", 400);
+
+  const weightKg = Number(product.weightKg);
+  if (!Number.isFinite(weightKg) || weightKg <= 0) {
+    throw httpError(
+      `Set weight (kg) on product "${product.name}" first — material use is calculated from piece weight.`,
+      400
+    );
+  }
+
+  const quantity = Math.round(
+    assertNonNeg(
+      data.quantity !== undefined ? data.quantity : batch.outputs?.[0]?.quantity || batch.goodUnits,
+      "Quantity"
+    )
+  );
+  if (quantity <= 0) throw httpError("Quantity must be greater than 0", 400);
+
+  let wastePercent = data.wastePercent;
+  if (wastePercent === undefined || wastePercent === null || wastePercent === "") {
+    const prevCharged = Number(batch.inputs?.[0]?.quantityKg) || 0;
+    const prevWaste = Number(batch.furnaceWasteKg) || 0;
+    const prevMetal = roundKg(Math.max(0, prevCharged - prevWaste));
+    wastePercent = prevMetal > 0 ? roundKg((prevWaste / prevMetal) * 100) : 6;
+  }
+  wastePercent = Number(wastePercent);
+  if (!Number.isFinite(wastePercent) || wastePercent < 0 || wastePercent >= 100) {
+    throw httpError("Waste % must be between 0 and 99", 400);
+  }
+
+  const family = product.family;
+  if (!PRODUCT_FAMILY_IDS.includes(family)) {
+    throw httpError("Product family must be hub or drum", 400);
+  }
+
+  let materialType =
+    data.materialType ||
+    batch.inputs?.[0]?.materialType ||
+    (family === "drum" ? "daig" : "scrap");
+  if (!INPUT_MATERIAL_TYPE_IDS.includes(materialType)) {
+    throw httpError("Invalid material type", 400);
+  }
+
+  const metalKg = roundKg(quantity * weightKg);
+  const wasteKg = roundKg(metalKg * (wastePercent / 100));
+  const chargedKg = roundKg(metalKg + wasteKg);
+
+  const available = await getAvailableMaterialKg(materialType, batch._id);
+  if (chargedKg > available + 1e-9) {
+    throw httpError(
+      `Insufficient ${materialType} stock. Available ${available} kg, need ${chargedKg} kg`,
+      400
+    );
+  }
+
+  const productionDate = parseDate(
+    data.productionDate || batch.productionDate || new Date(),
+    "Production date"
+  );
+
+  const inventoryService = require("../inventory/inventory.service");
+  await inventoryService.onBatchDeleted(batch._id);
+
+  batch.family = family;
+  batch.productionDate = productionDate;
+  batch.inputs = [{ materialType, quantityKg: chargedKg }];
+  batch.outputs = [{ product: product._id, quantity, family }];
+  batch.furnaceWasteKg = wasteKg;
+  batch.outputProgress = [
+    {
+      product: product._id,
+      furnaceQty: quantity,
+      goodAfterTurning: quantity,
+      brokenAfterTurning: 0,
+      finishedQty: quantity,
+    },
+  ];
+  batch.product = product._id;
+  batch.goodUnits = quantity;
+  batch.rejectedUnits = 0;
+  if (data.notes !== undefined) batch.notes = String(data.notes || "").trim();
+  await batch.save();
+
+  await inventoryService.onBatchInputsConsumed(batch);
+  await inventoryService.onBatchFinished(batch);
+
+  try {
+    await updateProductStandardCosts(batch);
+  } catch (e) {
+    console.error("standardCost update failed:", e.message);
+  }
+
+  const populated = await populateBatch(batch._id);
+  const obj = populated.toObject ? populated.toObject({ virtuals: true }) : populated;
+  obj.produceCalc = {
+    metalKg,
+    wastePercent,
+    wasteKg,
+    chargedKg,
+    materialType,
+    availableAfter: roundKg(available - chargedKg),
+  };
+  return obj;
+}
+
 async function update(id, data) {
   const batch = await ProductionBatch.findById(id);
   if (!batch) throw httpError("Production batch not found", 404);
+
+  const isProduceEdit =
+    batch.status === "completed" &&
+    (data.quantity !== undefined ||
+      data.productId !== undefined ||
+      data.product !== undefined ||
+      data.wastePercent !== undefined ||
+      data.materialType !== undefined);
+
+  if (isProduceEdit) {
+    return updateProduce(id, data);
+  }
+
   if (batch.status !== "in_progress") throw httpError("Only in-progress batches can be edited", 400);
   if (data.notes !== undefined) batch.notes = data.notes.trim();
   if (data.productionDate !== undefined) {
@@ -753,12 +884,132 @@ async function getReport({ dateFrom, dateTo, family } = {}) {
   };
 }
 
+async function getProductReport(productId, { dateFrom, dateTo } = {}) {
+  if (!productId) throw httpError("Product is required", 400);
+  const product = await Product.findById(productId).lean();
+  if (!product) throw httpError("Product not found", 404);
+
+  const filter = {
+    status: { $ne: "cancelled" },
+    $or: [{ "outputs.product": productId }, { product: productId }],
+  };
+  if (dateFrom || dateTo) {
+    filter.productionDate = {};
+    if (dateFrom) filter.productionDate.$gte = parseDate(dateFrom, "dateFrom");
+    if (dateTo) {
+      const end = parseDate(dateTo, "dateTo");
+      end.setHours(23, 59, 59, 999);
+      filter.productionDate.$lte = end;
+    }
+  }
+
+  const batches = await ProductionBatch.find(filter)
+    .populate("outputs.product", "name sku family weightKg")
+    .populate("product", "name sku")
+    .sort({ productionDate: 1, createdAt: 1 })
+    .lean();
+
+  const runs = [];
+  const byDateMap = new Map();
+  let totalPieces = 0;
+  let totalUsedKg = 0;
+  let totalWasteKg = 0;
+
+  for (const batch of batches) {
+    let qty = 0;
+    let batchOutputQty = 0;
+    for (const out of batch.outputs || []) {
+      const outQty = out.quantity || 0;
+      batchOutputQty += outQty;
+      const pid = String(out.product?._id || out.product || "");
+      if (pid === String(productId)) qty += outQty;
+    }
+    if (qty <= 0 && String(batch.product?._id || batch.product || "") === String(productId)) {
+      qty = batch.goodUnits || 0;
+      batchOutputQty = Math.max(batchOutputQty, qty);
+    }
+    if (qty <= 0) continue;
+
+    const batchUsedKg =
+      Array.isArray(batch.inputs) && batch.inputs.length
+        ? batch.inputs.reduce((s, i) => s + (i.quantityKg || 0), 0)
+        : batch.inputScrapKg || 0;
+    const batchWasteKg = Number(batch.furnaceWasteKg || batch.materialLossKg) || 0;
+    const share = batchOutputQty > 0 ? qty / batchOutputQty : 1;
+    const usedKg = roundKg(batchUsedKg * share);
+    const wasteKg = roundKg(batchWasteKg * share);
+    const metalKg = Math.max(0, usedKg - wasteKg);
+    const wastePercent =
+      metalKg > 0 ? Math.round((wasteKg / metalKg) * 1000) / 10 : 0;
+    const dateKey = new Date(batch.productionDate).toISOString().slice(0, 10);
+
+    const run = {
+      id: String(batch._id),
+      batchNo: batch.batchNo,
+      productionDate: batch.productionDate,
+      date: dateKey,
+      quantity: qty,
+      usedKg,
+      wasteKg,
+      wastePercent,
+      materialType: batch.inputs?.[0]?.materialType || "scrap",
+      status: batch.status,
+    };
+    runs.push(run);
+
+    totalPieces += qty;
+    totalUsedKg += usedKg;
+    totalWasteKg += wasteKg;
+
+    const day = byDateMap.get(dateKey) || {
+      date: dateKey,
+      runs: 0,
+      quantity: 0,
+      usedKg: 0,
+      wasteKg: 0,
+    };
+    day.runs += 1;
+    day.quantity += qty;
+    day.usedKg = roundKg(day.usedKg + usedKg);
+    day.wasteKg = roundKg(day.wasteKg + wasteKg);
+    byDateMap.set(dateKey, day);
+  }
+
+  const byDate = Array.from(byDateMap.values()).sort((a, b) =>
+    a.date.localeCompare(b.date)
+  );
+
+  return {
+    product: {
+      id: String(product._id),
+      name: product.name,
+      sku: product.sku || "",
+      family: product.family,
+      weightKg: product.weightKg ?? null,
+    },
+    period: { from: dateFrom || null, to: dateTo || null },
+    totals: {
+      runCount: runs.length,
+      pieces: totalPieces,
+      usedKg: roundKg(totalUsedKg),
+      wasteKg: roundKg(totalWasteKg),
+      wastePercent:
+        totalUsedKg - totalWasteKg > 0
+          ? Math.round((totalWasteKg / (totalUsedKg - totalWasteKg)) * 1000) / 10
+          : 0,
+    },
+    byDate,
+    runs,
+  };
+}
+
 module.exports = {
   produce,
   create,
   list,
   getById,
   update,
+  updateProduce,
   remove,
   recordFurnace,
   recordTurning,
@@ -766,6 +1017,7 @@ module.exports = {
   finishBatch,
   cancelBatch,
   getReport,
+  getProductReport,
   getAvailableStockKg,
   getAvailableMaterialKg,
   sumNetConsumedKg,

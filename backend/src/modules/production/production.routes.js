@@ -10,6 +10,7 @@ router.use(requireAuth);
 router.get("/meta", expenseController.meta);
 router.get("/cost-reports", expenseController.costReport);
 router.get("/reports", controller.report);
+router.get("/reports/products/:productId", controller.productReport);
 
 router.get("/", controller.list);
 router.post("/produce", controller.produce);

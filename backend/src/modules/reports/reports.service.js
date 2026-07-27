@@ -342,6 +342,9 @@ async function exportPurchases(query, format, res) {
 }
 
 async function exportProduction(query, format, res) {
+  if (query.product) {
+    return exportProductionProduct(query.product, query, format, res);
+  }
   const report = await productionService.getReport(query);
   const columns = ["Product", "Batches", "Good", "Rejected", "Net kg"];
   const rows = (report.byProduct || []).map((p) => [
@@ -370,6 +373,57 @@ async function exportProduction(query, format, res) {
   }
   const buf = await buildExcel({ title, sheetName: "Production", columns, rows, meta });
   return sendExcel(res, buf, "production-report.xlsx");
+}
+
+async function exportProductionProduct(productId, query, format, res) {
+  const report = await productionService.getProductReport(productId, query);
+  const columns = ["Date", "Runs", "Pieces", "Used kg", "Waste kg"];
+  const rows = (report.byDate || []).map((d) => [
+    d.date,
+    d.runs,
+    d.quantity,
+    d.usedKg,
+    d.wasteKg,
+  ]);
+  const detailColumns = ["Date", "Pieces", "Used kg", "Waste kg", "Waste %", "Material"];
+  const detailRows = (report.runs || []).map((r) => [
+    r.date,
+    r.quantity,
+    r.usedKg,
+    r.wasteKg,
+    `${r.wastePercent}%`,
+    r.materialType,
+  ]);
+  const meta = {
+    Product: report.product.name,
+    Family: report.product.family || "",
+    Period: periodLabel(query.dateFrom, query.dateTo),
+    Runs: report.totals.runCount,
+    Pieces: report.totals.pieces,
+    "Used kg": report.totals.usedKg,
+    "Waste %": `${report.totals.wastePercent}%`,
+  };
+  const title = `Production — ${report.product.name}`;
+  if (format === "pdf") {
+    const buf = await buildPdf({
+      title,
+      subtitle: "Khan Engineerings",
+      metaLines: Object.entries(meta).map(([k, v]) => `${k}: ${v}`),
+      sections: [
+        { heading: "By date", columns, rows },
+        { heading: "Run details", columns: detailColumns, rows: detailRows },
+      ],
+    });
+    return sendPdf(res, buf, `production-${report.product.name.replace(/[^\w.-]+/g, "_")}.pdf`);
+  }
+  const buf = await buildExcel({
+    title,
+    sheetName: "By date",
+    columns,
+    rows,
+    meta,
+  });
+  return sendExcel(res, buf, `production-${report.product.name.replace(/[^\w.-]+/g, "_")}.xlsx`);
 }
 
 async function exportExpenses(query, format, res) {

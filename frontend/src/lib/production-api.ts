@@ -86,6 +86,32 @@ export async function createBatch(body: {
   return data.batch;
 }
 
+export async function updateProduce(
+  id: string,
+  body: {
+    productId?: string;
+    quantity?: number;
+    wastePercent?: number;
+    materialType?: "scrap" | "daig";
+    productionDate?: string;
+    notes?: string;
+  }
+) {
+  const { data } = await api.patch<{
+    batch: ProductionBatch & {
+      produceCalc?: {
+        metalKg: number;
+        wastePercent: number;
+        wasteKg: number;
+        chargedKg: number;
+        materialType: string;
+        availableAfter: number;
+      };
+    };
+  }>(`/production/${id}`, body);
+  return data.batch;
+}
+
 export async function deleteBatch(id: string) {
   await api.delete(`/production/${id}`);
 }
@@ -96,6 +122,54 @@ export async function getProductionReport(params?: {
   family?: string;
 }) {
   const { data } = await api.get<{ report: ProductionReport }>("/production/reports", { params });
+  return data.report;
+}
+
+export type ProductProductionReport = {
+  product: {
+    id: string;
+    name: string;
+    sku: string;
+    family: "hub" | "drum" | string;
+    weightKg: number | null;
+  };
+  period: { from: string | null; to: string | null };
+  totals: {
+    runCount: number;
+    pieces: number;
+    usedKg: number;
+    wasteKg: number;
+    wastePercent: number;
+  };
+  byDate: Array<{
+    date: string;
+    runs: number;
+    quantity: number;
+    usedKg: number;
+    wasteKg: number;
+  }>;
+  runs: Array<{
+    id: string;
+    batchNo: string;
+    productionDate: string;
+    date: string;
+    quantity: number;
+    usedKg: number;
+    wasteKg: number;
+    wastePercent: number;
+    materialType: string;
+    status: string;
+  }>;
+};
+
+export async function getProductProductionReport(
+  productId: string,
+  params?: { dateFrom?: string; dateTo?: string }
+) {
+  const { data } = await api.get<{ report: ProductProductionReport }>(
+    `/production/reports/products/${productId}`,
+    { params }
+  );
   return data.report;
 }
 

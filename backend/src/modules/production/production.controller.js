@@ -63,6 +63,15 @@ async function report(req, res, next) {
   }
 }
 
+async function productReport(req, res, next) {
+  try {
+    const report = await productionService.getProductReport(req.params.productId, req.query);
+    res.json({ report });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function furnace(req, res, next) {
   try {
     const batch = await productionService.recordFurnace(req.params.id, req.body);
@@ -116,6 +125,7 @@ module.exports = {
   update,
   remove,
   report,
+  productReport,
   furnace,
   turning,
   advance,

@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { ReportsSubnav } from "@/components/layout/reports-subnav";
@@ -24,9 +26,10 @@ import { useI18n } from "@/hooks/use-i18n";
 
 export default function ProductionReportsHubPage() {
   const { t } = useI18n();
+  const searchParams = useSearchParams();
   const d = currentMonthRange();
-  const [dateFrom, setDateFrom] = useState(d.from);
-  const [dateTo, setDateTo] = useState(d.to);
+  const [dateFrom, setDateFrom] = useState(searchParams.get("dateFrom") || d.from);
+  const [dateTo, setDateTo] = useState(searchParams.get("dateTo") || d.to);
   const [report, setReport] = useState<ProductionReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<"pdf" | null>(null);
@@ -120,16 +123,36 @@ export default function ProductionReportsHubPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(report.byProduct || []).map((p) => (
-                    <TableRow key={String(p.productId)}>
-                      <TableCell>{p.name}</TableCell>
-                      <TableCell className="font-data text-right text-xs">{p.batchCount}</TableCell>
-                      <TableCell className="font-data text-right text-xs">{p.goodUnits}</TableCell>
-                      <TableCell className="font-data text-right text-xs">
-                        {formatKg(p.netConsumedKg)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {(report.byProduct || []).map((p) => {
+                    const href = `/dashboard/reports/production/${p.productId}?dateFrom=${encodeURIComponent(dateFrom)}&dateTo=${encodeURIComponent(dateTo)}`;
+                    return (
+                      <TableRow
+                        key={String(p.productId)}
+                        className="cursor-pointer hover:bg-muted/50"
+                      >
+                        <TableCell>
+                          <Link href={href} className="block font-medium hover:underline">
+                            {p.name}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          <Link href={href} className="block">
+                            {p.batchCount}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          <Link href={href} className="block">
+                            {p.goodUnits}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          <Link href={href} className="block">
+                            {formatKg(p.netConsumedKg)}
+                          </Link>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </CardContent>

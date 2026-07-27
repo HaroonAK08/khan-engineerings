@@ -6,18 +6,20 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { History, Loader2, Plus, Search } from "lucide-react";
+import { ArrowLeft, Loader2, Search } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
 import { todayInput } from "@/lib/date-range";
-import { apiError, formatKg, getStock } from "@/lib/materials-api";
-import { getFinishedStock, type FinishedStockItem } from "@/lib/inventory-api";
-import { listProducts, produce } from "@/lib/production-api";
+import { apiError, formatDate, formatKg, getStock } from "@/lib/materials-api";
+import {
+  deleteBatch,
+  listBatches,
+  listProducts,
+  updateProduce,
+} from "@/lib/production-api";
 import type { StockSummary } from "@/types/materials";
 import type { Product, ProductionBatch } from "@/types/production";
-import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -46,24 +48,60 @@ const produceSchema = z.object({
 
 type ProduceForm = z.infer<typeof produceSchema>;
 
-function qtyByProduct(items: FinishedStockItem[]) {
-  const map = new Map<string, number>();
-  for (const item of items) {
-    map.set(item.productId, (map.get(item.productId) || 0) + (item.quantity || 0));
-  }
-  return map;
+function batchProductId(batch: ProductionBatch) {
+  const out = batch.outputs?.[0]?.product;
+  if (out && typeof out === "object") return out._id;
+  if (typeof out === "string") return out;
+  if (batch.product && typeof batch.product === "object") return batch.product._id;
+  if (typeof batch.product === "string") return batch.product;
+  return "";
 }
 
-export default function ProductionPage() {
+function batchProductName(batch: ProductionBatch) {
+  const out = batch.outputs?.[0]?.product;
+  if (out && typeof out === "object") return out.name;
+  if (batch.product && typeof batch.product === "object") return batch.product.name;
+  return "—";
+}
+
+function batchQty(batch: ProductionBatch) {
+  return batch.outputs?.[0]?.quantity ?? batch.goodUnits ?? 0;
+}
+
+function batchUsedKg(batch: ProductionBatch) {
+  return batch.inputs?.reduce((s, i) => s + (i.quantityKg || 0), 0) || 0;
+}
+
+function batchWastePercent(batch: ProductionBatch) {
+  const charged = Number(batch.inputs?.[0]?.quantityKg) || 0;
+  const waste = Number(batch.furnaceWasteKg) || 0;
+  const metal = Math.max(0, charged - waste);
+  if (metal <= 0) return 6;
+  return Math.round((waste / metal) * 1000) / 10;
+}
+
+function batchMaterialType(batch: ProductionBatch): "scrap" | "daig" {
+  const t = batch.inputs?.[0]?.materialType;
+  return t === "daig" ? "daig" : "scrap";
+}
+
+function toDateInput(value?: string) {
+  if (!value) return todayInput();
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return todayInput();
+  return d.toISOString().slice(0, 10);
+}
+
+export default function ProductionHistoryPage() {
   const { t } = useI18n();
   const [stock, setStock] = useState<StockSummary | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
-  const [stockByProduct, setStockByProduct] = useState<Map<string, number>>(new Map());
+  const [batches, setBatches] = useState<ProductionBatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [familyFilter, setFamilyFilter] = useState<"all" | "hub" | "drum">("all");
-  const [stockSearch, setStockSearch] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [produceFamily, setProduceFamily] = useState<"all" | "hub" | "drum">("all");
   const [productSearch, setProductSearch] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -89,6 +127,11 @@ export default function ProductionPage() {
     [products, productId]
   );
 
+  const editingBatch = useMemo(
+    () => (editingId ? batches.find((b) => b._id === editingId) || null : null),
+    [editingId, batches]
+  );
+
   const preview = useMemo(() => {
     const weight = Number(selectedProduct?.weightKg) || 0;
     const qty = Number(quantity) || 0;
@@ -105,19 +148,32 @@ export default function ProductionPage() {
     };
   }, [selectedProduct, quantity, wastePercent]);
 
+  const availableForMaterial = useMemo(() => {
+    const base =
+      materialType === "daig"
+        ? stock?.byMaterial?.daig?.availableKg ?? 0
+        : materialType === "scrap"
+          ? stock?.byMaterial?.scrap?.availableKg ?? stock?.availableKg ?? stock?.totalKg ?? 0
+          : null;
+    if (base == null) return null;
+    if (!editingBatch) return base;
+    const sameMaterial = batchMaterialType(editingBatch) === materialType;
+    return sameMaterial ? Math.round((base + batchUsedKg(editingBatch)) * 1000) / 1000 : base;
+  }, [materialType, stock, editingBatch]);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [stockData, productData, finished] = await Promise.all([
+      const [stockData, productData, batchData] = await Promise.all([
         getStock(),
         listProducts({ active: "true" }),
-        getFinishedStock(),
+        listBatches({ status: "completed" }),
       ]);
       setStock(stockData);
       setProducts(productData);
-      setStockByProduct(qtyByProduct(finished.items || []));
+      setBatches(batchData);
     } catch (err) {
-      toast.error(apiError(err, "Failed to load production"));
+      toast.error(apiError(err, "Failed to load production history"));
     } finally {
       setLoading(false);
     }
@@ -144,62 +200,6 @@ export default function ProductionPage() {
     }
   }, [produceFamily, form]);
 
-  function openProduce(product?: Product) {
-    form.reset({
-      productId: product?._id || "",
-      quantity: 1,
-      wastePercent: 6,
-      materialType: product?.family === "drum" ? "daig" : "scrap",
-      productionDate: todayInput(),
-    });
-    setProduceFamily(product?.family === "hub" || product?.family === "drum" ? product.family : "all");
-    setProductSearch("");
-    setPickerOpen(!product);
-    setDialogOpen(true);
-  }
-
-  async function onSubmit(values: ProduceForm) {
-    setSaving(true);
-    try {
-      const batch = await produce({
-        productId: values.productId,
-        quantity: values.quantity,
-        wastePercent: values.wastePercent,
-        materialType: values.materialType,
-        productionDate: values.productionDate,
-      });
-      const calc = (batch as ProductionBatch & {
-        produceCalc?: { chargedKg: number; materialType: string };
-      }).produceCalc;
-      toast.success(
-        calc
-          ? `Produced ${values.quantity} pcs · ${formatKg(calc.chargedKg)} kg ${calc.materialType} used`
-          : `Produced ${values.quantity} pcs`
-      );
-      setDialogOpen(false);
-      setPickerOpen(false);
-      await load();
-    } catch (err) {
-      toast.error(apiError(err, "Failed to produce"));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const filteredProducts = useMemo(() => {
-    let list = products;
-    if (familyFilter !== "all") {
-      list = list.filter((p) => p.family === familyFilter);
-    }
-    const q = stockSearch.trim().toLowerCase();
-    if (q) {
-      list = list.filter(
-        (p) => p.name.toLowerCase().includes(q) || p.family.toLowerCase().includes(q)
-      );
-    }
-    return list;
-  }, [products, familyFilter, stockSearch]);
-
   const produceProducts = useMemo(() => {
     let list = products;
     if (produceFamily !== "all") {
@@ -224,195 +224,144 @@ export default function ProductionPage() {
     }
   }, [produceFamily, productId, selectedProduct, form]);
 
-  const availableForMaterial =
-    materialType === "daig"
-      ? stock?.byMaterial?.daig?.availableKg ?? 0
-      : materialType === "scrap"
-        ? stock?.byMaterial?.scrap?.availableKg ?? stock?.availableKg ?? stock?.totalKg ?? 0
-        : null;
+  function openEdit(batch: ProductionBatch) {
+    const pid = batchProductId(batch);
+    const product = products.find((p) => p._id === pid);
+    form.reset({
+      productId: pid,
+      quantity: batchQty(batch) || 1,
+      wastePercent: batchWastePercent(batch),
+      materialType: batchMaterialType(batch),
+      productionDate: toDateInput(batch.productionDate),
+    });
+    setEditingId(batch._id);
+    setProduceFamily(product?.family === "hub" || product?.family === "drum" ? product.family : "all");
+    setProductSearch("");
+    setPickerOpen(false);
+    setDialogOpen(true);
+  }
 
-  const hubOnHand = useMemo(() => {
-    let total = 0;
-    for (const product of products) {
-      if (product.family === "hub") total += stockByProduct.get(product._id) || 0;
+  async function onDelete(batch: ProductionBatch) {
+    if (!confirm(t("prod.deleteConfirm"))) return;
+    setDeletingId(batch._id);
+    try {
+      await deleteBatch(batch._id);
+      toast.success(t("prod.deleted"));
+      await load();
+    } catch (err) {
+      toast.error(apiError(err, "Failed to delete production"));
+    } finally {
+      setDeletingId(null);
     }
-    return total;
-  }, [products, stockByProduct]);
+  }
 
-  const drumOnHand = useMemo(() => {
-    let total = 0;
-    for (const product of products) {
-      if (product.family === "drum") total += stockByProduct.get(product._id) || 0;
+  async function onSubmit(values: ProduceForm) {
+    if (!editingId) return;
+    setSaving(true);
+    try {
+      const batch = await updateProduce(editingId, {
+        productId: values.productId,
+        quantity: values.quantity,
+        wastePercent: values.wastePercent,
+        materialType: values.materialType,
+        productionDate: values.productionDate,
+      });
+      const calc = (
+        batch as ProductionBatch & {
+          produceCalc?: { chargedKg: number; materialType: string };
+        }
+      ).produceCalc;
+      toast.success(
+        calc
+          ? `${t("prod.updated")} · ${formatKg(calc.chargedKg)} kg ${calc.materialType}`
+          : t("prod.updated")
+      );
+      setDialogOpen(false);
+      setEditingId(null);
+      await load();
+    } catch (err) {
+      toast.error(apiError(err, "Failed to update"));
+    } finally {
+      setSaving(false);
     }
-    return total;
-  }, [products, stockByProduct]);
+  }
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
-            {t("prod.eyebrow")}
-          </p>
-          <h1 className="text-nameplate text-xl">{t("prod.title")}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{t("prod.subtitle")}</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Link
-            href="/dashboard/production/history"
-            className={cn(buttonVariants({ variant: "outline" }), "gap-2")}
-          >
-            <History className="size-4" />
-            {t("prod.historyBtn")}
-          </Link>
-          <Button type="button" className="gap-2" onClick={() => openProduce()}>
-            <Plus className="size-4" />
-            {t("prod.produceBtn")}
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Card className="relative overflow-hidden py-0">
-          <span className="absolute inset-x-0 top-0 h-1 bg-chart-1" aria-hidden />
-          <CardContent className="p-5">
-            <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
-              {t("prod.scrapAvailable")}
-            </p>
-            <p className="font-data mt-2 text-2xl font-medium">
-              {stock
-                ? `${formatKg(stock.byMaterial?.scrap?.availableKg ?? stock.availableKg ?? stock.totalKg)} kg`
-                : "—"}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="relative overflow-hidden py-0">
-          <span className="absolute inset-x-0 top-0 h-1 bg-chart-2" aria-hidden />
-          <CardContent className="p-5">
-            <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
-              {t("prod.daigAvailable")}
-            </p>
-            <p className="font-data mt-2 text-2xl font-medium">
-              {stock?.byMaterial?.daig
-                ? `${formatKg(stock.byMaterial.daig.availableKg ?? 0)} kg`
-                : "—"}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="relative overflow-hidden py-0">
-          <span className="absolute inset-x-0 top-0 h-1 bg-chart-3" aria-hidden />
-          <CardContent className="p-5">
-            <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
-              {t("prod.productsStat")}
-            </p>
-            <p className="font-data mt-2 text-2xl font-medium">{products.length}</p>
-          </CardContent>
-        </Card>
+      <div>
         <Link
-          href="/dashboard/inventory/finished"
-          className="block rounded-xl outline-none transition-opacity hover:opacity-90 focus-visible:ring-3 focus-visible:ring-ring/50"
+          href="/dashboard/production"
+          className="mb-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
         >
-          <Card className="relative overflow-hidden py-0">
-            <span className="absolute inset-x-0 top-0 h-1 bg-chart-4" aria-hidden />
-            <CardContent className="p-5">
-              <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
-                {t("prod.availableFamilies")}
-              </p>
-              <div className="mt-2 space-y-1">
-                <p className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-muted-foreground">{t("prod.hubAvailable")}</span>
-                  <span className="font-data text-xl font-medium">{hubOnHand}</span>
-                </p>
-                <p className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-muted-foreground">{t("prod.drumAvailable")}</span>
-                  <span className="font-data text-xl font-medium">{drumOnHand}</span>
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+          <ArrowLeft className="size-3" />
+          {t("prod.title")}
         </Link>
+        <h1 className="text-nameplate text-xl">{t("prod.historyTitle")}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{t("prod.historyDesc")}</p>
       </div>
 
       <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <CardTitle className="text-nameplate text-sm">{t("prod.stockTitle")}</CardTitle>
-            <CardDescription>{t("prod.stockDesc")}</CardDescription>
-          </div>
-          <div className="flex gap-2">
-            <div className="relative">
-              <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                className="h-11 w-full pl-9 sm:w-56"
-                placeholder={t("prod.searchProduct")}
-                value={stockSearch}
-                onChange={(e) => setStockSearch(e.target.value)}
-              />
-            </div>
-            <select
-              className="h-11 rounded-lg border border-input bg-transparent px-3 text-base dark:bg-input/30"
-              value={familyFilter}
-              onChange={(e) => setFamilyFilter(e.target.value as "all" | "hub" | "drum")}
-            >
-              <option value="all">{t("prod.filter.all")}</option>
-              <option value="hub">{t("prod.hub")}</option>
-              <option value="drum">{t("prod.drum")}</option>
-            </select>
-          </div>
+        <CardHeader>
+          <CardTitle className="text-nameplate text-sm">{t("prod.historyTitle")}</CardTitle>
+          <CardDescription>{t("prod.historyDesc")}</CardDescription>
         </CardHeader>
         <CardContent>
           {loading ? (
             <div className="flex justify-center py-12">
               <Loader2 className="size-6 animate-spin text-primary" />
             </div>
-          ) : filteredProducts.length === 0 ? (
-            <p className="py-10 text-center text-sm text-muted-foreground">
-              {t("prod.noProducts")}{" "}
-              <Link href="/dashboard/products" className="underline">
-                {t("prod.products")}
-              </Link>
-            </p>
+          ) : batches.length === 0 ? (
+            <p className="py-10 text-center text-sm text-muted-foreground">{t("prod.noRecent")}</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>{t("prod.col.product")}</TableHead>
-                  <TableHead>{t("prod.col.family")}</TableHead>
-                  <TableHead className="text-right">{t("prod.col.weight")}</TableHead>
-                  <TableHead className="text-right">{t("prod.col.onHand")}</TableHead>
-                  <TableHead />
+                  <TableHead className="text-right">{t("prod.col.qty")}</TableHead>
+                  <TableHead className="text-right">{t("prod.col.usedKg")}</TableHead>
+                  <TableHead>{t("prod.col.date")}</TableHead>
+                  <TableHead className="text-right">{t("prod.col.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredProducts.map((p) => {
-                  const onHand = stockByProduct.get(p._id) || 0;
-                  const hasWeight = Number(p.weightKg) > 0;
-                  return (
-                    <TableRow key={p._id}>
-                      <TableCell className="font-medium">{p.name}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="font-data text-[10px] uppercase">
-                          {p.family}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="font-data text-right text-xs">
-                        {hasWeight ? `${formatKg(Number(p.weightKg))} kg` : "—"}
-                      </TableCell>
-                      <TableCell className="font-data text-right text-xs">{onHand}</TableCell>
-                      <TableCell className="text-right">
+                {batches.map((b) => (
+                  <TableRow key={b._id}>
+                    <TableCell className="text-sm">{batchProductName(b)}</TableCell>
+                    <TableCell className="font-data text-right text-xs">{batchQty(b)}</TableCell>
+                    <TableCell className="font-data text-right text-xs">
+                      {formatKg(batchUsedKg(b))}
+                    </TableCell>
+                    <TableCell className="font-data text-xs">
+                      {formatDate(b.productionDate)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
                         <Button
                           type="button"
                           variant="ghost"
                           size="sm"
-                          disabled={!hasWeight}
-                          onClick={() => openProduce(p)}
+                          onClick={() => openEdit(b)}
                         >
-                          {t("prod.produceBtn")}
+                          {t("prod.edit")}
                         </Button>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          disabled={deletingId === b._id}
+                          onClick={() => void onDelete(b)}
+                        >
+                          {deletingId === b._id ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : (
+                            t("prod.delete")
+                          )}
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           )}
@@ -426,12 +375,13 @@ export default function ProductionPage() {
           if (!open) {
             setPickerOpen(false);
             setProductSearch("");
+            setEditingId(null);
           }
         }}
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{t("prod.produceTitle")}</DialogTitle>
+            <DialogTitle>{t("prod.editTitle")}</DialogTitle>
           </DialogHeader>
           <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
@@ -572,7 +522,7 @@ export default function ProductionPage() {
               </Button>
               <Button type="submit" disabled={saving} className="gap-2">
                 {saving && <Loader2 className="size-4 animate-spin" />}
-                {t("prod.produceBtn")}
+                {t("prod.save")}
               </Button>
             </DialogFooter>
           </form>
