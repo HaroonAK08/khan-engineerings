@@ -73,17 +73,76 @@ export async function getSupplierStatement(
   return data.statement;
 }
 
+export type MoneyRecord = {
+  id: string;
+  type: string;
+  date: string;
+  reference: string;
+  partyId: string;
+  partyName: string;
+  partyPhone?: string;
+  materialType?: string;
+  totalAmount: number;
+  amountPaid: number;
+  balance: number;
+  href: string;
+};
+
+export type MoneyPartyRollup = {
+  partyId: string;
+  name: string;
+  phone?: string;
+  balance: number;
+  recordCount: number;
+};
+
+export type ReceivablesReport = {
+  period: { from: string | null; to: string | null };
+  totals: {
+    totalReceivable: number;
+    partyCount: number;
+    recordCount: number;
+  };
+  byParty: MoneyPartyRollup[];
+  records: MoneyRecord[];
+};
+
+export type PayablesReport = {
+  period: { from: string | null; to: string | null };
+  totals: {
+    totalPayable: number;
+    supplierCount: number;
+    recordCount: number;
+  };
+  bySupplier: MoneyPartyRollup[];
+  records: MoneyRecord[];
+};
+
+export async function getReceivablesReport(params?: { dateFrom?: string; dateTo?: string }) {
+  const { data } = await api.get<{ report: ReceivablesReport }>("/reports/receivables", {
+    params,
+  });
+  return data.report;
+}
+
+export async function getPayablesReport(params?: { dateFrom?: string; dateTo?: string }) {
+  const { data } = await api.get<{ report: PayablesReport }>("/reports/payables", { params });
+  return data.report;
+}
+
 export type ExportKind =
   | "sales"
   | "purchases"
   | "production"
   | "expenses"
   | "inventory"
-  | "finance";
+  | "finance"
+  | "receivables"
+  | "payables";
 
 export async function downloadReportExport(
   kind: ExportKind,
-  params: Record<string, string | undefined> & { format: "xlsx" | "pdf" }
+  params: Record<string, string | undefined> & { format: "pdf" }
 ) {
   const { format, ...rest } = params;
   const query: Record<string, string> = { format };
@@ -94,14 +153,13 @@ export async function downloadReportExport(
     params: query,
     responseType: "blob",
   });
-  const ext = format === "pdf" ? "pdf" : "xlsx";
-  triggerDownload(data as Blob, `${kind}-report.${ext}`);
+  triggerDownload(data as Blob, `${kind}-report.pdf`);
 }
 
 export async function downloadStatementExport(
   type: "customers" | "suppliers",
   id: string,
-  params: { format: "xlsx" | "pdf"; dateFrom?: string; dateTo?: string }
+  params: { format: "pdf"; dateFrom?: string; dateTo?: string }
 ) {
   const query: Record<string, string> = { format: params.format };
   if (params.dateFrom) query.dateFrom = params.dateFrom;
@@ -110,8 +168,7 @@ export async function downloadStatementExport(
     params: query,
     responseType: "blob",
   });
-  const ext = params.format === "pdf" ? "pdf" : "xlsx";
-  triggerDownload(data as Blob, `${type}-statement.${ext}`);
+  triggerDownload(data as Blob, `${type}-statement.pdf`);
 }
 
 function triggerDownload(blob: Blob, filename: string) {

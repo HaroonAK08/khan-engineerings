@@ -4,6 +4,14 @@ const CustomerLedgerEntry = require("../customers/customer-ledger.model");
 const customerService = require("../customers/customer.service");
 const inventoryService = require("../inventory/inventory.service");
 const Product = require("../products/product.model");
+const mongoose = require("mongoose");
+
+function toObjectId(id) {
+  if (!id) return null;
+  if (id instanceof mongoose.Types.ObjectId) return id;
+  if (typeof id === "object" && id._id) return toObjectId(id._id);
+  return new mongoose.Types.ObjectId(String(id));
+}
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -117,6 +125,67 @@ function summary(builty) {
   };
 }
 
+async function refreshBuiltyTotals(builty) {
+  const payments = await CustomerPayment.find({ builty: builty._id });
+  const amountPaid = roundMoney(payments.reduce((sum, p) => sum + (p.amount || 0), 0));
+  builty.amountPaid = amountPaid;
+  builty.balance = roundMoney(Math.max(0, (builty.totalAmount || 0) - amountPaid));
+  builty.paymentStatus = paymentStatusFor(amountPaid, builty.totalAmount || 0);
+  await builty.save();
+  return builty;
+}
+
+/**
+ * Party payments settle previous pending first, then builties oldest → newest.
+ * Each builty status becomes unpaid / partial / paid from how much is still left.
+ */
+async function syncCustomerBuiltyPaymentStatuses(customerId) {
+  const oid = toObjectId(customerId);
+  if (!oid) return;
+
+  const [paymentsAgg, previousPendingAgg, builties] = await Promise.all([
+    CustomerPayment.aggregate([
+      { $match: { customer: oid } },
+      { $group: { _id: null, total: { $sum: "$amount" } } },
+    ]),
+    CustomerLedgerEntry.aggregate([
+      {
+        $match: {
+          customer: oid,
+          type: "adjustment",
+          signedAmount: { $gt: 0 },
+        },
+      },
+      { $group: { _id: null, total: { $sum: "$signedAmount" } } },
+    ]),
+    Builty.find({ customer: oid }).sort({ builtyDate: 1, createdAt: 1 }),
+  ]);
+
+  let remaining = roundMoney(paymentsAgg[0]?.total || 0);
+  const previousPending = roundMoney(previousPendingAgg[0]?.total || 0);
+  remaining = roundMoney(Math.max(0, remaining - previousPending));
+
+  for (const builty of builties) {
+    const total = roundMoney(builty.totalAmount || 0);
+    const amountPaid = roundMoney(Math.min(remaining, total));
+    const balance = roundMoney(Math.max(0, total - amountPaid));
+    const paymentStatus = paymentStatusFor(amountPaid, total);
+    remaining = roundMoney(Math.max(0, remaining - amountPaid));
+
+    const changed =
+      roundMoney(builty.amountPaid || 0) !== amountPaid ||
+      roundMoney(builty.balance || 0) !== balance ||
+      (builty.paymentStatus || "unpaid") !== paymentStatus;
+
+    if (changed) {
+      builty.amountPaid = amountPaid;
+      builty.balance = balance;
+      builty.paymentStatus = paymentStatus;
+      await builty.save();
+    }
+  }
+}
+
 function itemSummary(builty) {
   const items = Array.isArray(builty.items) ? builty.items : [];
   return items
@@ -145,7 +214,6 @@ function toRow(builty) {
 async function listBuilties({ q, customer, paymentStatus, dateFrom, dateTo } = {}) {
   const filter = {};
   if (customer) filter.customer = customer;
-  if (paymentStatus) filter.paymentStatus = paymentStatus;
   if (dateFrom || dateTo) {
     filter.builtyDate = {};
     if (dateFrom) filter.builtyDate.$gte = parseDate(dateFrom, "dateFrom");
@@ -160,6 +228,16 @@ async function listBuilties({ q, customer, paymentStatus, dateFrom, dateTo } = {
     filter.$or = [{ builtyNo: new RegExp(term, "i") }, { billNo: new RegExp(term, "i") }];
   }
 
+  const customerIds = customer
+    ? [customer]
+    : await Builty.distinct("customer", filter);
+
+  for (const id of customerIds) {
+    await syncCustomerBuiltyPaymentStatuses(id);
+  }
+
+  if (paymentStatus) filter.paymentStatus = paymentStatus;
+
   const builties = await Builty.find(filter)
     .populate("customer", "name phone")
     .populate({ path: "items.product", select: "name sku" })
@@ -173,11 +251,15 @@ async function getBuilty(id) {
     .populate("customer", "name phone address")
     .populate({ path: "items.product", select: "name sku unitLabel weightKg" });
   if (!builty) throw httpError("Builty not found", 404);
-  const payments = await CustomerPayment.find({ builty: builty._id }).sort({
+  await syncCustomerBuiltyPaymentStatuses(builty.customer?._id || builty.customer);
+  const fresh = await Builty.findById(id)
+    .populate("customer", "name phone address")
+    .populate({ path: "items.product", select: "name sku unitLabel weightKg" });
+  const payments = await CustomerPayment.find({ builty: fresh._id }).sort({
     paymentDate: -1,
     createdAt: -1,
   });
-  return { builty, summary: summary(builty), payments };
+  return { builty: fresh, summary: summary(fresh), payments };
 }
 
 async function createBuilty(data) {
@@ -233,21 +315,6 @@ async function createBuilty(data) {
     notes: `Builty ${builtyNo}`,
   });
 
-  // Old dues carried over from outside the system: raises the party balance
-  // without touching this builty's own total.
-  const previousPending = Number(data.previousPending ?? 0);
-  if (Number.isFinite(previousPending) && previousPending > 0) {
-    await CustomerLedgerEntry.create({
-      customer: data.customer,
-      type: "adjustment",
-      amount: roundMoney(previousPending),
-      signedAmount: roundMoney(previousPending),
-      builty: builty._id,
-      entryDate: builtyDate,
-      notes: data.previousPendingNotes?.trim() || `Previous pending added with builty ${builtyNo}`,
-    });
-  }
-
   const paymentGiven = Number(data.amountPaid ?? data.paymentGiven ?? 0);
   if (Number.isFinite(paymentGiven) && paymentGiven > 0) {
     await recordBuiltyPayment(builty._id, {
@@ -259,6 +326,7 @@ async function createBuilty(data) {
     });
   }
 
+  await syncCustomerBuiltyPaymentStatuses(data.customer);
   return getBuilty(builty._id);
 }
 
@@ -283,6 +351,118 @@ async function updateBuilty(id, data) {
   if (data.notes !== undefined) builty.notes = String(data.notes || "").trim();
 
   await builty.save();
+
+  return getBuilty(builty._id);
+}
+
+async function setBuiltyAmountPaid(id, targetPaid, meta = {}) {
+  const builty = await Builty.findById(id);
+  if (!builty) throw httpError("Builty not found", 404);
+
+  const target = roundMoney(Math.min(Math.max(0, Number(targetPaid) || 0), builty.totalAmount || 0));
+  const payments = await CustomerPayment.find({ builty: builty._id }).sort({
+    paymentDate: -1,
+    createdAt: -1,
+  });
+  const current = roundMoney(payments.reduce((sum, p) => sum + (p.amount || 0), 0));
+  const delta = roundMoney(target - current);
+
+  if (Math.abs(delta) < 1e-9) {
+    await refreshBuiltyTotals(builty);
+    return getBuilty(builty._id);
+  }
+
+  if (delta > 0) {
+    await recordBuiltyPayment(builty._id, {
+      amount: delta,
+      paymentDate: meta.paymentDate || new Date(),
+      method: meta.method || "cash",
+      notes: meta.notes || "Payment updated",
+    });
+    return getBuilty(builty._id);
+  }
+
+  let remaining = roundMoney(-delta);
+  for (const payment of payments) {
+    if (remaining <= 1e-9) break;
+    if (payment.amount <= remaining + 1e-9) {
+      remaining = roundMoney(remaining - payment.amount);
+      await CustomerLedgerEntry.deleteMany({ payment: payment._id });
+      await payment.deleteOne();
+    } else {
+      const nextAmount = roundMoney(payment.amount - remaining);
+      payment.amount = nextAmount;
+      await payment.save();
+      await CustomerLedgerEntry.updateMany(
+        { payment: payment._id },
+        { $set: { amount: nextAmount } }
+      );
+      remaining = 0;
+    }
+  }
+
+  await refreshBuiltyTotals(builty);
+  return getBuilty(builty._id);
+}
+
+async function updateBuiltyPayment(builtyId, paymentId, data) {
+  const builty = await Builty.findById(builtyId);
+  if (!builty) throw httpError("Builty not found", 404);
+
+  const payment = await CustomerPayment.findOne({ _id: paymentId, builty: builty._id });
+  if (!payment) throw httpError("Payment not found", 404);
+
+  const nextAmount =
+    data.amount !== undefined ? Number(data.amount) : payment.amount;
+  if (!Number.isFinite(nextAmount) || nextAmount <= 0) {
+    throw httpError("Payment amount must be greater than 0", 400);
+  }
+
+  const otherPaid = roundMoney(
+    (await CustomerPayment.find({ builty: builty._id, _id: { $ne: payment._id } })).reduce(
+      (sum, p) => sum + (p.amount || 0),
+      0
+    )
+  );
+  const maxAllowed = roundMoney((builty.totalAmount || 0) - otherPaid);
+  if (nextAmount > maxAllowed + 0.01) {
+    throw httpError(`Payment exceeds remaining balance (${roundMoney(maxAllowed)})`, 400);
+  }
+
+  payment.amount = roundMoney(nextAmount);
+  if (data.paymentDate !== undefined) {
+    payment.paymentDate = parseDate(data.paymentDate, "Payment date");
+  }
+  if (data.method !== undefined) payment.method = data.method || "cash";
+  if (data.reference !== undefined) payment.reference = String(data.reference || "").trim();
+  if (data.notes !== undefined) payment.notes = String(data.notes || "").trim();
+  await payment.save();
+
+  await CustomerLedgerEntry.updateMany(
+    { payment: payment._id },
+    {
+      $set: {
+        amount: payment.amount,
+        entryDate: payment.paymentDate,
+        notes: payment.notes || `Payment on builty ${builty.builtyNo}`,
+      },
+    }
+  );
+
+  await refreshBuiltyTotals(builty);
+  return getBuilty(builty._id);
+}
+
+async function removeBuiltyPayment(builtyId, paymentId) {
+  const builty = await Builty.findById(builtyId);
+  if (!builty) throw httpError("Builty not found", 404);
+
+  const payment = await CustomerPayment.findOne({ _id: paymentId, builty: builty._id });
+  if (!payment) throw httpError("Payment not found", 404);
+
+  await CustomerLedgerEntry.deleteMany({ payment: payment._id });
+  await payment.deleteOne();
+  await refreshBuiltyTotals(builty);
   return getBuilty(builty._id);
 }
 
@@ -330,8 +510,8 @@ async function recordBuiltyPayment(id, data) {
 async function removeBuilty(id) {
   const builty = await Builty.findById(id);
   if (!builty) throw httpError("Builty not found", 404);
-  if ((builty.amountPaid || 0) > 0) {
-    throw httpError("Cannot delete a builty that has payments. Reverse the payments first.", 409);
+  if ((builty.amountPaid || 0) > 0 || builty.paymentStatus === "paid") {
+    throw httpError("Cannot delete a paid builty.", 409);
   }
 
   for (const line of builty.items) {
@@ -351,7 +531,9 @@ async function removeBuilty(id) {
   }
 
   await CustomerLedgerEntry.deleteMany({ builty: builty._id });
+  const customerId = builty.customer;
   await builty.deleteOne();
+  await syncCustomerBuiltyPaymentStatuses(customerId);
   return { deleted: true };
 }
 
@@ -490,8 +672,11 @@ module.exports = {
   createBuilty,
   updateBuilty,
   recordBuiltyPayment,
+  updateBuiltyPayment,
+  removeBuiltyPayment,
   removeBuilty,
   listPayments,
   listLedger,
   getSalesReport,
+  syncCustomerBuiltyPaymentStatuses,
 };

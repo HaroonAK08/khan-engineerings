@@ -19,6 +19,7 @@ export type FinishedStockItem = {
   productId: string;
   name: string;
   sku: string;
+  family: "hub" | "drum" | null;
   unitLabel: string;
   lowStockThreshold: number;
   category: { id: string; name: string } | null;
@@ -92,6 +93,8 @@ export async function getFinishedStock(params?: {
   const { data } = await api.get<{
     items: FinishedStockItem[];
     totalUnits: number;
+    hubUnits: number;
+    drumUnits: number;
     skuCount: number;
   }>("/inventory/finished", { params });
   return data;

@@ -1,10 +1,15 @@
 const Supplier = require("./supplier.model");
 const LedgerEntry = require("../ledger/ledger.model");
+const Purchase = require("../purchases/purchase.model");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
   err.statusCode = statusCode;
   return err;
+}
+
+function roundMoney(n) {
+  return Math.round((Number(n) || 0) * 100) / 100;
 }
 
 async function create(data) {
@@ -69,7 +74,48 @@ async function getBalance(supplierId) {
 async function getWithBalance(id) {
   const supplier = await getById(id);
   const balance = await getBalance(id);
-  return { supplier, balance };
+  const [purchaseStats, previousPendingAgg, paidAgg] = await Promise.all([
+    Purchase.aggregate([
+      { $match: { supplier: supplier._id } },
+      {
+        $group: {
+          _id: null,
+          totalPurchases: {
+            $sum: { $add: ["$totalAmount", { $ifNull: ["$freightAmount", 0] }] },
+          },
+          purchaseCount: { $sum: 1 },
+        },
+      },
+    ]),
+    LedgerEntry.aggregate([
+      {
+        $match: {
+          supplier: supplier._id,
+          type: "adjustment",
+          signedAmount: { $gt: 0 },
+        },
+      },
+      { $group: { _id: null, total: { $sum: "$signedAmount" } } },
+    ]),
+    LedgerEntry.aggregate([
+      { $match: { supplier: supplier._id, type: "payment" } },
+      { $group: { _id: null, total: { $sum: "$amount" } } },
+    ]),
+  ]);
+  const previousPending = roundMoney(previousPendingAgg[0]?.total || 0);
+  const totalPurchases = roundMoney(purchaseStats[0]?.totalPurchases || 0);
+  const totalPaid = roundMoney(paidAgg[0]?.total || 0);
+  return {
+    supplier,
+    balance,
+    previousPending,
+    stats: {
+      purchaseCount: purchaseStats[0]?.purchaseCount || 0,
+      totalPurchases,
+      totalPaid,
+      totalDue: roundMoney(previousPending + totalPurchases),
+    },
+  };
 }
 
 async function update(id, data) {

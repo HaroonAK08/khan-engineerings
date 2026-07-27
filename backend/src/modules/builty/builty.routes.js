@@ -13,6 +13,8 @@ router.get("/", controller.list);
 router.post("/", controller.create);
 
 router.post("/:id/payments", controller.pay);
+router.patch("/:id/payments/:paymentId", controller.updatePayment);
+router.delete("/:id/payments/:paymentId", controller.removePayment);
 
 router.get("/:id", controller.getOne);
 router.patch("/:id", controller.update);

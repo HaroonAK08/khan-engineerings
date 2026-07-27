@@ -381,6 +381,7 @@ async function getFinishedStock({ warehouse, category, q } = {}) {
     productId: row.product,
     name: row.productDoc?.name || "Unknown",
     sku: row.productDoc?.sku || "",
+    family: row.productDoc?.family || null,
     unitLabel: row.productDoc?.unitLabel || "pcs",
     lowStockThreshold: row.productDoc?.lowStockThreshold || 0,
     category: row.categoryDoc ? { id: row.categoryDoc._id, name: row.categoryDoc.name } : null,
@@ -408,7 +409,20 @@ async function getFinishedStock({ warehouse, category, q } = {}) {
   rows.sort((a, b) => a.name.localeCompare(b.name));
 
   const totalUnits = rows.reduce((s, r) => s + r.quantity, 0);
-  return { items: rows, totalUnits: roundQty(totalUnits), skuCount: rows.length };
+  const hubUnits = rows
+    .filter((r) => r.family === "hub")
+    .reduce((s, r) => s + r.quantity, 0);
+  const drumUnits = rows
+    .filter((r) => r.family === "drum")
+    .reduce((s, r) => s + r.quantity, 0);
+
+  return {
+    items: rows,
+    totalUnits: roundQty(totalUnits),
+    hubUnits: roundQty(hubUnits),
+    drumUnits: roundQty(drumUnits),
+    skuCount: rows.length,
+  };
 }
 
 async function getAlerts() {

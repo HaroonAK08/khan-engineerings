@@ -9,14 +9,15 @@ import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
 import {
   customerName,
   getBuilty,
+  paymentStatusLabel,
   productName,
-  recordBuiltyPayment,
+  updateBuilty,
   type Builty,
   type BuiltySummary,
 } from "@/lib/sales-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -28,7 +29,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
-import { todayInput } from "@/lib/date-range";
 
 export default function BuiltyDetailPage() {
   const { t } = useI18n();
@@ -37,11 +37,8 @@ export default function BuiltyDetailPage() {
   const [builty, setBuilty] = useState<Builty | null>(null);
   const [summary, setSummary] = useState<BuiltySummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [billNo, setBillNo] = useState("");
   const [saving, setSaving] = useState(false);
-  const [amount, setAmount] = useState(0);
-  const [paymentDate, setPaymentDate] = useState(todayInput());
-  const [method, setMethod] = useState("cash");
-  const [notes, setNotes] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -49,7 +46,7 @@ export default function BuiltyDetailPage() {
       const data = await getBuilty(id);
       setBuilty(data.builty);
       setSummary(data.summary);
-      setAmount(data.summary.balance);
+      setBillNo(data.builty.billNo || "");
     } catch (err) {
       toast.error(apiError(err, t("builtyDetail.loadFailed")));
       setBuilty(null);
@@ -62,16 +59,18 @@ export default function BuiltyDetailPage() {
     load();
   }, [load]);
 
-  async function onPayment() {
-    if (!(amount > 0)) return;
+  async function onSaveMeta() {
+    if (!builty) return;
     setSaving(true);
     try {
-      await recordBuiltyPayment(id, { amount, paymentDate, method, notes: notes.trim() });
-      toast.success(t("common.paymentRecorded"));
-      setNotes("");
-      await load();
+      const data = await updateBuilty(id, {
+        billNo: billNo.trim(),
+      });
+      setBuilty(data.builty);
+      setSummary(data.summary);
+      toast.success(t("builty.updated"));
     } catch (err) {
-      toast.error(apiError(err, t("common.paymentFailed")));
+      toast.error(apiError(err, t("builty.updateFailed")));
     } finally {
       setSaving(false);
     }
@@ -96,6 +95,9 @@ export default function BuiltyDetailPage() {
     );
   }
 
+  const partyId =
+    typeof builty.customer === "object" && builty.customer ? builty.customer._id : null;
+
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -109,36 +111,55 @@ export default function BuiltyDetailPage() {
           </Link>
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-nameplate text-xl">{builty.builtyNo}</h1>
-            <Badge variant="secondary" className="font-data text-[10px] uppercase">
-              {summary.paymentStatus}
+            <Badge variant="secondary" className="font-data text-[10px]">
+              {paymentStatusLabel(summary.paymentStatus, t)}
             </Badge>
           </div>
           <p className="font-data mt-1 text-xs text-muted-foreground">
             {formatDate(builty.builtyDate)} · {customerName(builty.customer)}
           </p>
+          {partyId ? (
+            <Link
+              href={`/dashboard/party/customers/${partyId}`}
+              className="mt-2 inline-block text-sm text-primary hover:underline"
+            >
+              {t("builtyDetail.managePartyMoney")}
+            </Link>
+          ) : null}
         </div>
         <div className="text-right">
           <p className="font-data text-[10px] text-muted-foreground uppercase">
-            {t("builtyDetail.left")}
+            {t("builtyDetail.totalAmount")}
           </p>
-          <p className="font-data text-2xl">{formatMoney(summary.balance)}</p>
+          <p className="font-data text-2xl">{formatMoney(summary.totalAmount)}</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        {[
-          { label: t("builtyDetail.totalAmount"), value: formatMoney(summary.totalAmount) },
-          { label: t("builtyDetail.paid"), value: formatMoney(summary.amountPaid) },
-          { label: t("builtyDetail.left"), value: formatMoney(summary.balance) },
-        ].map((s) => (
-          <Card key={s.label} className="py-0">
-            <CardContent className="p-4">
-              <p className="font-data text-[10px] text-muted-foreground uppercase">{s.label}</p>
-              <p className="font-data mt-1 text-lg">{s.value}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-nameplate text-sm">{t("builtyDetail.details")}</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5 sm:max-w-sm">
+            <Label>{t("builtyNew.billNo")}</Label>
+            <Input
+              value={billNo}
+              onChange={(e) => setBillNo(e.target.value)}
+              placeholder={t("builtyNew.billNoHint")}
+              className="h-11"
+            />
+          </div>
+          <Button
+            type="button"
+            className="w-fit gap-2"
+            disabled={saving}
+            onClick={() => void onSaveMeta()}
+          >
+            {saving ? <Loader2 className="size-4 animate-spin" /> : null}
+            {t("common.save")}
+          </Button>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -177,68 +198,6 @@ export default function BuiltyDetailPage() {
           </Table>
         </CardContent>
       </Card>
-
-      {summary.balance > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-nameplate text-sm">
-              {t("builtyDetail.recordPayment")}
-            </CardTitle>
-            <CardDescription>{t("builtyDetail.recordPaymentDesc")}</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-              <div className="flex flex-col gap-1.5">
-                <Label>{t("common.amount")}</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={amount}
-                  onChange={(e) => setAmount(Number(e.target.value))}
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label>{t("common.date")}</Label>
-                <Input
-                  type="date"
-                  value={paymentDate}
-                  onChange={(e) => setPaymentDate(e.target.value)}
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label>{t("common.method")}</Label>
-                <select
-                  className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
-                  value={method}
-                  onChange={(e) => setMethod(e.target.value)}
-                >
-                  <option value="cash">{t("common.cash")}</option>
-                  <option value="cheque">{t("common.cheque")}</option>
-                  <option value="online">{t("common.online")}</option>
-                  <option value="bank">{t("common.bank")}</option>
-                </select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label>{t("common.notes")}</Label>
-                <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
-              </div>
-            </div>
-            <Button
-              type="button"
-              onClick={onPayment}
-              disabled={saving || !(amount > 0)}
-              className="w-fit gap-2"
-            >
-              {saving && <Loader2 className="size-4 animate-spin" />}
-              {t("builtyDetail.savePayment")}
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-          {t("builtyDetail.fullyPaid")}
-        </p>
-      )}
     </div>
   );
 }

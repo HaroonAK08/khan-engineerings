@@ -142,7 +142,8 @@ export async function getCustomer(id: string) {
   const { data } = await api.get<{
     customer: Customer;
     balance: number;
-    stats: { orderCount: number; totalSales: number; totalPaid: number };
+    previousPending: number;
+    stats: { orderCount: number; totalSales: number; totalPaid: number; totalDue?: number };
   }>(`/customers/${id}`);
   return data;
 }
@@ -165,6 +166,38 @@ export async function getCustomerLedger(id: string) {
   const { data } = await api.get<{ entries: CustomerLedgerEntry[]; balance: number }>(
     `/customers/${id}/ledger`
   );
+  return data;
+}
+
+export async function recordCustomerAdjustment(
+  id: string,
+  body: { amount: number; entryDate: string; notes?: string }
+) {
+  const { data } = await api.post<{
+    entry: CustomerLedgerEntry;
+    balance: number;
+    previousPending: number;
+    stats?: { orderCount: number; totalSales: number; totalPaid: number; totalDue?: number };
+  }>(`/customers/${id}/adjustments`, body);
+  return data;
+}
+
+export async function recordCustomerPayment(
+  id: string,
+  body: {
+    amount: number;
+    paymentDate: string;
+    method?: string;
+    notes?: string;
+    reference?: string;
+  }
+) {
+  const { data } = await api.post<{
+    payment: CustomerPayment;
+    balance: number;
+    previousPending: number;
+    stats: { orderCount: number; totalSales: number; totalPaid: number; totalDue?: number };
+  }>(`/customers/${id}/payments`, body);
   return data;
 }
 
@@ -217,7 +250,6 @@ export async function createBuilty(body: {
   customer: string;
   builtyDate: string;
   items: BuiltyLineInput[];
-  previousPending?: number;
   amountPaid?: number;
   method?: string;
   notes?: string;
@@ -233,9 +265,19 @@ export async function updateBuilty(
     billNo: string;
     builtyDate: string;
     notes: string;
+    paymentStatus: "unpaid" | "partial" | "paid";
+    amountPaid: number;
+    paymentGiven: number;
+    method: string;
+    paymentDate: string;
+    paymentNotes: string;
   }>
 ) {
-  const { data } = await api.patch<{ builty: Builty; summary: BuiltySummary }>(`/builty/${id}`, body);
+  const { data } = await api.patch<{
+    builty: Builty;
+    summary: BuiltySummary;
+    payments: CustomerPayment[];
+  }>(`/builty/${id}`, body);
   return data;
 }
 
@@ -243,10 +285,39 @@ export async function recordBuiltyPayment(
   id: string,
   body: { amount: number; paymentDate: string; method?: string; notes?: string; reference?: string }
 ) {
-  const { data } = await api.post<{ builty: Builty; summary: BuiltySummary }>(
-    `/builty/${id}/payments`,
-    body
-  );
+  const { data } = await api.post<{
+    builty: Builty;
+    summary: BuiltySummary;
+    payments: CustomerPayment[];
+  }>(`/builty/${id}/payments`, body);
+  return data;
+}
+
+export async function updateBuiltyPayment(
+  id: string,
+  paymentId: string,
+  body: {
+    amount?: number;
+    paymentDate?: string;
+    method?: string;
+    notes?: string;
+    reference?: string;
+  }
+) {
+  const { data } = await api.patch<{
+    builty: Builty;
+    summary: BuiltySummary;
+    payments: CustomerPayment[];
+  }>(`/builty/${id}/payments/${paymentId}`, body);
+  return data;
+}
+
+export async function deleteBuiltyPayment(id: string, paymentId: string) {
+  const { data } = await api.delete<{
+    builty: Builty;
+    summary: BuiltySummary;
+    payments: CustomerPayment[];
+  }>(`/builty/${id}/payments/${paymentId}`);
   return data;
 }
 
@@ -263,6 +334,15 @@ export function customerName(customer: Customer | string | null | undefined) {
   if (!customer) return "—";
   if (typeof customer === "string") return customer;
   return customer.name;
+}
+
+export function paymentStatusLabel(
+  status: string | null | undefined,
+  t: (key: "orders.unpaid" | "orders.partial" | "orders.paid") => string
+) {
+  if (status === "paid") return t("orders.paid");
+  if (status === "partial") return t("orders.partial");
+  return t("orders.unpaid");
 }
 
 export function productName(product: BuiltyItem["product"] | null | undefined) {

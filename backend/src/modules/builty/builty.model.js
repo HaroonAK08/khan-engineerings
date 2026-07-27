@@ -24,6 +24,7 @@ const builtySchema = new mongoose.Schema(
     totalAmount: { type: Number, required: true, min: 0, default: 0 },
     amountPaid: { type: Number, min: 0, default: 0 },
     balance: { type: Number, min: 0, default: 0 },
+    previousPending: { type: Number, min: 0, default: 0 },
     paymentStatus: {
       type: String,
       enum: ["unpaid", "partial", "paid"],

@@ -3,9 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import {
@@ -14,23 +11,17 @@ import {
   getLedger,
   getSupplier,
   recordAdjustment,
+  recordPayment,
 } from "@/lib/materials-api";
 import type { LedgerEntry, Supplier } from "@/types/materials";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SupplierHistoryCalendar } from "@/components/suppliers/supplier-history-calendar";
 import { useI18n } from "@/hooks/use-i18n";
 import { todayInput } from "@/lib/date-range";
 
-const fixSchema = z.object({
-  amount: z.number().refine((n) => Number.isFinite(n) && n !== 0, "Enter amount"),
-  entryDate: z.string().min(1, "Pick a date"),
-  notes: z.string().optional(),
-});
-
-type FixForm = z.infer<typeof fixSchema>;
 type HistoryKind = "purchase" | "payment";
 
 function isInternalNote(notes: string) {
@@ -43,48 +34,114 @@ export default function SupplierDetailPage() {
   const id = String(params.id);
   const [supplier, setSupplier] = useState<Supplier | null>(null);
   const [balance, setBalance] = useState(0);
+  const [stats, setStats] = useState({
+    purchaseCount: 0,
+    totalPurchases: 0,
+    totalPaid: 0,
+    totalDue: 0,
+  });
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [savingFix, setSavingFix] = useState(false);
-  const [showFix, setShowFix] = useState(false);
   const [historyKind, setHistoryKind] = useState<HistoryKind>("purchase");
 
-  const fixForm = useForm<FixForm>({
-    resolver: zodResolver(fixSchema),
-    defaultValues: { amount: undefined as unknown as number, entryDate: todayInput(), notes: "" },
-  });
+  const [showPendingForm, setShowPendingForm] = useState(false);
+  const [pendingAmount, setPendingAmount] = useState("");
+  const [pendingDate, setPendingDate] = useState(todayInput());
+  const [pendingNotes, setPendingNotes] = useState("");
+  const [savingPending, setSavingPending] = useState(false);
 
-  const load = useCallback(async (opts?: { silent?: boolean }) => {
-    if (!opts?.silent) setLoading(true);
-    try {
-      const [detail, ledger] = await Promise.all([getSupplier(id), getLedger(id)]);
-      setSupplier(detail.supplier);
-      setEntries(ledger.entries);
-      setBalance(ledger.balance);
-    } catch (err) {
-      toast.error(apiError(err, t("supplierDetail.loadFailed")));
-    } finally {
-      if (!opts?.silent) setLoading(false);
-    }
-  }, [id, t]);
+  const [showPay, setShowPay] = useState(false);
+  const [payAmount, setPayAmount] = useState("");
+  const [payDate, setPayDate] = useState(todayInput());
+  const [payNotes, setPayNotes] = useState("");
+  const [savingPay, setSavingPay] = useState(false);
+
+  const load = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!opts?.silent) setLoading(true);
+      try {
+        const [detail, ledger] = await Promise.all([getSupplier(id), getLedger(id)]);
+        setSupplier(detail.supplier);
+        setEntries(ledger.entries);
+        setBalance(detail.balance ?? ledger.balance);
+        setStats({
+          purchaseCount: detail.stats?.purchaseCount || 0,
+          totalPurchases: detail.stats?.totalPurchases || 0,
+          totalPaid: detail.stats?.totalPaid || 0,
+          totalDue:
+            detail.stats?.totalDue ??
+            (detail.previousPending || 0) + (detail.stats?.totalPurchases || 0),
+        });
+      } catch (err) {
+        toast.error(apiError(err, t("supplierDetail.loadFailed")));
+      } finally {
+        if (!opts?.silent) setLoading(false);
+      }
+    },
+    [id, t]
+  );
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  async function onFix(values: FixForm) {
-    setSavingFix(true);
+  async function onAddPreviousPending() {
+    const amount = Number(pendingAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error(t("supplierDetail.enterAmount"));
+      return;
+    }
+    if (!pendingDate) {
+      toast.error(t("supplierDetail.pickDate"));
+      return;
+    }
+    setSavingPending(true);
     try {
-      const result = await recordAdjustment(id, values);
-      setBalance(result.balance);
-      toast.success(t("supplierDetail.adjustmentRecorded"));
-      fixForm.reset({ amount: undefined as unknown as number, entryDate: todayInput(), notes: "" });
-      setShowFix(false);
+      await recordAdjustment(id, {
+        amount,
+        entryDate: pendingDate,
+        notes: pendingNotes.trim() || "Previous pending",
+      });
+      toast.success(t("supplierDetail.previousPendingRecorded"));
+      setPendingAmount("");
+      setPendingNotes("");
+      setPendingDate(todayInput());
+      setShowPendingForm(false);
       await load({ silent: true });
     } catch (err) {
-      toast.error(apiError(err, t("supplierDetail.adjustmentFailed")));
+      toast.error(apiError(err, t("supplierDetail.previousPendingFailed")));
     } finally {
-      setSavingFix(false);
+      setSavingPending(false);
+    }
+  }
+
+  async function onPay() {
+    const amount = Number(payAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error(t("supplierDetail.enterAmount"));
+      return;
+    }
+    if (!payDate) {
+      toast.error(t("supplierDetail.pickDate"));
+      return;
+    }
+    setSavingPay(true);
+    try {
+      await recordPayment(id, {
+        amount,
+        entryDate: payDate,
+        notes: payNotes.trim() || undefined,
+      });
+      toast.success(t("supplierDetail.paymentRecorded"));
+      setPayAmount("");
+      setPayNotes("");
+      setPayDate(todayInput());
+      setShowPay(false);
+      await load({ silent: true });
+    } catch (err) {
+      toast.error(apiError(err, t("supplierDetail.paymentFailed")));
+    } finally {
+      setSavingPay(false);
     }
   }
 
@@ -116,7 +173,7 @@ export default function SupplierDetailPage() {
     supplier.notes && !isInternalNote(supplier.notes) ? supplier.notes : "";
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
       <div>
         <Link
           href="/dashboard/suppliers"
@@ -139,54 +196,152 @@ export default function SupplierDetailPage() {
         ) : null}
       </div>
 
-      <div className="rounded-xl border border-border bg-card px-5 py-4">
-        <p className="text-sm text-muted-foreground">{t("supplierDetail.balanceOwed")}</p>
-        <p className="font-data mt-1 text-3xl tracking-tight">{formatMoney(balance)}</p>
-        <p className="mt-1 text-xs text-muted-foreground">{t("supplierDetail.balanceHint")}</p>
-      </div>
-
-      <div>
-        <div className="mb-3 flex items-end justify-between gap-3">
-          <div>
-            <h2 className="text-nameplate text-base">{t("supplierDetail.ledgerTitle")}</h2>
-            <p className="mt-0.5 text-sm text-muted-foreground">{t("supplierDetail.ledgerDesc")}</p>
-          </div>
-          <Button type="button" variant="ghost" size="sm" onClick={() => setShowFix((v) => !v)}>
-            {showFix ? t("sup.cancel") : t("supplierDetail.fixBalance")}
-          </Button>
-        </div>
-
-        {showFix && (
-          <Card className="mb-4">
-            <CardContent className="pt-4">
-              <p className="mb-3 text-sm text-muted-foreground">{t("supplierDetail.adjustmentDesc")}</p>
-              <form
-                onSubmit={fixForm.handleSubmit(onFix)}
-                className="flex flex-col gap-3 sm:flex-row sm:items-end"
-              >
-                <div className="flex flex-1 flex-col gap-1.5">
-                  <Label htmlFor="fix-amount">{t("common.amount")}</Label>
-                  <Input
-                    id="fix-amount"
-                    type="number"
-                    step="0.01"
-                    placeholder={t("supplierDetail.fixAmountPh")}
-                    {...fixForm.register("amount", { valueAsNumber: true })}
-                  />
-                </div>
-                <div className="flex flex-1 flex-col gap-1.5">
-                  <Label htmlFor="fix-date">{t("common.date")}</Label>
-                  <Input id="fix-date" type="date" {...fixForm.register("entryDate")} />
-                </div>
-                <Button type="submit" variant="outline" disabled={savingFix} className="gap-2">
-                  {savingFix && <Loader2 className="size-4 animate-spin" />}
-                  {t("supplierDetail.postAdjustment")}
-                </Button>
-              </form>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {[
+          { label: t("supplierDetail.totalDue"), value: formatMoney(stats.totalDue) },
+          { label: t("supplierDetail.paid"), value: formatMoney(stats.totalPaid) },
+          { label: t("supplierDetail.paymentLeft"), value: formatMoney(balance) },
+        ].map((s) => (
+          <Card key={s.label} className="py-0">
+            <CardContent className="p-4">
+              <p className="font-data text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
+                {s.label}
+              </p>
+              <p className="font-data mt-1 text-xl">{s.value}</p>
             </CardContent>
           </Card>
-        )}
+        ))}
+      </div>
 
+      <Card>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle className="text-nameplate text-sm">
+              {t("supplierDetail.previousPending")}
+            </CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t("supplierDetail.previousPendingDesc")}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setShowPendingForm((v) => !v);
+              setShowPay(false);
+            }}
+          >
+            {showPendingForm ? t("common.cancel") : t("supplierDetail.addPreviousPending")}
+          </Button>
+        </CardHeader>
+        {showPendingForm ? (
+          <CardContent className="pt-0">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("common.amount")}</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  value={pendingAmount}
+                  onChange={(e) => setPendingAmount(e.target.value)}
+                  placeholder="0"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("common.date")}</Label>
+                <Input
+                  type="date"
+                  value={pendingDate}
+                  onChange={(e) => setPendingDate(e.target.value)}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("common.notes")}</Label>
+                <Input
+                  value={pendingNotes}
+                  onChange={(e) => setPendingNotes(e.target.value)}
+                />
+              </div>
+            </div>
+            <Button
+              type="button"
+              className="mt-3 gap-2"
+              disabled={savingPending}
+              onClick={() => void onAddPreviousPending()}
+            >
+              {savingPending ? <Loader2 className="size-4 animate-spin" /> : null}
+              {t("common.save")}
+            </Button>
+          </CardContent>
+        ) : null}
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle className="text-nameplate text-sm">
+              {t("supplierDetail.recordPayment")}
+            </CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t("supplierDetail.recordPaymentDesc")}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={balance <= 0 && !showPay}
+            onClick={() => {
+              setShowPay((v) => !v);
+              setShowPendingForm(false);
+              if (!showPay) setPayAmount(balance > 0 ? String(balance) : "");
+            }}
+          >
+            {showPay ? t("common.cancel") : t("supplierDetail.addPayment")}
+          </Button>
+        </CardHeader>
+        {showPay ? (
+          <CardContent className="pt-0">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("common.amount")}</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  value={payAmount}
+                  onChange={(e) => setPayAmount(e.target.value)}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("common.date")}</Label>
+                <Input
+                  type="date"
+                  value={payDate}
+                  onChange={(e) => setPayDate(e.target.value)}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("common.notes")}</Label>
+                <Input value={payNotes} onChange={(e) => setPayNotes(e.target.value)} />
+              </div>
+            </div>
+            <Button
+              type="button"
+              className="mt-3 gap-2"
+              disabled={savingPay}
+              onClick={() => void onPay()}
+            >
+              {savingPay ? <Loader2 className="size-4 animate-spin" /> : null}
+              {t("supplierDetail.submitPayment")}
+            </Button>
+          </CardContent>
+        ) : null}
+      </Card>
+
+      <div>
         <div className="mb-4 flex flex-wrap gap-2">
           <Button
             type="button"

@@ -1,5 +1,6 @@
 const Customer = require("./customer.model");
 const CustomerLedgerEntry = require("./customer-ledger.model");
+const CustomerPayment = require("./customer-payment.model");
 const Builty = require("../builty/builty.model");
 
 function httpError(message, statusCode) {
@@ -57,21 +58,45 @@ async function getBalance(customerId) {
 async function getWithBalance(id) {
   const customer = await getById(id);
   const balance = await getBalance(id);
-  const stats = await Builty.aggregate([
-    { $match: { customer: customer._id } },
-    {
-      $group: {
-        _id: null,
-        orderCount: { $sum: 1 },
-        totalSales: { $sum: "$totalAmount" },
-        totalPaid: { $sum: "$amountPaid" },
+  const [builtyStats, previousPendingAgg, paidAgg] = await Promise.all([
+    Builty.aggregate([
+      { $match: { customer: customer._id } },
+      {
+        $group: {
+          _id: null,
+          orderCount: { $sum: 1 },
+          totalSales: { $sum: "$totalAmount" },
+        },
       },
-    },
+    ]),
+    CustomerLedgerEntry.aggregate([
+      {
+        $match: {
+          customer: customer._id,
+          type: "adjustment",
+          signedAmount: { $gt: 0 },
+        },
+      },
+      { $group: { _id: null, total: { $sum: "$signedAmount" } } },
+    ]),
+    CustomerLedgerEntry.aggregate([
+      { $match: { customer: customer._id, type: "payment" } },
+      { $group: { _id: null, total: { $sum: "$amount" } } },
+    ]),
   ]);
+  const previousPending = roundMoney(previousPendingAgg[0]?.total || 0);
+  const totalPaid = roundMoney(paidAgg[0]?.total || 0);
+  const totalSales = roundMoney(builtyStats[0]?.totalSales || 0);
   return {
     customer,
     balance,
-    stats: stats[0] || { orderCount: 0, totalSales: 0, totalPaid: 0 },
+    previousPending,
+    stats: {
+      orderCount: builtyStats[0]?.orderCount || 0,
+      totalSales,
+      totalPaid,
+      totalDue: roundMoney(previousPending + totalSales),
+    },
   };
 }
 
@@ -83,6 +108,89 @@ async function listLedger(customerId) {
     .sort({ entryDate: -1, createdAt: -1 });
   const balance = await getBalance(customerId);
   return { entries, balance };
+}
+
+function roundMoney(n) {
+  return Math.round(n * 100) / 100;
+}
+
+function parseDate(value, label = "Date") {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) throw httpError(`${label} is invalid`, 400);
+  return d;
+}
+
+async function recordAdjustment(customerId, { amount, entryDate, notes }) {
+  await getById(customerId);
+  const n = Number(amount);
+  if (!Number.isFinite(n) || n === 0) {
+    throw httpError("Adjustment amount must be non-zero", 400);
+  }
+
+  const signed = roundMoney(n);
+  const entry = await CustomerLedgerEntry.create({
+    customer: customerId,
+    type: "adjustment",
+    amount: Math.abs(signed),
+    signedAmount: signed,
+    builty: null,
+    entryDate: parseDate(entryDate || new Date(), "Entry date"),
+    notes: notes?.trim() || "Previous pending",
+  });
+
+  return getWithBalance(customerId).then(async (detail) => {
+    const builtyService = require("../builty/builty.service");
+    await builtyService.syncCustomerBuiltyPaymentStatuses(customerId);
+    return {
+      entry,
+      balance: detail.balance,
+      previousPending: detail.previousPending,
+      stats: detail.stats,
+    };
+  });
+}
+
+async function recordPayment(customerId, { amount, paymentDate, method, notes, reference }) {
+  await getById(customerId);
+  const n = roundMoney(Number(amount));
+  if (!Number.isFinite(n) || n <= 0) {
+    throw httpError("Payment amount must be greater than 0", 400);
+  }
+
+  const allowed = new Set(["cash", "cheque", "online", "bank", "other"]);
+  const payMethod = allowed.has(method) ? method : "cash";
+  const date = parseDate(paymentDate || new Date(), "Payment date");
+
+  const payment = await CustomerPayment.create({
+    customer: customerId,
+    builty: null,
+    amount: n,
+    paymentDate: date,
+    method: payMethod,
+    reference: reference?.trim() || "",
+    notes: notes?.trim() || "Party payment",
+  });
+
+  await CustomerLedgerEntry.create({
+    customer: customerId,
+    type: "payment",
+    amount: n,
+    builty: null,
+    payment: payment._id,
+    entryDate: date,
+    notes: payment.notes || `Payment ${payment._id}`,
+  });
+
+  const builtyService = require("../builty/builty.service");
+  await builtyService.syncCustomerBuiltyPaymentStatuses(customerId);
+
+  const detail = await getWithBalance(customerId);
+  return {
+    payment,
+    balance: detail.balance,
+    previousPending: detail.previousPending,
+    stats: detail.stats,
+  };
 }
 
 async function update(id, data) {
@@ -113,4 +221,15 @@ async function remove(id) {
   return { ok: true };
 }
 
-module.exports = { create, list, getById, getWithBalance, getBalance, listLedger, update, remove };
+module.exports = {
+  create,
+  list,
+  getById,
+  getWithBalance,
+  getBalance,
+  listLedger,
+  recordAdjustment,
+  recordPayment,
+  update,
+  remove,
+};

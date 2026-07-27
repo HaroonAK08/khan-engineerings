@@ -43,9 +43,10 @@ async function buildExcel({ title, sheetName, columns, rows, meta = {} }) {
 }
 
 /**
- * Stream a simple PDF table report into a buffer.
+ * Stream a PDF table report into a buffer.
+ * Pass either columns+rows, or sections: [{ heading, columns, rows }].
  */
-function buildPdf({ title, subtitle, columns, rows, metaLines = [] }) {
+function buildPdf({ title, subtitle, columns, rows, metaLines = [], sections = null }) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 40, size: "A4" });
     const chunks = [];
@@ -61,42 +62,65 @@ function buildPdf({ title, subtitle, columns, rows, metaLines = [] }) {
     doc.moveDown();
 
     const usableWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
-    const colWidth = usableWidth / Math.max(columns.length, 1);
 
-    function drawHeader() {
-      doc.fontSize(8).font("Helvetica-Bold");
-      let x = doc.page.margins.left;
-      const y = doc.y;
-      columns.forEach((col) => {
-        doc.text(String(col), x, y, { width: colWidth - 4, ellipsis: true });
-        x += colWidth;
-      });
-      doc.moveDown(0.8);
-      doc
-        .moveTo(doc.page.margins.left, doc.y)
-        .lineTo(doc.page.width - doc.page.margins.right, doc.y)
-        .stroke("#ccc");
-      doc.moveDown(0.4);
-      doc.font("Helvetica");
-    }
+    const tableSections =
+      Array.isArray(sections) && sections.length > 0
+        ? sections
+        : [{ heading: null, columns: columns || [], rows: rows || [] }];
 
-    drawHeader();
+    tableSections.forEach((section, sectionIndex) => {
+      const cols = section.columns || [];
+      const sectionRows = section.rows || [];
+      const colWidth = usableWidth / Math.max(cols.length, 1);
 
-    rows.forEach((row) => {
-      if (doc.y > doc.page.height - 60) {
-        doc.addPage();
-        drawHeader();
+      if (sectionIndex > 0) doc.moveDown(1);
+
+      if (section.heading) {
+        if (doc.y > doc.page.height - 100) doc.addPage();
+        doc.fontSize(11).font("Helvetica-Bold").fillColor("#000").text(section.heading);
+        doc.moveDown(0.4);
+        doc.font("Helvetica");
       }
-      let x = doc.page.margins.left;
-      const y = doc.y;
-      let maxH = 12;
-      row.forEach((cell) => {
-        const h = doc.heightOfString(String(cell ?? ""), { width: colWidth - 4 });
-        maxH = Math.max(maxH, h);
-        doc.fontSize(8).text(String(cell ?? ""), x, y, { width: colWidth - 4 });
-        x += colWidth;
+
+      function drawHeader() {
+        doc.fontSize(8).font("Helvetica-Bold");
+        let x = doc.page.margins.left;
+        const y = doc.y;
+        cols.forEach((col) => {
+          doc.text(String(col), x, y, { width: colWidth - 4, ellipsis: true });
+          x += colWidth;
+        });
+        doc.moveDown(0.8);
+        doc
+          .moveTo(doc.page.margins.left, doc.y)
+          .lineTo(doc.page.width - doc.page.margins.right, doc.y)
+          .stroke("#ccc");
+        doc.moveDown(0.4);
+        doc.font("Helvetica");
+      }
+
+      if (cols.length) drawHeader();
+
+      sectionRows.forEach((row) => {
+        if (doc.y > doc.page.height - 60) {
+          doc.addPage();
+          if (cols.length) drawHeader();
+        }
+        let x = doc.page.margins.left;
+        const y = doc.y;
+        let maxH = 12;
+        const cells = Array.isArray(row) ? row : row?.cells || [];
+        const isBold = Boolean(row?.bold) || String(cells[0] || "").toLowerCase().startsWith("total ");
+        if (isBold) doc.font("Helvetica-Bold");
+        cells.forEach((cell) => {
+          const h = doc.heightOfString(String(cell ?? ""), { width: colWidth - 4 });
+          maxH = Math.max(maxH, h);
+          doc.fontSize(8).text(String(cell ?? ""), x, y, { width: colWidth - 4 });
+          x += colWidth;
+        });
+        if (isBold) doc.font("Helvetica");
+        doc.y = y + maxH + 4;
       });
-      doc.y = y + maxH + 4;
     });
 
     doc.end();

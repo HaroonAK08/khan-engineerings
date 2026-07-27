@@ -8,6 +8,8 @@ import type { MessageKey } from "@/hooks/use-i18n";
 
 const LINKS: Array<{ href: string; labelKey: MessageKey; exact?: boolean }> = [
   { href: "/dashboard/reports", labelKey: "rep.nav.hub", exact: true },
+  { href: "/dashboard/reports/receivables", labelKey: "rep.nav.receivables" },
+  { href: "/dashboard/reports/payables", labelKey: "rep.nav.payables" },
   { href: "/dashboard/reports/sales", labelKey: "rep.nav.sales" },
   { href: "/dashboard/reports/purchases", labelKey: "rep.nav.purchases" },
   { href: "/dashboard/reports/production", labelKey: "rep.nav.production" },

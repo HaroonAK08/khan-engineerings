@@ -130,6 +130,9 @@ async function create(data) {
     });
   }
 
+  const ledgerService = require("../ledger/ledger.service");
+  await ledgerService.syncSupplierPurchaseBalances(data.supplier);
+
   const populated = await Purchase.findById(purchase._id).populate("supplier", "name nameUr phone isActive");
   try {
     const inventoryService = require("../inventory/inventory.service");

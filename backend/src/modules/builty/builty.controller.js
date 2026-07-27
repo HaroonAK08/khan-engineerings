@@ -63,6 +63,28 @@ async function pay(req, res, next) {
   }
 }
 
+async function updatePayment(req, res, next) {
+  try {
+    const result = await builtyService.updateBuiltyPayment(
+      req.params.id,
+      req.params.paymentId,
+      req.body
+    );
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function removePayment(req, res, next) {
+  try {
+    const result = await builtyService.removeBuiltyPayment(req.params.id, req.params.paymentId);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function remove(req, res, next) {
   try {
     await builtyService.removeBuilty(req.params.id);
@@ -72,4 +94,15 @@ async function remove(req, res, next) {
   }
 }
 
-module.exports = { list, report, payments, getOne, create, update, pay, remove };
+module.exports = {
+  list,
+  report,
+  payments,
+  getOne,
+  create,
+  update,
+  pay,
+  updatePayment,
+  removePayment,
+  remove,
+};

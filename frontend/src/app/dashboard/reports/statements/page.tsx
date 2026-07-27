@@ -45,7 +45,7 @@ export default function StatementsPage() {
   const [suppliers, setSuppliers] = useState<Array<{ _id: string; name: string }>>([]);
   const [statement, setStatement] = useState<Statement | null>(null);
   const [loading, setLoading] = useState(false);
-  const [exporting, setExporting] = useState<"xlsx" | "pdf" | null>(null);
+  const [exporting, setExporting] = useState<"pdf" | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -88,7 +88,7 @@ export default function StatementsPage() {
     return () => clearTimeout(t);
   }, [load]);
 
-  async function onExport(format: "xlsx" | "pdf") {
+  async function onExport(format: "pdf") {
     if (!partyId) {
       toast.error(t("statements.selectFirst"));
       return;

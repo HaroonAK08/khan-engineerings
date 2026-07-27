@@ -11,10 +11,12 @@ import {
   customerName,
   deleteBuilty,
   listBuilties,
+  paymentStatusLabel,
   updateBuilty,
   type BuiltyRow,
 } from "@/lib/sales-api";
 import { toDateInput } from "@/lib/date-range";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
@@ -174,9 +176,8 @@ export default function BuiltyPage() {
                   <TableHead>{t("builty.col.billNo")}</TableHead>
                   <TableHead>{t("builty.col.customer")}</TableHead>
                   <TableHead>{t("builty.col.items")}</TableHead>
-                  <TableHead className="text-right">{t("builty.col.given")}</TableHead>
                   <TableHead className="text-right">{t("builty.col.total")}</TableHead>
-                  <TableHead className="text-right">{t("builty.col.left")}</TableHead>
+                  <TableHead>{t("orders.col.payment")}</TableHead>
                   <TableHead className="text-end">{t("cus.col.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -186,7 +187,7 @@ export default function BuiltyPage() {
                     key={row._id}
                     tabIndex={0}
                     className={`cursor-pointer ${
-                      row.balance <= 0
+                      row.paymentStatus === "paid"
                         ? "bg-emerald-50 hover:bg-emerald-50/90 dark:bg-emerald-950/40"
                         : ""
                     }`}
@@ -222,17 +223,12 @@ export default function BuiltyPage() {
                       )}
                     </TableCell>
                     <TableCell className="font-data text-right text-xs whitespace-nowrap">
-                      {formatMoney(row.amountPaid)}
-                    </TableCell>
-                    <TableCell className="font-data text-right text-xs whitespace-nowrap">
                       {formatMoney(row.totalAmount)}
                     </TableCell>
-                    <TableCell
-                      className={`font-data text-right text-xs whitespace-nowrap ${
-                        row.balance > 0 ? "text-destructive" : ""
-                      }`}
-                    >
-                      {formatMoney(row.balance)}
+                    <TableCell>
+                      <Badge variant="secondary" className="font-data">
+                        {paymentStatusLabel(row.paymentStatus, t)}
+                      </Badge>
                     </TableCell>
                     <TableCell
                       className="text-end"
@@ -247,9 +243,9 @@ export default function BuiltyPage() {
                           onClick={() => openEdit(row)}
                         >
                           <Pencil className="size-3.5" />
-                          {t("sal.editPayment")}
+                          {t("common.edit")}
                         </Button>
-                        {row.amountPaid === 0 && (
+                        {row.paymentStatus === "unpaid" && (
                           <Button
                             type="button"
                             size="sm"

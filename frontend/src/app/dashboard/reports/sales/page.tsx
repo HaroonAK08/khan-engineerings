@@ -29,7 +29,7 @@ export default function SalesReportsHubPage() {
   const [dateTo, setDateTo] = useState(defaults.to);
   const [report, setReport] = useState<SalesReport | null>(null);
   const [loading, setLoading] = useState(true);
-  const [exporting, setExporting] = useState<"xlsx" | "pdf" | null>(null);
+  const [exporting, setExporting] = useState<"pdf" | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -47,7 +47,7 @@ export default function SalesReportsHubPage() {
     return () => clearTimeout(t);
   }, [load]);
 
-  async function onExport(format: "xlsx" | "pdf") {
+  async function onExport(format: "pdf") {
     setExporting(format);
     try {
       await downloadReportExport("sales", { format, dateFrom, dateTo });

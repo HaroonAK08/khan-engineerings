@@ -16,7 +16,17 @@ export async function listSuppliers(params?: { q?: string; active?: string }) {
 }
 
 export async function getSupplier(id: string) {
-  const { data } = await api.get<{ supplier: Supplier; balance: number }>(`/suppliers/${id}`);
+  const { data } = await api.get<{
+    supplier: Supplier;
+    balance: number;
+    previousPending?: number;
+    stats?: {
+      purchaseCount: number;
+      totalPurchases: number;
+      totalPaid: number;
+      totalDue: number;
+    };
+  }>(`/suppliers/${id}`);
   return data;
 }
 

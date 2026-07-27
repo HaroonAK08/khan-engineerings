@@ -9,6 +9,24 @@ async function search(req, res, next) {
   }
 }
 
+async function receivables(req, res, next) {
+  try {
+    const report = await reportsService.getReceivablesReport(req.query);
+    res.json({ report });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function payables(req, res, next) {
+  try {
+    const report = await reportsService.getPayablesReport(req.query);
+    res.json({ report });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function customerStatement(req, res, next) {
   try {
     const statement = await reportsService.customerStatement(req.params.id, req.query);
@@ -38,6 +56,8 @@ function exportHandler(kind) {
       if (kind === "expenses") return await reportsService.exportExpenses(q, format, res);
       if (kind === "inventory") return await reportsService.exportInventory(q, format, res);
       if (kind === "finance") return await reportsService.exportFinance(q, format, res);
+      if (kind === "receivables") return await reportsService.exportReceivables(q, format, res);
+      if (kind === "payables") return await reportsService.exportPayables(q, format, res);
       const err = new Error("Unknown export kind");
       err.statusCode = 404;
       throw err;
@@ -67,6 +87,8 @@ async function exportSupplierStatement(req, res, next) {
 
 module.exports = {
   search,
+  receivables,
+  payables,
   customerStatement,
   supplierStatement,
   exportSales: exportHandler("sales"),
@@ -75,6 +97,8 @@ module.exports = {
   exportExpenses: exportHandler("expenses"),
   exportInventory: exportHandler("inventory"),
   exportFinance: exportHandler("finance"),
+  exportReceivables: exportHandler("receivables"),
+  exportPayables: exportHandler("payables"),
   exportCustomerStatement,
   exportSupplierStatement,
 };

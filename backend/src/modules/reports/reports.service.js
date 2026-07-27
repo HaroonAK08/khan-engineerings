@@ -5,6 +5,7 @@ const Purchase = require("../purchases/purchase.model");
 const ProductionBatch = require("../production/production.model");
 const Product = require("../products/product.model");
 const CustomerLedgerEntry = require("../customers/customer-ledger.model");
+const CustomerPayment = require("../customers/customer-payment.model");
 const customerService = require("../customers/customer.service");
 const supplierService = require("../suppliers/supplier.service");
 const ledgerService = require("../ledger/ledger.service");
@@ -499,15 +500,405 @@ async function exportStatement(type, id, query, format, res) {
   return sendExcel(res, buf, `${filename}.xlsx`);
 }
 
+function dateRangeFilter(field, dateFrom, dateTo) {
+  if (!dateFrom && !dateTo) return {};
+  const range = {};
+  if (dateFrom) range.$gte = parseDate(dateFrom, "dateFrom");
+  if (dateTo) {
+    const end = parseDate(dateTo, "dateTo");
+    end.setHours(23, 59, 59, 999);
+    range.$lte = end;
+  }
+  return { [field]: range };
+}
+
+function roundMoney(n) {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+function inDateRange(date, dateFrom, dateTo) {
+  if (!dateFrom && !dateTo) return true;
+  const t = new Date(date).getTime();
+  if (Number.isNaN(t)) return false;
+  if (dateFrom) {
+    const from = parseDate(dateFrom, "dateFrom");
+    from.setHours(0, 0, 0, 0);
+    if (t < from.getTime()) return false;
+  }
+  if (dateTo) {
+    const to = parseDate(dateTo, "dateTo");
+    to.setHours(23, 59, 59, 999);
+    if (t > to.getTime()) return false;
+  }
+  return true;
+}
+
+/**
+ * Receivables after party payments: payments settle previous pending first,
+ * then oldest builties — same as party "Payment pending".
+ */
+async function getReceivablesReport({ dateFrom, dateTo } = {}) {
+  const [builties, adjustments, paymentsAgg] = await Promise.all([
+    Builty.find({})
+      .populate("customer", "name phone")
+      .sort({ builtyDate: 1, createdAt: 1 })
+      .lean(),
+    CustomerLedgerEntry.find({ type: "adjustment", signedAmount: { $gt: 0 } })
+      .populate("customer", "name phone")
+      .sort({ entryDate: 1, createdAt: 1 })
+      .lean(),
+    CustomerPayment.aggregate([{ $group: { _id: "$customer", total: { $sum: "$amount" } } }]),
+  ]);
+
+  const paidByCustomer = new Map(
+    paymentsAgg.map((p) => [String(p._id), roundMoney(p.total)])
+  );
+
+  const byCustomer = new Map();
+
+  function ensureParty(customerDoc, customerId) {
+    const id = String(customerId || "");
+    if (!byCustomer.has(id)) {
+      const c =
+        customerDoc && typeof customerDoc === "object"
+          ? { id, name: customerDoc.name || "—", phone: customerDoc.phone || "" }
+          : { id, name: "—", phone: "" };
+      byCustomer.set(id, { ...c, previousPending: [], builties: [] });
+    }
+    return byCustomer.get(id);
+  }
+
+  for (const a of adjustments) {
+    const cust = a.customer;
+    const id = cust && typeof cust === "object" ? cust._id : a.customer;
+    const party = ensureParty(cust, id);
+    party.previousPending.push({
+      type: "previous_pending",
+      id: String(a._id),
+      date: a.entryDate,
+      reference: a.notes?.trim() || "Previous pending",
+      totalAmount: roundMoney(a.signedAmount || a.amount),
+      href: `/dashboard/party/customers/${party.id}`,
+    });
+  }
+
+  for (const b of builties) {
+    const cust = b.customer;
+    const id = cust && typeof cust === "object" ? cust._id : b.customer;
+    const party = ensureParty(cust, id);
+    party.builties.push({
+      type: "builty",
+      id: String(b._id),
+      date: b.builtyDate,
+      reference: b.builtyNo,
+      totalAmount: roundMoney(b.totalAmount),
+      href: `/dashboard/builty/${b._id}`,
+    });
+  }
+
+  const records = [];
+  for (const party of byCustomer.values()) {
+    let remaining = paidByCustomer.get(party.id) || 0;
+    const ordered = [
+      ...party.previousPending.sort(
+        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+      ),
+      ...party.builties.sort(
+        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+      ),
+    ];
+
+    for (const item of ordered) {
+      const amountPaid = roundMoney(Math.min(remaining, item.totalAmount));
+      const balance = roundMoney(Math.max(0, item.totalAmount - amountPaid));
+      remaining = roundMoney(Math.max(0, remaining - amountPaid));
+
+      if (balance <= 0) continue;
+      if (!inDateRange(item.date, dateFrom, dateTo)) continue;
+
+      records.push({
+        id: item.id,
+        type: item.type,
+        date: item.date,
+        reference: item.reference,
+        partyId: party.id,
+        partyName: party.name,
+        partyPhone: party.phone,
+        totalAmount: item.totalAmount,
+        amountPaid,
+        balance,
+        href: item.href,
+      });
+    }
+  }
+
+  records.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  const byPartyMap = new Map();
+  for (const r of records) {
+    const key = r.partyId || r.partyName;
+    const existing = byPartyMap.get(key);
+    if (existing) {
+      existing.balance = roundMoney(existing.balance + r.balance);
+      existing.recordCount += 1;
+    } else {
+      byPartyMap.set(key, {
+        partyId: r.partyId,
+        name: r.partyName,
+        phone: r.partyPhone,
+        balance: r.balance,
+        recordCount: 1,
+      });
+    }
+  }
+  const byParty = [...byPartyMap.values()].sort((a, b) => b.balance - a.balance);
+  const totalReceivable = roundMoney(records.reduce((s, r) => s + r.balance, 0));
+
+  return {
+    period: { from: dateFrom || null, to: dateTo || null },
+    totals: {
+      totalReceivable,
+      partyCount: byParty.length,
+      recordCount: records.length,
+    },
+    byParty,
+    records,
+  };
+}
+
+async function getPayablesReport({ dateFrom, dateTo } = {}) {
+  const supplierIds = await Purchase.distinct("supplier");
+  for (const id of supplierIds) {
+    await ledgerService.syncSupplierPurchaseBalances(id);
+  }
+
+  const match = {
+    balance: { $gt: 0 },
+    ...dateRangeFilter("purchaseDate", dateFrom, dateTo),
+  };
+
+  const purchases = await Purchase.find(match)
+    .populate("supplier", "name nameUr phone")
+    .sort({ purchaseDate: -1, balance: -1 })
+    .lean();
+
+  const records = purchases.map((p) => {
+    const supplier =
+      p.supplier && typeof p.supplier === "object"
+        ? {
+            id: String(p.supplier._id),
+            name: p.supplier.name || "—",
+            phone: p.supplier.phone || "",
+          }
+        : { id: String(p.supplier || ""), name: "—", phone: "" };
+    const payable = roundMoney((p.totalAmount || 0) + (p.freightAmount || 0));
+    return {
+      id: String(p._id),
+      type: "purchase",
+      date: p.purchaseDate,
+      reference: p.invoiceNo || "—",
+      partyId: supplier.id,
+      partyName: supplier.name,
+      partyPhone: supplier.phone,
+      materialType: p.materialType || "scrap",
+      totalAmount: payable,
+      amountPaid: roundMoney(p.amountPaid),
+      balance: roundMoney(p.balance),
+      href: supplier.id ? `/dashboard/suppliers/${supplier.id}` : "/dashboard/suppliers",
+    };
+  });
+
+  const bySupplierMap = new Map();
+  for (const r of records) {
+    const key = r.partyId || r.partyName;
+    const existing = bySupplierMap.get(key);
+    if (existing) {
+      existing.balance = roundMoney(existing.balance + r.balance);
+      existing.recordCount += 1;
+    } else {
+      bySupplierMap.set(key, {
+        partyId: r.partyId,
+        name: r.partyName,
+        phone: r.partyPhone,
+        balance: r.balance,
+        recordCount: 1,
+      });
+    }
+  }
+  const bySupplier = [...bySupplierMap.values()].sort((a, b) => b.balance - a.balance);
+  const totalPayable = roundMoney(records.reduce((s, r) => s + r.balance, 0));
+
+  return {
+    period: { from: dateFrom || null, to: dateTo || null },
+    totals: {
+      totalPayable,
+      supplierCount: bySupplier.length,
+      recordCount: records.length,
+    },
+    bySupplier,
+    records,
+  };
+}
+
+async function exportReceivables(query, format, res) {
+  const report = await getReceivablesReport(query);
+  const period = periodLabel(query.dateFrom, query.dateTo);
+  const meta = {
+    Period: period,
+    Overall: !query.dateFrom && !query.dateTo ? "All" : period,
+    "Total receivables": money(report.totals.totalReceivable),
+    Parties: report.totals.partyCount,
+    Records: report.totals.recordCount,
+  };
+  const title = "Money receivables report";
+
+  const partyColumns = ["Party", "Records", "Party receivable"];
+  const partyRows = (report.byParty || []).map((p) => [
+    p.name,
+    p.recordCount,
+    money(p.balance),
+  ]);
+  if (partyRows.length > 0) {
+    partyRows.push([
+      "Total receivables",
+      report.totals.recordCount,
+      money(report.totals.totalReceivable),
+    ]);
+  }
+
+  const recordColumns = ["Date", "Type", "Reference", "Party", "Total", "Paid", "Balance"];
+  const recordRows = (report.records || []).map((r) => [
+    fmtDate(r.date),
+    r.type === "previous_pending" ? "Previous pending" : "Builty",
+    r.reference,
+    r.partyName,
+    money(r.totalAmount),
+    money(r.amountPaid),
+    money(r.balance),
+  ]);
+
+  if (format === "pdf") {
+    const buf = await buildPdf({
+      title,
+      subtitle: "Khan Engineerings",
+      metaLines: [
+        `Overall: ${meta.Overall}`,
+        `Total receivables: ${meta["Total receivables"]}`,
+        `Parties: ${meta.Parties}`,
+        `Records: ${meta.Records}`,
+      ],
+      sections: [
+        {
+          heading: "Receivable total of each party",
+          columns: partyColumns,
+          rows: partyRows,
+        },
+        {
+          heading: "All records",
+          columns: recordColumns,
+          rows: recordRows,
+        },
+      ],
+    });
+    return sendPdf(res, buf, "receivables-report.pdf");
+  }
+
+  const buf = await buildExcel({
+    title,
+    sheetName: "Receivables",
+    columns: recordColumns,
+    rows: recordRows,
+    meta,
+  });
+  return sendExcel(res, buf, "receivables-report.xlsx");
+}
+
+async function exportPayables(query, format, res) {
+  const report = await getPayablesReport(query);
+  const period = periodLabel(query.dateFrom, query.dateTo);
+  const meta = {
+    Period: period,
+    Overall: !query.dateFrom && !query.dateTo ? "All" : period,
+    "Total payables": money(report.totals.totalPayable),
+    Suppliers: report.totals.supplierCount,
+    Records: report.totals.recordCount,
+  };
+  const title = "Money payables report";
+
+  const partyColumns = ["Supplier", "Records", "Party payable"];
+  const partyRows = (report.bySupplier || []).map((p) => [
+    p.name,
+    p.recordCount,
+    money(p.balance),
+  ]);
+  if (partyRows.length > 0) {
+    partyRows.push([
+      "Total payables",
+      report.totals.recordCount,
+      money(report.totals.totalPayable),
+    ]);
+  }
+
+  const recordColumns = ["Date", "Invoice / ref", "Supplier", "Material", "Total", "Paid", "Balance"];
+  const recordRows = (report.records || []).map((r) => [
+    fmtDate(r.date),
+    r.reference,
+    r.partyName,
+    r.materialType || "scrap",
+    money(r.totalAmount),
+    money(r.amountPaid),
+    money(r.balance),
+  ]);
+
+  if (format === "pdf") {
+    const buf = await buildPdf({
+      title,
+      subtitle: "Khan Engineerings",
+      metaLines: [
+        `Overall: ${meta.Overall}`,
+        `Total payables: ${meta["Total payables"]}`,
+        `Suppliers: ${meta.Suppliers}`,
+        `Records: ${meta.Records}`,
+      ],
+      sections: [
+        {
+          heading: "Payable total of each party",
+          columns: partyColumns,
+          rows: partyRows,
+        },
+        {
+          heading: "All records",
+          columns: recordColumns,
+          rows: recordRows,
+        },
+      ],
+    });
+    return sendPdf(res, buf, "payables-report.pdf");
+  }
+
+  const buf = await buildExcel({
+    title,
+    sheetName: "Payables",
+    columns: recordColumns,
+    rows: recordRows,
+    meta,
+  });
+  return sendExcel(res, buf, "payables-report.xlsx");
+}
+
 module.exports = {
   globalSearch,
   customerStatement,
   supplierStatement,
+  getReceivablesReport,
+  getPayablesReport,
   exportSales,
   exportPurchases,
   exportProduction,
   exportExpenses,
   exportInventory,
   exportFinance,
+  exportReceivables,
+  exportPayables,
   exportStatement,
 };

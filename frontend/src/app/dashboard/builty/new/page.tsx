@@ -69,7 +69,6 @@ function BuiltyForm() {
   const [billNo, setBillNo] = useState("");
   const [builtyDate, setBuiltyDate] = useState(todayInput());
   const [lines, setLines] = useState<Line[]>([emptyLine()]);
-  const [previousPending, setPreviousPending] = useState(0);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -151,16 +150,16 @@ function BuiltyForm() {
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
   }
 
-  function openNewCustomer() {
-    setNewCustomerName("");
-    setNewCustomerPhone("");
-    setNewCustomerAddress("");
-    setNewCustomerOpen(true);
+  function removeLine(index: number) {
+    setLines((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)));
   }
 
   function onCustomerSelect(value: string) {
     if (value === NEW_CUSTOMER) {
-      openNewCustomer();
+      setNewCustomerName("");
+      setNewCustomerPhone("");
+      setNewCustomerAddress("");
+      setNewCustomerOpen(true);
       return;
     }
     setCustomer(value);
@@ -235,10 +234,9 @@ function BuiltyForm() {
         customer,
         builtyDate,
         items,
-        previousPending: previousPending > 0 ? previousPending : undefined,
       });
       toast.success(t("builtyNew.created"));
-      router.push(`/dashboard/builty/${data.builty._id}`);
+      router.push("/dashboard/builty");
     } catch (err) {
       toast.error(apiError(err, t("builtyNew.createFailed")));
     } finally {
@@ -275,53 +273,27 @@ function BuiltyForm() {
           <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5 sm:col-span-2">
               <Label>{t("builtyNew.party")}</Label>
-              <div className="flex gap-2">
-                <select
-                  className="h-11 min-w-0 flex-1 rounded-lg border border-input bg-transparent px-2.5 text-base dark:bg-input/30"
-                  value={customer}
-                  onChange={(e) => onCustomerSelect(e.target.value)}
-                  required
-                >
-                  <option value="">{t("builtyNew.selectParty")}</option>
-                  <option value={NEW_CUSTOMER}>{t("builtyNew.newParty")}</option>
-                  {customers.map((c) => (
-                    <option key={c._id} value={c._id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={openNewCustomer}
-                  title={t("builtyNew.newParty")}
-                >
-                  <Plus className="size-4" />
-                </Button>
-              </div>
+              <select
+                className="h-11 w-full rounded-lg border border-input bg-transparent px-2.5 text-base dark:bg-input/30"
+                value={customer}
+                onChange={(e) => onCustomerSelect(e.target.value)}
+                required
+              >
+                <option value="" disabled hidden>
+                  {t("builtyNew.selectParty")}
+                </option>
+                <option value={NEW_CUSTOMER}>{t("builtyNew.addNewParty")}</option>
+                {customers.map((c) => (
+                  <option key={c._id} value={c._id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
               {customer && partyBalance !== null && (
                 <p className="font-data text-xs text-muted-foreground">
                   {t("builtyNew.currentPending", { amount: formatMoney(partyBalance) })}
                 </p>
               )}
-            </div>
-            <div className="flex flex-col gap-1.5 sm:col-span-2">
-              <Label>{t("builtyNew.previousPending")}</Label>
-              <Input
-                type="number"
-                step="0.01"
-                min={0}
-                value={previousPending || ""}
-                onChange={(e) =>
-                  setPreviousPending(e.target.value === "" ? 0 : Number(e.target.value))
-                }
-                placeholder="0"
-                className="h-11 text-base"
-              />
-              <p className="text-xs text-muted-foreground">
-                {t("builtyNew.previousPendingHint")}
-              </p>
             </div>
             <div className="flex flex-col gap-1.5">
               <Label>{t("builtyNew.builtyNo")}</Label>
@@ -449,7 +421,7 @@ function BuiltyForm() {
                       type="button"
                       size="icon"
                       variant="ghost"
-                      onClick={() => setLines((prev) => prev.filter((_, i) => i !== index))}
+                      onClick={() => removeLine(index)}
                       disabled={lines.length === 1}
                     >
                       <Trash2 className="size-4" />
@@ -559,7 +531,7 @@ function BuiltyForm() {
               onClick={() => setLines((prev) => [...prev, emptyLine()])}
             >
               <Plus className="size-4" />
-              {t("orderNew.addLine")}
+              {t("builtyNew.addMore")}
             </Button>
             <p className="font-data text-right text-base">
               {t("orderNew.total")} <span className="text-xl">{formatMoney(total)}</span>

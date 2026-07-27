@@ -13,6 +13,8 @@ import { useI18n } from "@/hooks/use-i18n";
 import type { MessageKey } from "@/hooks/use-i18n";
 
 const MODULES: Array<{ href: string; titleKey: MessageKey; descKey: MessageKey }> = [
+  { href: "/dashboard/reports/receivables", titleKey: "rep.recvTitle", descKey: "rep.recvDesc" },
+  { href: "/dashboard/reports/payables", titleKey: "rep.payTitle", descKey: "rep.payDesc" },
   { href: "/dashboard/reports/sales", titleKey: "rep.salesTitle", descKey: "rep.salesDesc" },
   {
     href: "/dashboard/reports/purchases",

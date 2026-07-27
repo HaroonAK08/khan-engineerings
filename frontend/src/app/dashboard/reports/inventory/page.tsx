@@ -28,7 +28,7 @@ export default function InventoryReportsHubPage() {
   const [dateTo, setDateTo] = useState(d.to);
   const [report, setReport] = useState<InventoryReport | null>(null);
   const [loading, setLoading] = useState(true);
-  const [exporting, setExporting] = useState<"xlsx" | "pdf" | null>(null);
+  const [exporting, setExporting] = useState<"pdf" | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -46,7 +46,7 @@ export default function InventoryReportsHubPage() {
     return () => clearTimeout(t);
   }, [load]);
 
-  async function onExport(format: "xlsx" | "pdf") {
+  async function onExport(format: "pdf") {
     setExporting(format);
     try {
       await downloadReportExport("inventory", { format, dateFrom, dateTo });

@@ -10,7 +10,6 @@ import {
   formatDate,
   formatKg,
   formatMoney,
-  recordPayment,
   updateLedgerEntry,
   updatePurchase,
 } from "@/lib/materials-api";
@@ -116,12 +115,6 @@ export function SupplierHistoryCalendar({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const [payOpen, setPayOpen] = useState(false);
-  const [payingEntry, setPayingEntry] = useState<LedgerEntry | null>(null);
-  const [payAmount, setPayAmount] = useState("");
-  const [payDate, setPayDate] = useState(todayInput());
-  const [paying, setPaying] = useState(false);
-
   const filtered = useMemo(() => {
     let list = entries.filter((e) => e.type === kind);
     if (dateFrom) {
@@ -219,54 +212,6 @@ export function SupplierHistoryCalendar({
       setFormMaterial((p?.materialType || "scrap") === "daig" ? "daig" : "scrap");
     }
     setDialogOpen(true);
-  }
-
-  function openPay(e: LedgerEntry) {
-    const p = purchaseOf(e);
-    if (!p) return;
-    const remaining = balanceOf(p);
-    if (remaining <= 0) {
-      toast.success(t("supplierDetail.alreadyPaid"));
-      return;
-    }
-    setPayingEntry(e);
-    setPayAmount(String(remaining));
-    setPayDate(todayInput());
-    setPayOpen(true);
-  }
-
-  async function savePay() {
-    if (!payingEntry || !supplierId) return;
-    const purchaseId = purchaseIdOf(payingEntry);
-    if (!purchaseId) {
-      toast.error(t("supplierDetail.purchaseMissing"));
-      return;
-    }
-    const amount = Number(payAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      toast.error(t("supplierDetail.enterAmount"));
-      return;
-    }
-    if (!payDate) {
-      toast.error(t("supplierDetail.pickDate"));
-      return;
-    }
-    setPaying(true);
-    try {
-      await recordPayment(supplierId, {
-        amount,
-        entryDate: payDate,
-        purchaseId,
-      });
-      toast.success(t("supplierDetail.paymentRecorded"));
-      setPayOpen(false);
-      setPayingEntry(null);
-      await onChanged();
-    } catch (err) {
-      toast.error(apiError(err, t("supplierDetail.paymentFailed")));
-    } finally {
-      setPaying(false);
-    }
   }
 
   async function saveEdit() {
@@ -381,9 +326,6 @@ export function SupplierHistoryCalendar({
       toast.error(apiError(err, t("supplierDetail.entryDeleteFailed")));
     }
   }
-
-  const payingPurchase = payingEntry ? purchaseOf(payingEntry) : null;
-  const payingRemaining = payingPurchase ? balanceOf(payingPurchase) : 0;
 
   return (
     <div className="flex flex-col gap-4">
@@ -510,16 +452,6 @@ export function SupplierHistoryCalendar({
                       </TableCell>
                       <TableCell className="text-end">
                         <div className="inline-flex flex-wrap justify-end gap-1.5">
-                          {remaining > 0 && supplierId ? (
-                            <Button
-                              type="button"
-                              size="sm"
-                              className="gap-1"
-                              onClick={() => openPay(e)}
-                            >
-                              {t("supplierDetail.pay")}
-                            </Button>
-                          ) : null}
                           <Button
                             type="button"
                             size="sm"
@@ -528,7 +460,7 @@ export function SupplierHistoryCalendar({
                             onClick={() => openEdit(e)}
                           >
                             <Pencil className="size-3.5" />
-                            {t("sal.editPayment")}
+                            {t("common.edit")}
                           </Button>
                           <Button
                             type="button"
@@ -779,75 +711,6 @@ export function SupplierHistoryCalendar({
                 {t("common.save")}
               </Button>
             </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={payOpen} onOpenChange={setPayOpen}>
-        <DialogContent showCloseButton>
-          <DialogHeader>
-            <DialogTitle>{t("supplierDetail.payPurchase")}</DialogTitle>
-            <DialogDescription>
-              {payingPurchase
-                ? `${materialLabel(payingPurchase.materialType)} · ${formatKg(payingPurchase.quantityKg)} kg`
-                : null}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3">
-            <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
-              <div className="flex justify-between gap-3">
-                <span className="text-muted-foreground">{t("common.amount")}</span>
-                <span className="font-data">
-                  {formatMoney(payingPurchase ? payableOf(payingPurchase) : 0)}
-                </span>
-              </div>
-              <div className="mt-1 flex justify-between gap-3">
-                <span className="text-muted-foreground">{t("customerDetail.paid")}</span>
-                <span className="font-data">
-                  {formatMoney(payingPurchase ? paidOf(payingPurchase) : 0)}
-                </span>
-              </div>
-              <div className="mt-1 flex justify-between gap-3">
-                <span className="text-muted-foreground">{t("common.balance")}</span>
-                <span className="font-data font-semibold">{formatMoney(payingRemaining)}</span>
-              </div>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>{t("supplierDetail.payAmount")}</Label>
-              <Input
-                type="number"
-                min={0}
-                step="0.01"
-                max={payingRemaining || undefined}
-                value={payAmount}
-                onChange={(e) => setPayAmount(e.target.value)}
-                className="h-11 text-base"
-                autoFocus
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>{t("common.date")}</Label>
-              <Input
-                type="date"
-                value={payDate}
-                onChange={(e) => setPayDate(e.target.value)}
-                className="h-11"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setPayOpen(false)}>
-              {t("sal.cancel")}
-            </Button>
-            <Button
-              type="button"
-              disabled={paying}
-              className="gap-1.5"
-              onClick={() => void savePay()}
-            >
-              {paying ? <Loader2 className="size-4 animate-spin" /> : null}
-              {t("supplierDetail.submitPayment")}
-            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
