@@ -43,6 +43,38 @@ async function nextBatchNo() {
   return `${prefix}-${String(count + 1).padStart(3, "0")}`;
 }
 
+function isDuplicateBatchNoError(err) {
+  return Boolean(
+    err &&
+      (err.code === 11000 || err.code === 11001) &&
+      (err.keyPattern?.batchNo || err.keyValue?.batchNo)
+  );
+}
+
+async function createBatchWithBatchNo(factory, customBatchNo) {
+  if (customBatchNo) {
+    try {
+      return await factory(customBatchNo);
+    } catch (err) {
+      if (isDuplicateBatchNoError(err)) {
+        throw httpError("Batch number already exists", 409);
+      }
+      throw err;
+    }
+  }
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const batchNo = await nextBatchNo();
+    try {
+      return await factory(batchNo);
+    } catch (err) {
+      if (!isDuplicateBatchNoError(err)) throw err;
+    }
+  }
+
+  throw httpError("Could not generate a unique batch number. Please try again.", 409);
+}
+
 function buildStages(family) {
   const ids = stagesForFamily(family);
   return ids.map((stage) => ({
@@ -187,10 +219,6 @@ async function produce(data) {
     );
   }
 
-  const batchNo = data.batchNo?.trim() || (await nextBatchNo());
-  const existing = await ProductionBatch.findOne({ batchNo });
-  if (existing) throw httpError("Batch number already exists", 409);
-
   const productionDate = parseDate(data.productionDate || new Date(), "Production date");
   const now = new Date();
   const stages = buildStages(family).map((s) => ({
@@ -199,32 +227,36 @@ async function produce(data) {
     completedAt: s.status === "skipped" ? null : now,
   }));
 
-  const batch = await ProductionBatch.create({
-    batchNo,
-    family,
-    isRework: Boolean(data.isRework),
-    productionDate,
-    status: "completed",
-    currentStage: "finished",
-    inputs: [{ materialType, quantityKg: chargedKg }],
-    outputs: [{ product: product._id, quantity, family }],
-    furnaceWasteKg: wasteKg,
-    handKg: 0,
-    stages,
-    outputProgress: [
-      {
+  const batch = await createBatchWithBatchNo(
+    (batchNo) =>
+      ProductionBatch.create({
+        batchNo,
+        family,
+        isRework: Boolean(data.isRework),
+        productionDate,
+        status: "completed",
+        currentStage: "finished",
+        inputs: [{ materialType, quantityKg: chargedKg }],
+        outputs: [{ product: product._id, quantity, family }],
+        furnaceWasteKg: wasteKg,
+        handKg: 0,
+        stages,
+        outputProgress: [
+          {
+            product: product._id,
+            furnaceQty: quantity,
+            goodAfterTurning: quantity,
+            brokenAfterTurning: 0,
+            finishedQty: quantity,
+          },
+        ],
+        notes: data.notes?.trim() || "",
         product: product._id,
-        furnaceQty: quantity,
-        goodAfterTurning: quantity,
-        brokenAfterTurning: 0,
-        finishedQty: quantity,
-      },
-    ],
-    notes: data.notes?.trim() || "",
-    product: product._id,
-    goodUnits: quantity,
-    rejectedUnits: 0,
-  });
+        goodUnits: quantity,
+        rejectedUnits: 0,
+      }),
+    data.batchNo?.trim()
+  );
 
   const inventoryService = require("../inventory/inventory.service");
   await inventoryService.onBatchInputsConsumed(batch);
@@ -261,25 +293,25 @@ async function create(data) {
     throw httpError("Invalid material type", 400);
   }
 
-  const batchNo = data.batchNo?.trim() || (await nextBatchNo());
-  const existing = await ProductionBatch.findOne({ batchNo });
-  if (existing) throw httpError("Batch number already exists", 409);
-
-  const batch = await ProductionBatch.create({
-    batchNo,
-    family,
-    isRework: Boolean(data.isRework),
-    productionDate: parseDate(data.productionDate || new Date(), "Production date"),
-    status: "in_progress",
-    currentStage: "furnace",
-    inputs: [{ materialType, quantityKg: 0 }],
-    outputs: [],
-    furnaceWasteKg: 0,
-    handKg: 0,
-    stages: buildStages(family),
-    outputProgress: [],
-    notes: data.notes?.trim() || "",
-  });
+  const batch = await createBatchWithBatchNo(
+    (batchNo) =>
+      ProductionBatch.create({
+        batchNo,
+        family,
+        isRework: Boolean(data.isRework),
+        productionDate: parseDate(data.productionDate || new Date(), "Production date"),
+        status: "in_progress",
+        currentStage: "furnace",
+        inputs: [{ materialType, quantityKg: 0 }],
+        outputs: [],
+        furnaceWasteKg: 0,
+        handKg: 0,
+        stages: buildStages(family),
+        outputProgress: [],
+        notes: data.notes?.trim() || "",
+      }),
+    data.batchNo?.trim()
+  );
 
   return populateBatch(batch._id);
 }
