@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { History, Loader2 } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
 import { todayInput } from "@/lib/date-range";
 import { api } from "@/lib/api";
@@ -129,14 +130,23 @@ export default function ClaimsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
-          {t("claims.eyebrow")}
-        </p>
-        <h1 className="text-nameplate text-xl">{t("claims.title")}</h1>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
+            {t("claims.eyebrow")}
+          </p>
+          <h1 className="text-nameplate text-xl">{t("claims.title")}</h1>
+        </div>
+        <Link
+          href="#claim-history"
+          className="inline-flex h-10 items-center gap-2 rounded-lg border border-input bg-background px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-muted"
+        >
+          <History className="size-4" />
+          Claim History
+        </Link>
       </div>
 
-      <Card>
+      <Card id="claim-history">
         <CardHeader>
           <CardTitle className="text-nameplate text-sm">{t("claims.record")}</CardTitle>
           <CardDescription>{t("claims.recordDesc")}</CardDescription>

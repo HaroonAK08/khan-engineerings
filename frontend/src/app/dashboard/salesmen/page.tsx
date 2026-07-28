@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Loader2, Plus, Search } from "lucide-react";
+import { History, Loader2, Plus, Search } from "lucide-react";
 import { apiError } from "@/lib/materials-api";
 import {
   createSalesman,
@@ -119,13 +120,22 @@ export default function SalesmenPage() {
           </p>
           <h1 className="text-nameplate text-xl">{t("sm.title")}</h1>
         </div>
-        <Button onClick={openCreate} className="gap-2">
-          <Plus className="size-4" />
-          {t("sm.add")}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="#salesman-history"
+            className="inline-flex h-10 items-center gap-2 rounded-lg border border-input bg-background px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-muted"
+          >
+            <History className="size-4" />
+            Salesman History
+          </Link>
+          <Button onClick={openCreate} className="gap-2">
+            <Plus className="size-4" />
+            {t("sm.add")}
+          </Button>
+        </div>
       </div>
 
-      <Card>
+      <Card id="salesman-history">
         <CardHeader className="pb-3">
           <div className="relative">
             <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />

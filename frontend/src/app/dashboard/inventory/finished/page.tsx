@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
-import { Loader2, Pencil, Plus } from "lucide-react";
+import { History, Loader2, Pencil, Plus } from "lucide-react";
 import { InventorySubnav } from "@/components/layout/inventory-subnav";
 import { ProductSearchSelect } from "@/components/products/product-search-select";
 import { apiError } from "@/lib/materials-api";
@@ -18,7 +19,7 @@ import { listProducts } from "@/lib/production-api";
 import type { Product } from "@/types/production";
 import { useI18n } from "@/hooks/use-i18n";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
   Dialog,
@@ -228,10 +229,22 @@ export default function FinishedGoodsPage() {
             {t("finished.summary", { units: visibleUnits, lines: filteredItems.length })}
           </p>
         </div>
-        <Button type="button" className="gap-2" onClick={openAdd}>
-          <Plus className="size-4" />
-          {t("finished.addStock")}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/dashboard/inventory/movements"
+            className={buttonVariants({
+              variant: "outline",
+              className: "gap-2",
+            })}
+          >
+            <History className="size-4" />
+            Finished Goods History
+          </Link>
+          <Button type="button" className="gap-2" onClick={openAdd}>
+            <Plus className="size-4" />
+            {t("finished.addStock")}
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

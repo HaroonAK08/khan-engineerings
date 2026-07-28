@@ -93,7 +93,7 @@ export default function ElectricityExpensesPage() {
             })}
           >
             <History className="size-5" />
-            {t("exp.showHistory")}
+            Electricty History
           </Link>
         </div>
       </div>

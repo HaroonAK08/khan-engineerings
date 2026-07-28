@@ -152,7 +152,7 @@ export default function InventoryPage() {
           })}
         >
           <History className="size-5" />
-          {t("exp.showHistory")}
+          Inventory History
         </Link>
       </div>
 

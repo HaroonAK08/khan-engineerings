@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
+import { History, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
 import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
 import {
@@ -131,16 +131,25 @@ export default function BuiltyPage() {
           </p>
           <h1 className="text-nameplate text-xl">{t("builty.title")}</h1>
         </div>
-        <Link
-          href="/dashboard/builty/new"
-          className="inline-flex h-12 w-fit min-w-44 items-center justify-center gap-2 rounded-lg bg-primary px-8 text-base font-semibold text-primary-foreground shadow-sm"
-        >
-          <Plus className="size-5" />
-          {t("builty.new")}
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            href="#builty-history"
+            className="inline-flex h-12 w-fit min-w-44 items-center justify-center gap-2 rounded-lg border border-input bg-background px-8 text-base font-semibold text-foreground shadow-sm transition-colors hover:bg-muted"
+          >
+            <History className="size-5" />
+            Builty History
+          </a>
+          <Link
+            href="/dashboard/builty/new"
+            className="inline-flex h-12 w-fit min-w-44 items-center justify-center gap-2 rounded-lg bg-primary px-8 text-base font-semibold text-primary-foreground shadow-sm"
+          >
+            <Plus className="size-5" />
+            {t("builty.new")}
+          </Link>
+        </div>
       </div>
 
-      <Card>
+      <Card id="builty-history">
         <CardHeader className="pb-3">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Input
