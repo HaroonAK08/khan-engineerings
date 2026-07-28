@@ -33,22 +33,48 @@ function roundMoney(n) {
   return Math.round(n * 100) / 100;
 }
 
-async function nextBatchNo() {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  const prefix = `PB-${start.toISOString().slice(0, 10).replace(/-/g, "")}`;
-  const count = await ProductionBatch.countDocuments({
-    batchNo: new RegExp(`^${prefix}`),
-  });
-  return `${prefix}-${String(count + 1).padStart(3, "0")}`;
+function localDatePrefix(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `PB-${y}${m}${d}`;
+}
+
+function formatBatchNo(prefix, seq) {
+  return `${prefix}-${String(seq).padStart(3, "0")}`;
+}
+
+async function maxSeqForPrefix(prefix) {
+  const existing = await ProductionBatch.find({
+    batchNo: new RegExp(`^${prefix}-\\d+$`),
+  })
+    .select("batchNo")
+    .lean();
+
+  let maxSeq = 0;
+  for (const row of existing) {
+    const match = /-(\d+)$/.exec(row.batchNo || "");
+    if (match) maxSeq = Math.max(maxSeq, Number(match[1]));
+  }
+  return maxSeq;
+}
+
+async function nextBatchNo(minSeq = 0) {
+  const prefix = localDatePrefix();
+  const maxSeq = await maxSeqForPrefix(prefix);
+  const seq = Math.max(maxSeq, minSeq) + 1;
+  return { batchNo: formatBatchNo(prefix, seq), seq, prefix };
 }
 
 function isDuplicateBatchNoError(err) {
-  return Boolean(
-    err &&
-      (err.code === 11000 || err.code === 11001) &&
-      (err.keyPattern?.batchNo || err.keyValue?.batchNo)
-  );
+  if (!err) return false;
+  const nested = err.cause || {};
+  const code = err.code ?? nested.code;
+  if (code !== 11000 && code !== 11001) return false;
+  if (err.keyPattern?.batchNo || err.keyValue?.batchNo) return true;
+  if (nested.keyPattern?.batchNo || nested.keyValue?.batchNo) return true;
+  const msg = String(err.message || nested.message || "");
+  return /batchNo/i.test(msg) || /duplicate key/i.test(msg);
 }
 
 async function createBatchWithBatchNo(factory, customBatchNo) {
@@ -56,23 +82,23 @@ async function createBatchWithBatchNo(factory, customBatchNo) {
     try {
       return await factory(customBatchNo);
     } catch (err) {
-      if (isDuplicateBatchNoError(err)) {
-        throw httpError("Batch number already exists", 409);
-      }
-      throw err;
-    }
-  }
-
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    const batchNo = await nextBatchNo();
-    try {
-      return await factory(batchNo);
-    } catch (err) {
       if (!isDuplicateBatchNoError(err)) throw err;
     }
   }
 
-  throw httpError("Could not generate a unique batch number. Please try again.", 409);
+  let floor = 0;
+  for (let attempt = 0; attempt < 25; attempt += 1) {
+    const { batchNo, seq } = await nextBatchNo(floor);
+    try {
+      return await factory(batchNo);
+    } catch (err) {
+      if (!isDuplicateBatchNoError(err)) throw err;
+      floor = seq;
+    }
+  }
+
+  const fallback = `${localDatePrefix()}-${Date.now()}`;
+  return factory(fallback);
 }
 
 function buildStages(family) {
