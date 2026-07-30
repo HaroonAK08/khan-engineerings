@@ -2,6 +2,11 @@ const LedgerEntry = require("./ledger.model");
 const Purchase = require("../purchases/purchase.model");
 const supplierService = require("../suppliers/supplier.service");
 const mongoose = require("mongoose");
+const {
+  dayRange,
+  wantsConfirmDuplicate,
+  sameDayDuplicateError,
+} = require("../../utils/sameDay");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -102,8 +107,9 @@ async function getBalance(supplierId) {
   return supplierService.getBalance(supplierId);
 }
 
-async function recordPayment(supplierId, { amount, entryDate, notes, purchaseId }) {
-  await supplierService.getById(supplierId);
+async function recordPayment(supplierId, data = {}) {
+  const { amount, entryDate, notes, purchaseId } = data;
+  const supplier = await supplierService.getById(supplierId);
   const n = roundMoney(Number(amount));
   if (!Number.isFinite(n) || n <= 0) throw httpError("Payment amount must be greater than 0", 400);
 
@@ -121,12 +127,34 @@ async function recordPayment(supplierId, { amount, entryDate, notes, purchaseId 
     }
   }
 
+  const date = parseDate(entryDate || new Date(), "Entry date");
+
+  if (!wantsConfirmDuplicate(data)) {
+    const { start, end } = dayRange(date);
+    const existing = await LedgerEntry.findOne({
+      supplier: supplierId,
+      type: "payment",
+      amount: n,
+      entryDate: { $gte: start, $lte: end },
+    })
+      .select("_id")
+      .lean();
+    if (existing) {
+      const supplierName = supplier?.name || "this supplier";
+      const err = sameDayDuplicateError(
+        `Trying to create a duplicate payment entry on the same day for "${supplierName}" (${n}). Do you want to continue?`
+      );
+      err.existingId = existing._id;
+      throw err;
+    }
+  }
+
   const entry = await LedgerEntry.create({
     supplier: supplierId,
     type: "payment",
     amount: n,
     purchase: purchase ? purchase._id : null,
-    entryDate: parseDate(entryDate || new Date(), "Entry date"),
+    entryDate: date,
     notes: notes?.trim() || (purchase ? "Payment on purchase" : "Supplier payment"),
   });
 

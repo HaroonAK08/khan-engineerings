@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Big_Shoulders, IBM_Plex_Sans, IBM_Plex_Mono, Noto_Nastaliq_Urdu } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toaster";
+import { DuplicateConfirmDialog } from "@/components/duplicate-confirm-dialog";
 import { AppProviders } from "@/providers/app-providers";
 import "./globals.css";
 
@@ -80,6 +81,7 @@ export default function RootLayout({
         <AppProviders>
           <TooltipProvider delay={200}>{children}</TooltipProvider>
           <Toaster />
+          <DuplicateConfirmDialog />
         </AppProviders>
       </body>
     </html>

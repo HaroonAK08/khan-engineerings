@@ -12,6 +12,7 @@ import {
   getSupplier,
   recordAdjustment,
   recordPayment,
+  withSameDayConfirm,
 } from "@/lib/materials-api";
 import type { LedgerEntry, Supplier } from "@/types/materials";
 import { Button } from "@/components/ui/button";
@@ -127,11 +128,15 @@ export default function SupplierDetailPage() {
     }
     setSavingPay(true);
     try {
-      await recordPayment(id, {
+      const body = {
         amount,
         entryDate: payDate,
         notes: payNotes.trim() || undefined,
-      });
+      };
+      const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
+        recordPayment(id, { ...body, confirmDuplicate })
+      );
+      if (cancelled) return;
       toast.success(t("supplierDetail.paymentRecorded"));
       setPayAmount("");
       setPayNotes("");

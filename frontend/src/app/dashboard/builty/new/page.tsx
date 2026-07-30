@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, Plus, Search, Trash2 } from "lucide-react";
-import { apiError, formatKg, formatMoney } from "@/lib/materials-api";
+import { apiError, formatKg, formatMoney, withSameDayConfirm } from "@/lib/materials-api";
 import { listProducts } from "@/lib/production-api";
 import { getFinishedStock } from "@/lib/inventory-api";
 import {
@@ -72,8 +72,11 @@ function BuiltyForm() {
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
+  const [customerSearch, setCustomerSearch] = useState("");
   const [productPickerIndex, setProductPickerIndex] = useState<number | null>(null);
   const [productSearch, setProductSearch] = useState("");
+  const [productFamilyFilter, setProductFamilyFilter] = useState<"all" | "hub" | "drum">("all");
 
   const [newCustomerOpen, setNewCustomerOpen] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState("");
@@ -132,14 +135,29 @@ function BuiltyForm() {
 
   const filteredProducts = useMemo(() => {
     const q = productSearch.trim().toLowerCase();
-    if (!q) return inStockProducts;
-    return inStockProducts.filter(
+    let list = inStockProducts;
+    if (productFamilyFilter !== "all") {
+      list = list.filter((p) => p.family === productFamilyFilter);
+    }
+    if (!q) return list;
+    return list.filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.family?.toLowerCase().includes(q) ||
         String(p.weightKg ?? "").includes(q)
     );
-  }, [inStockProducts, productSearch]);
+  }, [inStockProducts, productSearch, productFamilyFilter]);
+
+  const filteredCustomers = useMemo(() => {
+    const q = customerSearch.trim().toLowerCase();
+    if (!q) return customers;
+    return customers.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        c.phone?.toLowerCase().includes(q) ||
+        c.address?.toLowerCase().includes(q)
+    );
+  }, [customers, customerSearch]);
 
   const total = useMemo(
     () => Math.round(lines.reduce((s, l) => s + lineTotal(products, l), 0) * 100) / 100,
@@ -155,6 +173,8 @@ function BuiltyForm() {
   }
 
   function onCustomerSelect(value: string) {
+    setCustomerPickerOpen(false);
+    setCustomerSearch("");
     if (value === NEW_CUSTOMER) {
       setNewCustomerName("");
       setNewCustomerPhone("");
@@ -228,13 +248,17 @@ function BuiltyForm() {
 
     setSaving(true);
     try {
-      const data = await createBuilty({
+      const body = {
         builtyNo: builtyNo.trim(),
         billNo: billNo.trim() || undefined,
         customer,
         builtyDate,
         items,
-      });
+      };
+      const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
+        createBuilty({ ...body, confirmDuplicate })
+      );
+      if (cancelled) return;
       toast.success(t("builtyNew.created"));
       router.push("/dashboard/builty");
     } catch (err) {
@@ -273,22 +297,71 @@ function BuiltyForm() {
           <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5 sm:col-span-2">
               <Label>{t("builtyNew.party")}</Label>
-              <select
-                className="h-11 w-full rounded-lg border border-input bg-transparent px-2.5 text-base dark:bg-input/30"
-                value={customer}
-                onChange={(e) => onCustomerSelect(e.target.value)}
-                required
-              >
-                <option value="" disabled hidden>
-                  {t("builtyNew.selectParty")}
-                </option>
-                <option value={NEW_CUSTOMER}>{t("builtyNew.addNewParty")}</option>
-                {customers.map((c) => (
-                  <option key={c._id} value={c._id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <div className="overflow-hidden rounded-lg border border-input">
+                  <button
+                    type="button"
+                    className="flex h-11 w-full items-center px-2.5 text-left text-base hover:bg-muted/50"
+                    onClick={() => {
+                      setCustomerPickerOpen((prev) => !prev);
+                      setCustomerSearch("");
+                    }}
+                  >
+                    <span className={customer ? "truncate text-foreground" : "text-muted-foreground"}>
+                      {customer
+                        ? customers.find((c) => c._id === customer)?.name || t("builtyNew.selectParty")
+                        : t("builtyNew.selectParty")}
+                    </span>
+                  </button>
+                  {customerPickerOpen && (
+                    <div className="border-t border-border bg-card">
+                      <div className="relative border-b border-border p-2">
+                        <Search className="pointer-events-none absolute top-1/2 left-4 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          className="h-9 pl-8"
+                          placeholder={t("builtyNew.selectParty")}
+                          value={customerSearch}
+                          onChange={(e) => setCustomerSearch(e.target.value)}
+                          autoFocus
+                        />
+                      </div>
+                      <div className="max-h-56 overflow-y-auto">
+                        <button
+                          type="button"
+                          className="flex w-full items-center px-3 py-2 text-left text-sm font-medium text-primary hover:bg-muted"
+                          onClick={() => onCustomerSelect(NEW_CUSTOMER)}
+                        >
+                          <Plus className="mr-2 size-4" />
+                          {t("builtyNew.addNewParty")}
+                        </button>
+                        {filteredCustomers.length === 0 ? (
+                          <p className="px-3 py-4 text-center text-xs text-muted-foreground">
+                            {t("prod.noMatchProduct")}
+                          </p>
+                        ) : (
+                          filteredCustomers.map((c) => (
+                            <button
+                              key={c._id}
+                              type="button"
+                              className={`flex w-full flex-col gap-0.5 px-3 py-2 text-left text-sm hover:bg-muted ${
+                                customer === c._id ? "bg-muted" : ""
+                              }`}
+                              onClick={() => onCustomerSelect(c._id)}
+                            >
+                              <span className="font-medium">{c.name}</span>
+                              {(c.phone || c.address) && (
+                                <span className="text-xs text-muted-foreground">
+                                  {[c.phone, c.address].filter(Boolean).join(" · ")}
+                                </span>
+                              )}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
               {customer && partyBalance !== null && (
                 <p className="font-data text-xs text-muted-foreground">
                   {t("builtyNew.currentPending", { amount: formatMoney(partyBalance) })}
@@ -350,6 +423,7 @@ function BuiltyForm() {
                           onClick={() => {
                             setProductPickerIndex(productPickerIndex === index ? null : index);
                             setProductSearch("");
+                            setProductFamilyFilter("all");
                           }}
                         >
                           <span
@@ -371,6 +445,28 @@ function BuiltyForm() {
                                 onChange={(e) => setProductSearch(e.target.value)}
                                 autoFocus
                               />
+                            </div>
+                            <div className="flex gap-2 border-b border-border px-2 py-2">
+                              {(
+                                [
+                                  { value: "all", label: t("prod.filter.all") },
+                                  { value: "hub", label: t("prod.hub") },
+                                  { value: "drum", label: t("prod.drum") },
+                                ] as const
+                              ).map((option) => (
+                                <button
+                                  key={option.value}
+                                  type="button"
+                                  className={`rounded-md border px-3 py-1 text-xs font-medium ${
+                                    productFamilyFilter === option.value
+                                      ? "border-primary bg-primary text-primary-foreground"
+                                      : "border-border text-muted-foreground hover:bg-muted"
+                                  }`}
+                                  onClick={() => setProductFamilyFilter(option.value)}
+                                >
+                                  {option.label}
+                                </button>
+                              ))}
                             </div>
                             <div className="max-h-48 overflow-y-auto">
                               {filteredProducts.length === 0 ? (
@@ -400,6 +496,7 @@ function BuiltyForm() {
                                         });
                                         setProductPickerIndex(null);
                                         setProductSearch("");
+                                        setProductFamilyFilter("all");
                                       }}
                                     >
                                       <span className="font-medium">{p.name}</span>

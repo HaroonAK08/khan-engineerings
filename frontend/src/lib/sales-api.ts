@@ -190,6 +190,7 @@ export async function recordCustomerPayment(
     method?: string;
     notes?: string;
     reference?: string;
+    confirmDuplicate?: boolean;
   }
 ) {
   const { data } = await api.post<{
@@ -253,6 +254,7 @@ export async function createBuilty(body: {
   amountPaid?: number;
   method?: string;
   notes?: string;
+  confirmDuplicate?: boolean;
 }) {
   const { data } = await api.post<{ builty: Builty; summary: BuiltySummary }>("/builty", body);
   return data;

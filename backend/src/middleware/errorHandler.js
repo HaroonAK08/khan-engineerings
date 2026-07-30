@@ -4,9 +4,12 @@ function notFound(req, res, next) {
 
 function errorHandler(err, req, res, next) {
   const status = err.statusCode || 500;
-  res.status(status).json({
+  const body = {
     message: err.message || "Internal server error",
-  });
+  };
+  if (err.code) body.code = err.code;
+  if (err.existingId) body.existingId = err.existingId;
+  res.status(status).json(body);
 }
 
 module.exports = { notFound, errorHandler };

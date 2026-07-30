@@ -5,7 +5,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { History, Loader2, Paintbrush } from "lucide-react";
 import { createFactoryExpense, listFactoryExpenses } from "@/lib/expenses-api";
-import { apiError, formatMoney } from "@/lib/materials-api";
+import { apiError, formatMoney, withSameDayConfirm } from "@/lib/materials-api";
 import type { BatchExpense } from "@/types/production";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -145,7 +145,7 @@ export default function OtherExpensesPage() {
 
     setBusyId(category);
     try {
-      await createFactoryExpense({
+      const body = {
         category,
         amount: value,
         expenseDate,
@@ -154,7 +154,11 @@ export default function OtherExpensesPage() {
         ...(trackQuantity && qty != null
           ? { quantity: qty, quantityUnit: unit }
           : {}),
-      });
+      };
+      const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
+        createFactoryExpense({ ...body, confirmDuplicate })
+      );
+      if (cancelled) return;
       toast.success("Expense saved");
       setQuantity("");
       setQuantityUnit("kg");

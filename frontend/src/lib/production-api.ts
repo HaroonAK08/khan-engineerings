@@ -58,6 +58,7 @@ export async function produce(body: {
   productionDate?: string;
   notes?: string;
   batchNo?: string;
+  confirmDuplicate?: boolean;
 }) {
   const { data } = await api.post<{
     batch: ProductionBatch & {

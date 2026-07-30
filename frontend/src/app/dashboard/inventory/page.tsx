@@ -18,6 +18,7 @@ import {
   getStock,
   listSuppliers,
   supplierName,
+  withSameDayConfirm,
 } from "@/lib/materials-api";
 import type { StockSummary, Supplier } from "@/types/materials";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -99,7 +100,7 @@ export default function InventoryPage() {
     setSaving(true);
     try {
       const total = roundMoney(values.quantityKg * values.ratePerKg);
-      const purchase = await createPurchase({
+      const body = {
         supplier: values.supplier,
         materialType: values.materialType,
         quantityKg: values.quantityKg,
@@ -110,7 +111,11 @@ export default function InventoryPage() {
         notes: values.notes,
         freightAmount: 0,
         amountPaid: 0,
-      });
+      };
+      const { result: purchase, cancelled } = await withSameDayConfirm((confirmDuplicate) =>
+        createPurchase({ ...body, confirmDuplicate })
+      );
+      if (cancelled || !purchase) return;
       toast.success(
         purchase.invoiceNo
           ? `Purchase saved (${purchase.invoiceNo}) — due on supplier account`

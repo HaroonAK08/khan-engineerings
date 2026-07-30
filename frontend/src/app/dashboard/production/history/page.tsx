@@ -48,6 +48,9 @@ const produceSchema = z.object({
 
 type ProduceForm = z.infer<typeof produceSchema>;
 
+const productionSearchInputClass =
+  "h-13 rounded-xl border-primary/50 bg-primary/10 pl-12 pr-4 text-base font-medium text-foreground shadow-sm transition-colors placeholder:font-medium placeholder:text-foreground/70 focus-visible:border-primary focus-visible:ring-primary/40";
+
 function batchProductId(batch: ProductionBatch) {
   const out = batch.outputs?.[0]?.product;
   if (out && typeof out === "object") return out._id;
@@ -90,6 +93,13 @@ function toDateInput(value?: string) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return todayInput();
   return d.toISOString().slice(0, 10);
+}
+
+function compareProductsByName(a: Product, b: Product) {
+  return a.name.trim().localeCompare(b.name.trim(), undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
 }
 
 export default function ProductionHistoryPage() {
@@ -213,7 +223,7 @@ export default function ProductionHistoryPage() {
           p.family.toLowerCase().includes(q)
       );
     }
-    return list;
+    return [...list].sort(compareProductsByName);
   }, [products, produceFamily, productSearch]);
 
   useEffect(() => {
@@ -424,10 +434,10 @@ export default function ProductionHistoryPage() {
                 </button>
                 {pickerOpen && (
                   <div className="border-t border-border">
-                    <div className="relative border-b border-border p-2">
-                      <Search className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <div className="relative border-b border-border bg-primary/5 p-2">
+                      <Search className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-primary" />
                       <Input
-                        className="h-11 pl-9"
+                        className={productionSearchInputClass}
                         placeholder={t("prod.searchProduct")}
                         value={productSearch}
                         onChange={(e) => setProductSearch(e.target.value)}

@@ -6,6 +6,11 @@ const {
   INPUT_MATERIAL_TYPE_IDS,
   stagesForFamily,
 } = require("../domain/mfg.constants");
+const {
+  dayRange,
+  wantsConfirmDuplicate,
+  sameDayDuplicateError,
+} = require("../../utils/sameDay");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -246,6 +251,25 @@ async function produce(data) {
   }
 
   const productionDate = parseDate(data.productionDate || new Date(), "Production date");
+
+  if (!wantsConfirmDuplicate(data)) {
+    const { start, end } = dayRange(productionDate);
+    const existing = await ProductionBatch.findOne({
+      status: { $ne: "cancelled" },
+      productionDate: { $gte: start, $lte: end },
+      $or: [{ product: product._id }, { "outputs.product": product._id }],
+    })
+      .select("_id batchNo")
+      .lean();
+    if (existing) {
+      const err = sameDayDuplicateError(
+        `Trying to create a duplicate production entry on the same day for "${product.name}". Do you want to continue?`
+      );
+      err.existingId = existing._id;
+      throw err;
+    }
+  }
+
   const now = new Date();
   const stages = buildStages(family).map((s) => ({
     ...s,

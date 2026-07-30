@@ -5,6 +5,11 @@ const customerService = require("../customers/customer.service");
 const inventoryService = require("../inventory/inventory.service");
 const Product = require("../products/product.model");
 const mongoose = require("mongoose");
+const {
+  dayRange,
+  wantsConfirmDuplicate,
+  sameDayDuplicateError,
+} = require("../../utils/sameDay");
 
 function toObjectId(id) {
   if (!id) return null;
@@ -273,6 +278,26 @@ async function createBuilty(data) {
   const { items, totalAmount } = await normalizeItems(data.items);
 
   const builtyDate = parseDate(data.builtyDate || new Date(), "Builty date");
+
+  if (!wantsConfirmDuplicate(data)) {
+    const { start, end } = dayRange(builtyDate);
+    const existing = await Builty.findOne({
+      customer: data.customer,
+      builtyDate: { $gte: start, $lte: end },
+    })
+      .select("_id builtyNo")
+      .lean();
+    if (existing) {
+      const customer = await customerService.getById(data.customer);
+      const partyName = customer?.name || "this party";
+      const err = sameDayDuplicateError(
+        `Trying to create a duplicate builty entry on the same day for "${partyName}". Do you want to continue?`
+      );
+      err.existingId = existing._id;
+      throw err;
+    }
+  }
+
   const warehouse = data.warehouse || (await inventoryService.getDefaultWarehouse())._id;
   await assertStockAvailable(items, warehouse);
 

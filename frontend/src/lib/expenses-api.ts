@@ -24,6 +24,7 @@ export async function createFactoryExpense(body: {
   notes?: string;
   quantity?: number;
   quantityUnit?: string;
+  confirmDuplicate?: boolean;
 }) {
   const { data } = await api.post<{ expense: BatchExpense }>("/expenses", body);
   return data.expense;

@@ -14,6 +14,11 @@ const {
   STOCK_ITEM_TYPES,
   STOCK_REASONS,
 } = require("../domain/mfg.constants");
+const {
+  dayRange,
+  wantsConfirmDuplicate,
+  sameDayDuplicateError,
+} = require("../../utils/sameDay");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -117,6 +122,30 @@ async function listOverhead({ dateFrom, dateTo, category } = {}) {
 
 async function createOverhead(data) {
   const fields = validateExpenseBody(data, { requireStage: false });
+
+  if (!wantsConfirmDuplicate(data)) {
+    const { start, end } = dayRange(fields.expenseDate);
+    const existing = await BatchExpense.findOne({
+      $or: [{ batch: null }, { batch: { $exists: false } }],
+      category: fields.category,
+      amount: fields.amount,
+      expenseDate: { $gte: start, $lte: end },
+    })
+      .select("_id")
+      .lean();
+    if (existing) {
+      const categoryLabel =
+        fields.title?.trim() ||
+        EXPENSE_CATEGORIES.find((c) => c.id === fields.category)?.label ||
+        fields.category;
+      const err = sameDayDuplicateError(
+        `Trying to create a duplicate expense entry on the same day for "${categoryLabel}" (${fields.amount}). Do you want to continue?`
+      );
+      err.existingId = existing._id;
+      throw err;
+    }
+  }
+
   const doc = {
     batch: null,
     category: fields.category,

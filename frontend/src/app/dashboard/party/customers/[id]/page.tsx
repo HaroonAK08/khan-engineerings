@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, Plus } from "lucide-react";
-import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
+import { apiError, formatDate, formatMoney, withSameDayConfirm } from "@/lib/materials-api";
 import {
   getCustomer,
   listBuilties,
@@ -132,12 +132,16 @@ export default function CustomerDetailPage() {
     }
     setSavingPaid(true);
     try {
-      await recordCustomerPayment(id, {
+      const body = {
         amount,
         paymentDate: paidDate,
         method: paidMethod,
         notes: paidNotes.trim() || undefined,
-      });
+      };
+      const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
+        recordCustomerPayment(id, { ...body, confirmDuplicate })
+      );
+      if (cancelled) return;
       toast.success(t("customerDetail.paymentRecorded"));
       setPaidAmount("");
       setPaidNotes("");

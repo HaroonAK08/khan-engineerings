@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { openDuplicateConfirm } from "@/lib/duplicate-confirm";
 import { useLocaleStore } from "@/stores/locale-store";
 import type { LedgerEntry, Purchase, PurchaseReport, StockSummary, Supplier } from "@/types/materials";
 
@@ -8,6 +9,47 @@ export function apiError(err: unknown, fallback: string) {
     return data?.message ?? fallback;
   }
   return fallback;
+}
+
+export function isSameDayDuplicate(err: unknown): boolean {
+  if (!err || typeof err !== "object" || !("response" in err)) return false;
+  const response = (
+    err as {
+      response?: { status?: number; data?: { code?: string; message?: string } };
+    }
+  ).response;
+  if (response?.data?.code === "SAME_DAY_DUPLICATE") return true;
+  if (
+    response?.status === 409 &&
+    /duplicate .* on the same day/i.test(response?.data?.message || "")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export function confirmSameDayDuplicate(err: unknown): Promise<boolean> {
+  const raw = apiError(err, "Trying to create a duplicate entry on the same day.");
+  const message = raw
+    .replace(/\s*Do you want to continue\??\s*$/i, "")
+    .replace(/\s*OK\s*=\s*continue.*$/i, "")
+    .trim();
+
+  return openDuplicateConfirm(
+    message || "Trying to create a duplicate entry on the same day."
+  );
+}
+
+export async function withSameDayConfirm<T>(
+  run: (confirmDuplicate: boolean) => Promise<T>
+): Promise<{ result: T; cancelled: false } | { result: null; cancelled: true }> {
+  try {
+    return { result: await run(false), cancelled: false };
+  } catch (err) {
+    if (!isSameDayDuplicate(err)) throw err;
+    if (!(await confirmSameDayDuplicate(err))) return { result: null, cancelled: true };
+    return { result: await run(true), cancelled: false };
+  }
 }
 
 export async function listSuppliers(params?: { q?: string; active?: string }) {
@@ -66,6 +108,7 @@ export async function createPurchase(body: {
   purchaseDate: string;
   invoiceNo?: string;
   notes?: string;
+  confirmDuplicate?: boolean;
 }) {
   const { data } = await api.post<{ purchase: Purchase }>("/purchases", body);
   return data.purchase;
@@ -123,7 +166,13 @@ export async function getAllSupplierLedger() {
 
 export async function recordPayment(
   supplierId: string,
-  body: { amount: number; entryDate?: string; notes?: string; purchaseId?: string }
+  body: {
+    amount: number;
+    entryDate?: string;
+    notes?: string;
+    purchaseId?: string;
+    confirmDuplicate?: boolean;
+  }
 ) {
   const { data } = await api.post<{ entry: LedgerEntry; balance: number }>(
     `/suppliers/${supplierId}/ledger/payments`,

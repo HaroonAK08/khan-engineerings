@@ -10,7 +10,7 @@ import {
   listFactoryExpenses,
   updateFactoryExpense,
 } from "@/lib/expenses-api";
-import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
+import { apiError, formatDate, formatMoney, withSameDayConfirm } from "@/lib/materials-api";
 import type { BatchExpense } from "@/types/production";
 import { currentMonthRange, toDateInput, todayInput } from "@/lib/date-range";
 import { Button } from "@/components/ui/button";
@@ -170,7 +170,7 @@ export function ExpenseCalendar({
     setSaving(true);
     try {
       if (dialogMode === "add") {
-        await createFactoryExpense({
+        const body = {
           category: formCategory,
           amount,
           expenseDate: formDate,
@@ -178,7 +178,11 @@ export function ExpenseCalendar({
             ? { title: formTitle.trim() }
             : {}),
           notes: formNote.trim() || undefined,
-        });
+        };
+        const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
+          createFactoryExpense({ ...body, confirmDuplicate })
+        );
+        if (cancelled) return;
         toast.success(t("exp.entryAdded"));
       } else if (editing) {
         await updateFactoryExpense(editing._id, {

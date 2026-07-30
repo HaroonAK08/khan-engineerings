@@ -2,6 +2,11 @@ const Customer = require("./customer.model");
 const CustomerLedgerEntry = require("./customer-ledger.model");
 const CustomerPayment = require("./customer-payment.model");
 const Builty = require("../builty/builty.model");
+const {
+  dayRange,
+  wantsConfirmDuplicate,
+  sameDayDuplicateError,
+} = require("../../utils/sameDay");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -150,8 +155,9 @@ async function recordAdjustment(customerId, { amount, entryDate, notes }) {
   });
 }
 
-async function recordPayment(customerId, { amount, paymentDate, method, notes, reference }) {
-  await getById(customerId);
+async function recordPayment(customerId, data = {}) {
+  const { amount, paymentDate, method, notes, reference } = data;
+  const customer = await getById(customerId);
   const n = roundMoney(Number(amount));
   if (!Number.isFinite(n) || n <= 0) {
     throw httpError("Payment amount must be greater than 0", 400);
@@ -160,6 +166,24 @@ async function recordPayment(customerId, { amount, paymentDate, method, notes, r
   const allowed = new Set(["cash", "cheque", "online", "bank", "other"]);
   const payMethod = allowed.has(method) ? method : "cash";
   const date = parseDate(paymentDate || new Date(), "Payment date");
+
+  if (!wantsConfirmDuplicate(data)) {
+    const { start, end } = dayRange(date);
+    const existing = await CustomerPayment.findOne({
+      customer: customerId,
+      amount: n,
+      paymentDate: { $gte: start, $lte: end },
+    })
+      .select("_id")
+      .lean();
+    if (existing) {
+      const err = sameDayDuplicateError(
+        `Trying to create a duplicate payment entry on the same day for "${customer.name}" (${n}). Do you want to continue?`
+      );
+      err.existingId = existing._id;
+      throw err;
+    }
+  }
 
   const payment = await CustomerPayment.create({
     customer: customerId,

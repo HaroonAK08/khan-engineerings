@@ -2,6 +2,11 @@ const Purchase = require("./purchase.model");
 const LedgerEntry = require("../ledger/ledger.model");
 const supplierService = require("../suppliers/supplier.service");
 const { MATERIAL_TYPE_IDS } = require("../domain/mfg.constants");
+const {
+  dayRange,
+  wantsConfirmDuplicate,
+  sameDayDuplicateError,
+} = require("../../utils/sameDay");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -93,6 +98,28 @@ async function create(data) {
     amountPaid: data.amountPaid ?? 0,
   });
   const purchaseDate = parseDate(data.purchaseDate || new Date(), "Purchase date");
+
+  if (!wantsConfirmDuplicate(data)) {
+    const { start, end } = dayRange(purchaseDate);
+    const existing = await Purchase.findOne({
+      supplier: data.supplier,
+      materialType,
+      quantityKg,
+      purchaseDate: { $gte: start, $lte: end },
+    })
+      .select("_id invoiceNo")
+      .lean();
+    if (existing) {
+      const supplier = await supplierService.getById(data.supplier);
+      const supplierName = supplier?.name || "this supplier";
+      const err = sameDayDuplicateError(
+        `Trying to create a duplicate purchase entry on the same day for "${supplierName}" (${materialType}, ${quantityKg} kg). Do you want to continue?`
+      );
+      err.existingId = existing._id;
+      throw err;
+    }
+  }
+
   const invoiceNo = data.invoiceNo?.trim() || (await nextPurchaseInvoiceNo(purchaseDate));
 
   const purchase = await Purchase.create({

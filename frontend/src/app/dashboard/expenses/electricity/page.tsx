@@ -5,7 +5,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { History, Loader2, Zap } from "lucide-react";
 import { createFactoryExpense, listFactoryExpenses } from "@/lib/expenses-api";
-import { apiError, formatMoney } from "@/lib/materials-api";
+import { apiError, formatMoney, withSameDayConfirm } from "@/lib/materials-api";
 import type { BatchExpense } from "@/types/production";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -52,12 +52,16 @@ export default function ElectricityExpensesPage() {
     }
     setBusy(true);
     try {
-      await createFactoryExpense({
+      const body = {
         category: "electricity",
         amount: value,
         expenseDate: billDate,
         notes: note.trim() || undefined,
-      });
+      };
+      const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
+        createFactoryExpense({ ...body, confirmDuplicate })
+      );
+      if (cancelled) return;
       toast.success("Electricity bill saved");
       setAmount("");
       setNote("");
