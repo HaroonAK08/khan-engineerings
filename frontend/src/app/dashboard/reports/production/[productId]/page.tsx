@@ -22,6 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { familyBadgeClass } from "@/lib/product-family";
 import { useI18n } from "@/hooks/use-i18n";
 
 export default function ProductProductionReportPage() {
@@ -100,7 +101,7 @@ export default function ProductProductionReportPage() {
           </p>
           {report?.product && (
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="font-data text-[10px] uppercase">
+              <Badge variant="outline" className={familyBadgeClass(report.product.family)}>
                 {report.product.family}
               </Badge>
               {report.product.weightKg != null && Number(report.product.weightKg) > 0 && (

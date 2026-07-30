@@ -15,7 +15,7 @@ const productionService = require("../production/production.service");
 const expenseService = require("../expenses/expense.service");
 const inventoryService = require("../inventory/inventory.service");
 const financeService = require("../finance/finance.service");
-const { buildExcel, buildPdf, money, fmtDate, sendExcel, sendPdf } = require("./export.util");
+const { buildExcel, buildExcelMulti, buildPdf, money, fmtDate, sendExcel, sendPdf } = require("./export.util");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -940,6 +940,297 @@ async function exportPayables(query, format, res) {
   return sendExcel(res, buf, "payables-report.xlsx");
 }
 
+const COMBINED_MODULES = [
+  "sales",
+  "purchases",
+  "production",
+  "expenses",
+  "inventory",
+  "finance",
+  "receivables",
+  "payables",
+];
+
+async function collectModuleSection(kind, query) {
+  if (kind === "sales") {
+    const report = await builtyService.getSalesReport(query);
+    return {
+      id: "sales",
+      sheetName: "Sales",
+      title: "Sales & receivables",
+      heading: "Sales & receivables",
+      columns: ["Builty", "Bill", "Party", "Date", "Total", "Paid", "Balance", "Status"],
+      rows: (report.outstanding || []).map((o) => [
+        o.orderNo,
+        o.invoiceNo,
+        o.customer,
+        fmtDate(o.orderDate),
+        money(o.totalAmount),
+        money(o.amountPaid),
+        money(o.balance),
+        o.paymentStatus,
+      ]),
+      meta: {
+        "Builty count": report.totals.orderCount,
+        "Total sales": money(report.totals.totalSales),
+        Outstanding: money(report.totals.outstanding),
+      },
+    };
+  }
+
+  if (kind === "purchases") {
+    const report = await purchaseService.getReport(query);
+    return {
+      id: "purchases",
+      sheetName: "Purchases",
+      title: "Purchases",
+      heading: "Purchases",
+      columns: ["Supplier", "Purchases", "Kg", "Spend", "Avg rate"],
+      rows: (report.bySupplier || []).map((s) => [
+        s.name || s.supplierName || "Unknown",
+        s.purchaseCount || s.count || 0,
+        s.totalKg || s.kg || 0,
+        money(s.totalSpend || s.spend || 0),
+        money(s.avgRate || 0),
+      ]),
+      meta: {
+        "Total kg": report.totals?.totalKg ?? "",
+        "Total spend": money(report.totals?.totalSpend),
+      },
+    };
+  }
+
+  if (kind === "production") {
+    const report = await productionService.getReport(query);
+    return {
+      id: "production",
+      sheetName: "Production",
+      title: "Production",
+      heading: "Production",
+      columns: ["Product", "Batches", "Good", "Rejected", "Net kg"],
+      rows: (report.byProduct || []).map((p) => [
+        p.name,
+        p.batchCount,
+        p.goodUnits,
+        p.rejectedUnits,
+        p.netConsumedKg,
+      ]),
+      meta: {
+        Batches: report.totals.batchCount,
+        "Good units": report.totals.goodUnits,
+      },
+    };
+  }
+
+  if (kind === "expenses") {
+    const report = await expenseService.getCostReport(query);
+    return {
+      id: "expenses",
+      sheetName: "Expenses",
+      title: "Expenses / costs",
+      heading: "Expenses / costs",
+      columns: ["Category", "Amount", "Count"],
+      rows: (report.byCategory || []).map((c) => [
+        c.label || c.category || "—",
+        money(c.amount || 0),
+        c.count || 0,
+      ]),
+      meta: {
+        "Total operating": money(report.totals?.totalOperatingCost || 0),
+        Expenses: report.totals?.expenseCount || 0,
+      },
+    };
+  }
+
+  if (kind === "inventory") {
+    const report = await inventoryService.getInventoryReport(query);
+    return {
+      id: "inventory",
+      sheetName: "Inventory",
+      title: "Inventory",
+      heading: "Inventory",
+      columns: ["Product", "SKU", "Warehouse", "Qty", "Low threshold"],
+      rows: (report.finishedStock?.items || []).map((i) => [
+        i.name,
+        i.sku || "",
+        i.warehouseName || "",
+        i.quantity,
+        i.lowStockThreshold || 0,
+      ]),
+      meta: {
+        "Raw scrap kg": report.raw?.availableKg ?? report.raw?.totalKg ?? 0,
+        "Finished units": report.finishedStock?.totalUnits ?? 0,
+      },
+    };
+  }
+
+  if (kind === "finance") {
+    const overview = await financeService.getOverview(query);
+    return {
+      id: "finance",
+      sheetName: "Finance",
+      title: "Finance P&L",
+      heading: "Finance P&L",
+      columns: ["Line", "Amount"],
+      rows: [
+        ["Revenue", money(overview.profitAndLoss.revenue)],
+        ["COGS", money(overview.profitAndLoss.cogs)],
+        ["Gross profit", money(overview.profitAndLoss.grossProfit)],
+        ["Other expenses", money(overview.profitAndLoss.otherExpenses)],
+        ["Net profit", money(overview.profitAndLoss.netProfit)],
+        ["Cash in", money(overview.cashFlow.cashIn)],
+        ["Cash out", money(overview.cashFlow.cashOut)],
+        ["Net cash", money(overview.cashFlow.net)],
+      ],
+      meta: {},
+    };
+  }
+
+  if (kind === "receivables") {
+    const report = await getReceivablesReport(query);
+    return {
+      id: "receivables",
+      sheetName: "Receivables",
+      title: "Receivables",
+      heading: "Receivables",
+      columns: ["Party", "Phone", "Records", "Balance"],
+      rows: (report.byParty || []).map((p) => [
+        p.name,
+        p.phone || "",
+        p.recordCount,
+        money(p.balance),
+      ]),
+      meta: {
+        "Total receivable": money(report.totals.totalReceivable),
+        Parties: report.totals.partyCount,
+      },
+    };
+  }
+
+  if (kind === "payables") {
+    const report = await getPayablesReport(query);
+    return {
+      id: "payables",
+      sheetName: "Payables",
+      title: "Payables",
+      heading: "Payables",
+      columns: ["Supplier", "Phone", "Records", "Balance"],
+      rows: (report.bySupplier || []).map((p) => [
+        p.name,
+        p.phone || "",
+        p.recordCount,
+        money(p.balance),
+      ]),
+      meta: {
+        "Total payable": money(report.totals.totalPayable),
+        Suppliers: report.totals.supplierCount,
+      },
+    };
+  }
+
+  throw httpError(`Unknown report module: ${kind}`, 400);
+}
+
+function parseModules(raw) {
+  const list = String(raw || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  const unique = [...new Set(list)].filter((m) => COMBINED_MODULES.includes(m));
+  if (unique.length === 0) {
+    throw httpError(
+      `Select at least one module (${COMBINED_MODULES.join(", ")})`,
+      400
+    );
+  }
+  return unique;
+}
+
+async function exportCombined(modules, query, format, res, filenameBase) {
+  const sections = [];
+  for (const kind of modules) {
+    sections.push(await collectModuleSection(kind, query));
+  }
+
+  const period = periodLabel(query.dateFrom, query.dateTo);
+  const title =
+    modules.length === COMBINED_MODULES.length
+      ? "Full company report"
+      : "Custom report";
+  const metaLines = [
+    `Period: ${period}`,
+    `Modules: ${modules.join(", ")}`,
+    `Generated: ${new Date().toISOString().slice(0, 19)}`,
+  ];
+
+  if (format === "pdf") {
+    const buf = await buildPdf({
+      title,
+      subtitle: "Khan Engineerings",
+      metaLines,
+      sections: sections.map((s) => ({
+        heading: `${s.heading}${
+          Object.keys(s.meta || {}).length
+            ? ` — ${Object.entries(s.meta)
+                .map(([k, v]) => `${k}: ${v}`)
+                .join(" · ")}`
+            : ""
+        }`,
+        columns: s.columns,
+        rows: s.rows,
+      })),
+    });
+    return sendPdf(res, buf, `${filenameBase}.pdf`);
+  }
+
+  const buf = await buildExcelMulti({
+    title,
+    sheets: sections.map((s) => ({
+      sheetName: s.sheetName,
+      title: s.title,
+      columns: s.columns,
+      rows: s.rows,
+      meta: { Period: period, ...(s.meta || {}) },
+    })),
+  });
+  return sendExcel(res, buf, `${filenameBase}.xlsx`);
+}
+
+async function exportFull(query, format, res) {
+  return exportCombined(COMBINED_MODULES, query, format, res, "full-report");
+}
+
+async function exportCustom(query, format, res) {
+  const modules = parseModules(query.modules);
+  return exportCombined(modules, query, format, res, "custom-report");
+}
+
+async function getCombinedPreview(query) {
+  const modules = query.modules
+    ? parseModules(query.modules)
+    : COMBINED_MODULES;
+  const sections = [];
+  for (const kind of modules) {
+    sections.push(await collectModuleSection(kind, query));
+  }
+  return {
+    title:
+      modules.length === COMBINED_MODULES.length
+        ? "Full company report"
+        : "Custom report",
+    period: periodLabel(query.dateFrom, query.dateTo),
+    modules,
+    sections: sections.map((s) => ({
+      id: s.id,
+      title: s.title,
+      heading: s.heading,
+      columns: s.columns,
+      rows: s.rows,
+      meta: s.meta || {},
+    })),
+  };
+}
+
 module.exports = {
   globalSearch,
   customerStatement,
@@ -955,4 +1246,8 @@ module.exports = {
   exportReceivables,
   exportPayables,
   exportStatement,
+  exportFull,
+  exportCustom,
+  getCombinedPreview,
+  COMBINED_MODULES,
 };

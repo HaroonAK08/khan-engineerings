@@ -85,6 +85,33 @@ async function exportSupplierStatement(req, res, next) {
   }
 }
 
+async function exportFull(req, res, next) {
+  try {
+    const format = String(req.query.format || "pdf").toLowerCase() === "xlsx" ? "xlsx" : "pdf";
+    await reportsService.exportFull(req.query, format, res);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function exportCustom(req, res, next) {
+  try {
+    const format = String(req.query.format || "pdf").toLowerCase() === "xlsx" ? "xlsx" : "pdf";
+    await reportsService.exportCustom(req.query, format, res);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function combinedPreview(req, res, next) {
+  try {
+    const report = await reportsService.getCombinedPreview(req.query);
+    res.json({ report });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   search,
   receivables,
@@ -101,4 +128,7 @@ module.exports = {
   exportPayables: exportHandler("payables"),
   exportCustomerStatement,
   exportSupplierStatement,
+  exportFull,
+  exportCustom,
+  combinedPreview,
 };

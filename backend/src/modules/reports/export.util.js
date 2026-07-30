@@ -43,6 +43,42 @@ async function buildExcel({ title, sheetName, columns, rows, meta = {} }) {
 }
 
 /**
+ * Multi-sheet workbook for combined reports.
+ * @param {{ title: string, sheets: Array<{ sheetName: string, title?: string, columns: string[], rows: any[][], meta?: Record<string, any> }> }} opts
+ */
+async function buildExcelMulti({ title, sheets }) {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Khan Engineerings";
+  workbook.created = new Date();
+
+  const cover = workbook.addWorksheet("Cover");
+  cover.addRow([title || "Combined report"]);
+  cover.getRow(1).font = { bold: true, size: 14 };
+  cover.addRow([`Generated: ${new Date().toISOString()}`]);
+  cover.addRow([`Sections: ${(sheets || []).map((s) => s.sheetName).join(", ")}`]);
+  cover.getColumn(1).width = 48;
+
+  for (const section of sheets || []) {
+    const name = String(section.sheetName || "Sheet").slice(0, 31) || "Sheet";
+    const sheet = workbook.addWorksheet(name);
+    sheet.addRow([section.title || name]);
+    sheet.getRow(1).font = { bold: true, size: 13 };
+    sheet.addRow([`Generated: ${new Date().toISOString()}`]);
+    Object.entries(section.meta || {}).forEach(([k, v]) => sheet.addRow([`${k}: ${v}`]));
+    sheet.addRow([]);
+    const columns = section.columns || [];
+    sheet.addRow(columns);
+    sheet.getRow(sheet.rowCount).font = { bold: true };
+    (section.rows || []).forEach((r) => sheet.addRow(r));
+    columns.forEach((_, i) => {
+      sheet.getColumn(i + 1).width = Math.min(36, Math.max(12, String(columns[i]).length + 4));
+    });
+  }
+
+  return workbookToBuffer(workbook);
+}
+
+/**
  * Stream a PDF table report into a buffer.
  * Pass either columns+rows, or sections: [{ heading, columns, rows }].
  */
@@ -146,6 +182,7 @@ module.exports = {
   money,
   fmtDate,
   buildExcel,
+  buildExcelMulti,
   buildPdf,
   sendExcel,
   sendPdf,

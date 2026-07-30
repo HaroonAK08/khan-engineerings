@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { familyBadgeClass, familyRowClass } from "@/lib/product-family";
 import { cn } from "@/lib/utils";
 import {
   Table,
@@ -106,24 +107,28 @@ export default function FinishedGoodsPage() {
     label: string;
     value: number;
     accent: string;
+    cardClass: string;
   }> = [
     {
       key: "all",
       label: t("finished.stat.total"),
       value: totalUnits,
       accent: "bg-chart-1",
+      cardClass: "",
     },
     {
       key: "hub",
       label: t("finished.stat.hub"),
       value: hubUnits,
-      accent: "bg-chart-2",
+      accent: "bg-sky-500",
+      cardClass: "bg-sky-500/5",
     },
     {
       key: "drum",
       label: t("finished.stat.drum"),
       value: drumUnits,
-      accent: "bg-chart-3",
+      accent: "bg-amber-500",
+      cardClass: "bg-amber-500/5",
     },
   ];
 
@@ -262,7 +267,7 @@ export default function FinishedGoodsPage() {
                 active && "rounded-xl ring-2 ring-primary/40"
               )}
             >
-              <Card className="relative overflow-hidden py-0">
+              <Card className={cn("relative overflow-hidden py-0", stat.cardClass)}>
                 <span className={`absolute inset-x-0 top-0 h-1 ${stat.accent}`} aria-hidden />
                 <CardContent className="p-4">
                   <p className="font-data text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
@@ -313,7 +318,10 @@ export default function FinishedGoodsPage() {
               </TableHeader>
               <TableBody>
                 {filteredItems.map((item) => (
-                  <TableRow key={`${item.productId}-${item.warehouseId}`}>
+                  <TableRow
+                    key={`${item.productId}-${item.warehouseId}`}
+                    className={familyRowClass(item.family)}
+                  >
                     <TableCell>
                       <div className="font-medium">{item.name}</div>
                       <div className="font-data text-[10px] text-muted-foreground">
@@ -322,7 +330,7 @@ export default function FinishedGoodsPage() {
                     </TableCell>
                     <TableCell>
                       {item.family ? (
-                        <Badge variant="outline" className="font-data text-[10px] uppercase">
+                        <Badge variant="outline" className={familyBadgeClass(item.family)}>
                           {familyLabel(item.family)}
                         </Badge>
                       ) : (

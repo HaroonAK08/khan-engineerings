@@ -37,6 +37,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  familyFilterChipClass,
+  familyMetaTextClass,
+  familyPickerItemClass,
+  familyRowClass,
+} from "@/lib/product-family";
+import { cn } from "@/lib/utils";
 
 const produceSchema = z.object({
   productId: z.string().min(1, "Product is required"),
@@ -86,6 +93,17 @@ function batchWastePercent(batch: ProductionBatch) {
 function batchMaterialType(batch: ProductionBatch): "scrap" | "daig" {
   const t = batch.inputs?.[0]?.materialType;
   return t === "daig" ? "daig" : "scrap";
+}
+
+function batchFamily(batch: ProductionBatch) {
+  if (batch.family === "hub" || batch.family === "drum") return batch.family;
+  const out = batch.outputs?.[0];
+  if (out?.family === "hub" || out?.family === "drum") return out.family;
+  const product = out?.product;
+  if (product && typeof product === "object" && (product.family === "hub" || product.family === "drum")) {
+    return product.family;
+  }
+  return batchMaterialType(batch) === "daig" ? "drum" : "hub";
 }
 
 function toDateInput(value?: string) {
@@ -335,7 +353,7 @@ export default function ProductionHistoryPage() {
               </TableHeader>
               <TableBody>
                 {batches.map((b) => (
-                  <TableRow key={b._id}>
+                  <TableRow key={b._id} className={familyRowClass(batchFamily(b))}>
                     <TableCell className="text-sm">{batchProductName(b)}</TableCell>
                     <TableCell className="font-data text-right text-xs">{batchQty(b)}</TableCell>
                     <TableCell className="font-data text-right text-xs">
@@ -409,7 +427,10 @@ export default function ProductionHistoryPage() {
                     type="button"
                     size="default"
                     variant={produceFamily === value ? "default" : "outline"}
-                    className="min-w-[4.5rem] flex-1 sm:flex-none"
+                    className={cn(
+                      "min-w-[4.5rem] flex-1 sm:flex-none",
+                      familyFilterChipClass(value, produceFamily === value)
+                    )}
                     onClick={() => setProduceFamily(value)}
                   >
                     {t(labelKey)}
@@ -419,7 +440,10 @@ export default function ProductionHistoryPage() {
               <div className="overflow-hidden rounded-lg border border-input">
                 <button
                   type="button"
-                  className="flex min-h-11 w-full items-center justify-between px-3 py-2.5 text-left text-base hover:bg-muted/50"
+                  className={cn(
+                    "flex min-h-11 w-full items-center justify-between px-3 py-2.5 text-left text-base hover:bg-muted/50",
+                    selectedProduct && familyRowClass(selectedProduct.family)
+                  )}
                   onClick={() => setPickerOpen((v) => !v)}
                 >
                   <span className={selectedProduct ? "text-foreground" : "text-muted-foreground"}>
@@ -458,9 +482,10 @@ export default function ProductionHistoryPage() {
                               key={p._id}
                               type="button"
                               disabled={!hasWeight}
-                              className={`flex w-full flex-col gap-0.5 px-3 py-2.5 text-left text-base hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40 ${
-                                active ? "bg-muted" : ""
-                              }`}
+                              className={cn(
+                                "flex w-full flex-col gap-0.5 px-3 py-2.5 text-left text-base disabled:cursor-not-allowed disabled:opacity-40",
+                                familyPickerItemClass(p.family, active)
+                              )}
                               onClick={() => {
                                 form.setValue("productId", p._id, { shouldValidate: true });
                                 setPickerOpen(false);
@@ -468,7 +493,7 @@ export default function ProductionHistoryPage() {
                               }}
                             >
                               <span className="font-medium">{p.name}</span>
-                              <span className="font-data text-sm text-muted-foreground uppercase">
+                              <span className={cn("text-sm", familyMetaTextClass(p.family))}>
                                 {p.family}
                                 {hasWeight ? ` · ${formatKg(Number(p.weightKg))} kg` : ""}
                               </span>

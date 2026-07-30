@@ -100,25 +100,9 @@ async function normalizeItems(items) {
   return { items: normalized, totalAmount: roundMoney(totalAmount) };
 }
 
-/** Fail before writing anything if the warehouse cannot cover every line. */
-async function assertStockAvailable(items, warehouse) {
-  const stock = await inventoryService.getFinishedStock({ warehouse: String(warehouse) });
-  const needed = new Map();
-  for (const line of items) {
-    const key = String(line.product);
-    needed.set(key, (needed.get(key) || 0) + line.quantity);
-  }
-  for (const [productId, quantity] of needed) {
-    const row = stock.items.find((i) => String(i.productId) === productId);
-    const available = row?.quantity || 0;
-    if (quantity > available + 1e-9) {
-      const name = row?.name || (await Product.findById(productId))?.name || "a product";
-      throw httpError(
-        `Not enough finished stock for ${name}. Need ${quantity}, have ${available}`,
-        400
-      );
-    }
-  }
+/** Stock may go negative when shipping — no hard block. */
+async function assertStockAvailable() {
+  return;
 }
 
 function summary(builty) {

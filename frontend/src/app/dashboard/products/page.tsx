@@ -9,6 +9,8 @@ import { Loader2, Plus } from "lucide-react";
 import { apiError, formatMoney } from "@/lib/materials-api";
 import { getFinishedStock } from "@/lib/inventory-api";
 import { createProduct, listProducts, updateProduct } from "@/lib/production-api";
+import { familyBadgeClass, familyFilterChipClass, familyRowClass } from "@/lib/product-family";
+import { cn } from "@/lib/utils";
 import type { Product } from "@/types/production";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -234,9 +236,10 @@ export default function ProductsPage() {
                       type="button"
                       size="lg"
                       variant={active ? "default" : "outline"}
-                      className={`h-12 text-base font-semibold uppercase tracking-wide ${
-                        active ? "shadow-sm" : "bg-background"
-                      }`}
+                      className={cn(
+                        "h-12 text-base font-semibold uppercase tracking-wide",
+                        familyFilterChipClass(opt.value, active, active ? "shadow-sm" : undefined)
+                      )}
                       onClick={() => setFamilyFilter(opt.value)}
                       aria-pressed={active}
                     >
@@ -273,7 +276,7 @@ export default function ProductsPage() {
               </TableHeader>
               <TableBody>
                 {products.map((p) => (
-                  <TableRow key={p._id}>
+                  <TableRow key={p._id} className={familyRowClass(p.family)}>
                     <TableCell className="whitespace-normal">
                       <div className="font-medium break-words">{p.name}</div>
                       {p.sku ? (
@@ -281,7 +284,7 @@ export default function ProductsPage() {
                       ) : null}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="font-data text-[10px] uppercase">
+                      <Badge variant="outline" className={familyBadgeClass(p.family)}>
                         {p.family || "hub"}
                       </Badge>
                     </TableCell>

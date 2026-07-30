@@ -31,6 +31,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useI18n } from "@/hooks/use-i18n";
 import { todayInput } from "@/lib/date-range";
+import {
+  familyFilterChipClass,
+  familyMetaTextClass,
+  familyPickerItemClass,
+  familyRowClass,
+} from "@/lib/product-family";
+import { cn } from "@/lib/utils";
 
 type Line = {
   product: string;
@@ -128,14 +135,9 @@ function BuiltyForm() {
     };
   }, [customer]);
 
-  const inStockProducts = useMemo(
-    () => products.filter((p) => (stockByProduct[p._id] || 0) > 0),
-    [products, stockByProduct]
-  );
-
   const filteredProducts = useMemo(() => {
     const q = productSearch.trim().toLowerCase();
-    let list = inStockProducts;
+    let list = products;
     if (productFamilyFilter !== "all") {
       list = list.filter((p) => p.family === productFamilyFilter);
     }
@@ -146,7 +148,7 @@ function BuiltyForm() {
         p.family?.toLowerCase().includes(q) ||
         String(p.weightKg ?? "").includes(q)
     );
-  }, [inStockProducts, productSearch, productFamilyFilter]);
+  }, [products, productSearch, productFamilyFilter]);
 
   const filteredCustomers = useMemo(() => {
     const q = customerSearch.trim().toLowerCase();
@@ -412,7 +414,10 @@ function BuiltyForm() {
               return (
                 <div
                   key={index}
-                  className="flex flex-col gap-3 rounded-lg border border-border/60 p-3"
+                  className={cn(
+                    "flex flex-col gap-3 rounded-lg border border-border/60 p-3",
+                    selected && familyRowClass(selected.family)
+                  )}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="relative min-w-0 flex-1">
@@ -427,7 +432,10 @@ function BuiltyForm() {
                           }}
                         >
                           <span
-                            className={selected ? "truncate text-foreground" : "text-muted-foreground"}
+                            className={cn(
+                              selected ? "truncate text-foreground" : "text-muted-foreground",
+                              selected && available < 0 && "text-amber-700 dark:text-amber-400"
+                            )}
                           >
                             {selected
                               ? `${selected.name}${weightKg > 0 ? ` · ${formatKg(weightKg)} kg` : ""} · ${t("builtyNew.stock", { qty: available })}`
@@ -457,11 +465,13 @@ function BuiltyForm() {
                                 <button
                                   key={option.value}
                                   type="button"
-                                  className={`rounded-md border px-3 py-1 text-xs font-medium ${
-                                    productFamilyFilter === option.value
-                                      ? "border-primary bg-primary text-primary-foreground"
-                                      : "border-border text-muted-foreground hover:bg-muted"
-                                  }`}
+                                  className={cn(
+                                    "rounded-md border px-3 py-1 text-xs font-medium",
+                                    familyFilterChipClass(
+                                      option.value,
+                                      productFamilyFilter === option.value
+                                    )
+                                  )}
                                   onClick={() => setProductFamilyFilter(option.value)}
                                 >
                                   {option.label}
@@ -471,7 +481,7 @@ function BuiltyForm() {
                             <div className="max-h-48 overflow-y-auto">
                               {filteredProducts.length === 0 ? (
                                 <p className="px-3 py-4 text-center text-xs text-muted-foreground">
-                                  {inStockProducts.length === 0
+                                  {products.length === 0
                                     ? t("builtyNew.noFinishedStock")
                                     : t("prod.noMatchProduct")}
                                 </p>
@@ -483,9 +493,10 @@ function BuiltyForm() {
                                     <button
                                       key={p._id}
                                       type="button"
-                                      className={`flex w-full flex-col gap-0.5 px-3 py-2 text-left text-sm hover:bg-muted ${
-                                        line.product === p._id ? "bg-muted" : ""
-                                      }`}
+                                      className={cn(
+                                        "flex w-full flex-col gap-0.5 px-3 py-2 text-left text-sm",
+                                        familyPickerItemClass(p.family, line.product === p._id)
+                                      )}
                                       onClick={() => {
                                         updateLine(index, {
                                           product: p._id,
@@ -500,7 +511,13 @@ function BuiltyForm() {
                                       }}
                                     >
                                       <span className="font-medium">{p.name}</span>
-                                      <span className="font-data text-[10px] text-muted-foreground uppercase">
+                                      <span
+                                        className={cn(
+                                          "text-[10px]",
+                                          familyMetaTextClass(p.family),
+                                          available <= 0 && "text-amber-700 dark:text-amber-400"
+                                        )}
+                                      >
                                         {p.family}
                                         {kg > 0 ? ` · ${formatKg(kg)} kg` : ""}
                                         {` · ${t("builtyNew.stock", { qty: available })}`}
@@ -532,11 +549,15 @@ function BuiltyForm() {
                         type="number"
                         step="1"
                         min={1}
-                        max={available > 0 ? available : undefined}
                         value={line.quantity}
                         onChange={(e) => updateLine(index, { quantity: Number(e.target.value) })}
                         className="h-11"
                       />
+                      {selected && available < line.quantity && (
+                        <p className="text-[11px] text-amber-700 dark:text-amber-400">
+                          Stock {available} — will go negative
+                        </p>
+                      )}
                     </div>
                     <div className="flex flex-col gap-1">
                       <Label className="text-xs">{t("builtyNew.pricingMode")}</Label>

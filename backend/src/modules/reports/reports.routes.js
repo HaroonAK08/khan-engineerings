@@ -24,5 +24,8 @@ router.get("/export/receivables", controller.exportReceivables);
 router.get("/export/payables", controller.exportPayables);
 router.get("/export/statements/customers/:id", controller.exportCustomerStatement);
 router.get("/export/statements/suppliers/:id", controller.exportSupplierStatement);
+router.get("/export/full", controller.exportFull);
+router.get("/export/custom", controller.exportCustom);
+router.get("/preview", controller.combinedPreview);
 
 module.exports = router;

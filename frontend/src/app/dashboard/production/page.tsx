@@ -8,6 +8,7 @@ import { useI18n } from "@/hooks/use-i18n";
 import { apiError, formatKg, getStock } from "@/lib/materials-api";
 import { getFinishedStock, type FinishedStockItem } from "@/lib/inventory-api";
 import { listProducts } from "@/lib/production-api";
+import { familyBadgeClass, familyRowClass } from "@/lib/product-family";
 import type { StockSummary } from "@/types/materials";
 import type { Product } from "@/types/production";
 import { Badge } from "@/components/ui/badge";
@@ -179,13 +180,19 @@ export default function ProductionPage() {
                 {t("prod.availableFamilies")}
               </p>
               <div className="mt-2 space-y-1">
-                <p className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-muted-foreground">{t("prod.hubAvailable")}</span>
-                  <span className="font-data text-xl font-medium">{hubOnHand}</span>
+                <p className="flex items-center justify-between gap-3 rounded-md bg-sky-500/10 px-2 py-1">
+                  <span className="text-sm text-sky-800 dark:text-sky-300">{t("prod.hubAvailable")}</span>
+                  <span className="font-data text-xl font-medium text-sky-800 dark:text-sky-300">
+                    {hubOnHand}
+                  </span>
                 </p>
-                <p className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-muted-foreground">{t("prod.drumAvailable")}</span>
-                  <span className="font-data text-xl font-medium">{drumOnHand}</span>
+                <p className="flex items-center justify-between gap-3 rounded-md bg-amber-500/10 px-2 py-1">
+                  <span className="text-sm text-amber-900 dark:text-amber-300">
+                    {t("prod.drumAvailable")}
+                  </span>
+                  <span className="font-data text-xl font-medium text-amber-900 dark:text-amber-300">
+                    {drumOnHand}
+                  </span>
                 </p>
               </div>
             </CardContent>
@@ -248,10 +255,10 @@ export default function ProductionPage() {
                   const onHand = stockByProduct.get(p._id) || 0;
                   const hasWeight = Number(p.weightKg) > 0;
                   return (
-                    <TableRow key={p._id}>
+                    <TableRow key={p._id} className={familyRowClass(p.family)}>
                       <TableCell className="font-medium">{p.name}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="font-data text-[10px] uppercase">
+                        <Badge variant="outline" className={familyBadgeClass(p.family)}>
                           {p.family}
                         </Badge>
                       </TableCell>

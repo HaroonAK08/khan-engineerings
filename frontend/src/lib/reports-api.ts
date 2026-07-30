@@ -140,6 +140,17 @@ export type ExportKind =
   | "receivables"
   | "payables";
 
+export const COMBINED_REPORT_MODULES: Array<{ id: ExportKind; label: string }> = [
+  { id: "sales", label: "Sales" },
+  { id: "purchases", label: "Purchases" },
+  { id: "production", label: "Production" },
+  { id: "expenses", label: "Expenses" },
+  { id: "inventory", label: "Inventory" },
+  { id: "finance", label: "Finance" },
+  { id: "receivables", label: "Receivables" },
+  { id: "payables", label: "Payables" },
+];
+
 export async function downloadReportExport(
   kind: ExportKind,
   params: Record<string, string | undefined> & { format: "pdf" }
@@ -154,6 +165,76 @@ export async function downloadReportExport(
     responseType: "blob",
   });
   triggerDownload(data as Blob, `${kind}-report.pdf`);
+}
+
+export async function downloadFullReport(params: {
+  format: "pdf" | "xlsx";
+  dateFrom?: string;
+  dateTo?: string;
+}) {
+  const query: Record<string, string> = { format: params.format };
+  if (params.dateFrom) query.dateFrom = params.dateFrom;
+  if (params.dateTo) query.dateTo = params.dateTo;
+  const { data } = await api.get("/reports/export/full", {
+    params: query,
+    responseType: "blob",
+    timeout: 90_000,
+  });
+  const ext = params.format === "xlsx" ? "xlsx" : "pdf";
+  triggerDownload(data as Blob, `full-report.${ext}`);
+}
+
+export async function downloadCustomReport(params: {
+  format: "pdf" | "xlsx";
+  modules: ExportKind[];
+  dateFrom?: string;
+  dateTo?: string;
+}) {
+  const query: Record<string, string> = {
+    format: params.format,
+    modules: params.modules.join(","),
+  };
+  if (params.dateFrom) query.dateFrom = params.dateFrom;
+  if (params.dateTo) query.dateTo = params.dateTo;
+  const { data } = await api.get("/reports/export/custom", {
+    params: query,
+    responseType: "blob",
+    timeout: 90_000,
+  });
+  const ext = params.format === "xlsx" ? "xlsx" : "pdf";
+  triggerDownload(data as Blob, `custom-report.${ext}`);
+}
+
+export type CombinedReportSection = {
+  id: string;
+  title: string;
+  heading: string;
+  columns: string[];
+  rows: Array<Array<string | number>>;
+  meta: Record<string, string | number>;
+};
+
+export type CombinedReportPreview = {
+  title: string;
+  period: string;
+  modules: string[];
+  sections: CombinedReportSection[];
+};
+
+export async function getCombinedReportPreview(params: {
+  modules?: ExportKind[];
+  dateFrom?: string;
+  dateTo?: string;
+}) {
+  const query: Record<string, string> = {};
+  if (params.modules?.length) query.modules = params.modules.join(",");
+  if (params.dateFrom) query.dateFrom = params.dateFrom;
+  if (params.dateTo) query.dateTo = params.dateTo;
+  const { data } = await api.get<{ report: CombinedReportPreview }>("/reports/preview", {
+    params: query,
+    timeout: 90_000,
+  });
+  return data.report;
 }
 
 export async function downloadStatementExport(

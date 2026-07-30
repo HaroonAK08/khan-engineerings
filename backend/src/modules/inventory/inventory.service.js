@@ -500,31 +500,6 @@ async function createAdjustment(data) {
     warehouseId = wh._id;
   }
 
-  if (data.itemType === "finished_good" && data.direction === "out") {
-    const { items } = await getFinishedStock({ warehouse: String(warehouseId) });
-    const row = items.find((i) => String(i.productId) === String(data.product));
-    const available = row?.quantity || 0;
-    if (quantity > available + 1e-9) {
-      throw httpError(`Insufficient finished stock. Available ${available}`, 400);
-    }
-  }
-
-  if (data.itemType === "raw_scrap" && data.direction === "out") {
-    const raw = await purchaseService.getStock({ materialType: "scrap" });
-    const available = raw.availableKg ?? raw.totalKg;
-    if (quantity > available + 1e-9) {
-      throw httpError(`Insufficient scrap stock. Available ${available} kg`, 400);
-    }
-  }
-
-  if (data.itemType === "raw_daig" && data.direction === "out") {
-    const raw = await purchaseService.getStock({ materialType: "daig" });
-    const available = raw.availableKg ?? raw.totalKg;
-    if (quantity > available + 1e-9) {
-      throw httpError(`Insufficient daig stock. Available ${available} kg`, 400);
-    }
-  }
-
   return recordMovement({
     itemType: data.itemType,
     direction: data.direction,

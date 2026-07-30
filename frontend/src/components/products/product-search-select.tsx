@@ -6,6 +6,11 @@ import { formatKg } from "@/lib/materials-api";
 import type { Product } from "@/types/production";
 import { Input } from "@/components/ui/input";
 import { useI18n } from "@/hooks/use-i18n";
+import {
+  familyMetaTextClass,
+  familyPickerItemClass,
+  familyRowClass,
+} from "@/lib/product-family";
 import { cn } from "@/lib/utils";
 
 type ProductSearchSelectProps = {
@@ -86,7 +91,10 @@ export function ProductSearchSelect({
         <button
           type="button"
           disabled={disabled}
-          className="flex min-h-11 w-full items-center px-3 py-2.5 text-left text-base hover:bg-muted/50 disabled:opacity-50"
+          className={cn(
+            "flex min-h-11 w-full items-center px-3 py-2.5 text-left text-base hover:bg-muted/50 disabled:opacity-50",
+            selected && familyRowClass(selected.family)
+          )}
           onClick={() => {
             setOpen((v) => !v);
             setSearch("");
@@ -140,8 +148,8 @@ export function ProductSearchSelect({
                       key={p._id}
                       type="button"
                       className={cn(
-                        "flex w-full flex-col gap-0.5 px-3 py-2.5 text-left text-base hover:bg-muted",
-                        active && "bg-muted"
+                        "flex w-full flex-col gap-0.5 px-3 py-2.5 text-left text-base",
+                        familyPickerItemClass(p.family, active)
                       )}
                       onClick={() => {
                         onChange(p._id);
@@ -151,7 +159,7 @@ export function ProductSearchSelect({
                     >
                       <span className="font-medium">{p.name}</span>
                       {(showFamily || showWeight) && (
-                        <span className="font-data text-sm text-muted-foreground uppercase">
+                        <span className={cn("text-sm", familyMetaTextClass(p.family))}>
                           {[
                             showFamily ? p.family : null,
                             showWeight && kg > 0 ? `${formatKg(kg)} kg` : null,

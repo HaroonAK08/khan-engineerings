@@ -243,12 +243,6 @@ async function produce(data) {
   const chargedKg = roundKg(metalKg + wasteKg);
 
   const available = await getAvailableMaterialKg(materialType);
-  if (chargedKg > available + 1e-9) {
-    throw httpError(
-      `Insufficient ${materialType} stock. Available ${available} kg, need ${chargedKg} kg`,
-      400
-    );
-  }
 
   const productionDate = parseDate(data.productionDate || new Date(), "Production date");
 
@@ -464,14 +458,6 @@ async function recordFurnace(id, data) {
   const materialType =
     (batch.inputs && batch.inputs[0] && batch.inputs[0].materialType) ||
     (batch.family === "drum" ? "daig" : "scrap");
-
-  const available = await getAvailableMaterialKg(materialType);
-  if (finalCharged > available + 1e-9) {
-    throw httpError(
-      `Insufficient ${materialType} stock. Available ${available} kg, furnace accounted ${finalCharged} kg`,
-      400
-    );
-  }
 
   batch.outputs = outputs;
   batch.outputProgress = outputProgress;
@@ -765,12 +751,6 @@ async function updateProduce(id, data) {
   const chargedKg = roundKg(metalKg + wasteKg);
 
   const available = await getAvailableMaterialKg(materialType, batch._id);
-  if (chargedKg > available + 1e-9) {
-    throw httpError(
-      `Insufficient ${materialType} stock. Available ${available} kg, need ${chargedKg} kg`,
-      400
-    );
-  }
 
   const productionDate = parseDate(
     data.productionDate || batch.productionDate || new Date(),

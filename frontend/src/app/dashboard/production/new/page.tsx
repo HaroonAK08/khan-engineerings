@@ -13,6 +13,12 @@ import { useI18n } from "@/hooks/use-i18n";
 import { todayInput } from "@/lib/date-range";
 import { getStock, apiError, formatKg, withSameDayConfirm } from "@/lib/materials-api";
 import { listProducts, produce } from "@/lib/production-api";
+import {
+  familyFilterChipClass,
+  familyMetaTextClass,
+  familyPickerItemClass,
+  familyRowClass,
+} from "@/lib/product-family";
 import { cn } from "@/lib/utils";
 import type { StockSummary } from "@/types/materials";
 import type { Product } from "@/types/production";
@@ -270,7 +276,13 @@ function NewProductionForm() {
                   : stock?.byMaterial?.scrap?.availableKg ?? stock?.availableKg ?? stock?.totalKg ?? 0;
 
               return (
-                <div key={index} className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
+                <div
+                  key={index}
+                  className={cn(
+                    "flex flex-col gap-3 rounded-lg border border-border/60 p-3",
+                    selectedProduct && familyRowClass(selectedProduct.family)
+                  )}
+                >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="text-xs text-muted-foreground">Row {index + 1}</p>
@@ -327,7 +339,10 @@ function NewProductionForm() {
                                 type="button"
                                 size="default"
                                 variant={familyFilter === value ? "default" : "outline"}
-                                className="min-w-[4.5rem] flex-1 sm:flex-none"
+                                className={cn(
+                                  "min-w-[4.5rem] flex-1 sm:flex-none",
+                                  familyFilterChipClass(value, familyFilter === value)
+                                )}
                                 onClick={() => setFamilyFilter(value)}
                               >
                                 {t(labelKey)}
@@ -355,13 +370,16 @@ function NewProductionForm() {
                                   key={product._id}
                                   type="button"
                                   className={cn(
-                                    "flex w-full flex-col gap-0.5 px-3 py-2.5 text-left text-base hover:bg-muted",
-                                    line.productId === product._id && "bg-muted"
+                                    "flex w-full flex-col gap-0.5 px-3 py-2.5 text-left text-base",
+                                    familyPickerItemClass(
+                                      product.family,
+                                      line.productId === product._id
+                                    )
                                   )}
                                   onClick={() => selectProduct(index, product)}
                                 >
                                   <span className="font-medium">{product.name}</span>
-                                  <span className="font-data text-sm text-muted-foreground uppercase">
+                                  <span className={cn("text-sm", familyMetaTextClass(product.family))}>
                                     {product.family}
                                     {` · ${formatKg(Number(product.weightKg) || 0)} kg`}
                                   </span>
@@ -420,8 +438,25 @@ function NewProductionForm() {
                       </p>
                       <p className="mt-1 font-medium text-foreground">
                         {t("prod.calcDeduct")}: {formatKg(preview.chargedKg)} kg {t(`prod.${materialType}`)} ·{" "}
-                        {t("prod.available")}: {formatKg(availableForMaterial)} kg
+                        {t("prod.available")}:{" "}
+                        <span
+                          className={
+                            availableForMaterial - preview.chargedKg < 0
+                              ? "text-amber-700 dark:text-amber-400"
+                              : undefined
+                          }
+                        >
+                          {formatKg(availableForMaterial)} kg
+                          {availableForMaterial - preview.chargedKg < 0
+                            ? ` → ${formatKg(availableForMaterial - preview.chargedKg)} kg`
+                            : ""}
+                        </span>
                       </p>
+                      {availableForMaterial - preview.chargedKg < 0 && (
+                        <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                          Material will go negative — production is still allowed.
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
