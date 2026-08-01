@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Banknote, Loader2, Pencil, Trash2 } from "lucide-react";
+import { Loader2, Pencil, Trash2 } from "lucide-react";
 import {
   apiError,
   deleteLedgerEntry,
@@ -10,10 +10,8 @@ import {
   formatDate,
   formatKg,
   formatMoney,
-  recordPayment,
   updateLedgerEntry,
   updatePurchase,
-  withSameDayConfirm,
 } from "@/lib/materials-api";
 import type { LedgerEntry } from "@/types/materials";
 import { thisMonthRange, toDateInput, todayInput } from "@/lib/date-range";
@@ -45,6 +43,13 @@ type Props = {
   entries: LedgerEntry[];
   onChanged: () => void | Promise<void>;
   showSupplierNames?: boolean;
+};
+
+type KhataRow = {
+  entry: LedgerEntry;
+  debit: number;
+  credit: number;
+  baqaya: number;
 };
 
 function isInternalNote(notes: string) {
@@ -79,163 +84,63 @@ function dayKey(d: Date) {
   return toDateInput(d);
 }
 
-function payableOf(p: NonNullable<ReturnType<typeof purchaseOf>>) {
-  return roundMoney((p.totalAmount || 0) + (p.freightAmount || 0));
-}
-
-type PaidSlice = { amount: number; date: string; entryId: string };
-
-type PurchaseRowView = {
-  entry: LedgerEntry;
-  amount: number;
-  previous: number;
-  previousPlusAmount: number;
-  paidSlices: PaidSlice[];
-  paidTotal: number;
-  balance: number;
-};
-
-function formatBalanceDisplay(balance: number) {
-  const abs = formatMoney(Math.abs(balance));
-  if (balance > 0.001) return `− ${abs}`;
-  if (balance < -0.001) return `+ ${abs}`;
-  return formatMoney(0);
-}
-
-function balanceToneClass(balance: number) {
-  if (balance > 0.001) return "text-amber-700 dark:text-amber-400";
-  if (balance < -0.001) return "text-emerald-700 dark:text-emerald-400";
-  return undefined;
-}
-
 function entryTime(e: LedgerEntry) {
   return new Date(e.entryDate).getTime();
 }
 
-function buildPurchaseRows(entries: LedgerEntry[]): Map<string, PurchaseRowView> {
+function payableOf(p: NonNullable<ReturnType<typeof purchaseOf>>) {
+  return roundMoney((p.totalAmount || 0) + (p.freightAmount || 0));
+}
+
+function formatBaqaya(baqaya: number) {
+  const abs = formatMoney(Math.abs(baqaya));
+  if (baqaya > 0.001) return abs;
+  if (baqaya < -0.001) return `+ ${abs}`;
+  return formatMoney(0);
+}
+
+function baqayaClass(baqaya: number) {
+  if (baqaya > 0.001) return "text-amber-700 dark:text-amber-400";
+  if (baqaya < -0.001) return "text-emerald-700 dark:text-emerald-400";
+  return undefined;
+}
+
+/** Classic khata: oldest → newest, baqaya after each line. */
+function buildKhataRows(entries: LedgerEntry[]): KhataRow[] {
   const bySupplier = new Map<string, LedgerEntry[]>();
   for (const e of entries) {
+    if (e.type === "adjustment" && (e.signedAmount ?? 0) <= 0) continue;
     const sid = supplierIdOf(e);
     const list = bySupplier.get(sid) || [];
     list.push(e);
     bySupplier.set(sid, list);
   }
 
-  const result = new Map<string, PurchaseRowView>();
-
+  const rows: KhataRow[] = [];
   for (const [, list] of bySupplier) {
-    // Purchases + previous pending (positive adjustments), oldest first.
-    const dues = list
-      .filter(
-        (e) =>
-          e.type === "purchase" ||
-          (e.type === "adjustment" && (e.signedAmount ?? 0) > 0)
-      )
+    const ordered = list
       .slice()
       .sort((a, b) => entryTime(a) - entryTime(b) || a._id.localeCompare(b._id));
 
-    const payments = list
-      .filter((e) => e.type === "payment")
-      .slice()
-      .sort((a, b) => entryTime(a) - entryTime(b) || a._id.localeCompare(b._id))
-      .map((e) => ({
-        entryId: e._id,
-        date: e.entryDate,
-        left: roundMoney(e.amount || 0),
-        purchaseId: purchaseIdOf(e) || "",
-        appliesTo:
-          typeof e.appliesTo === "string"
-            ? e.appliesTo
-            : e.appliesTo && typeof e.appliesTo === "object" && "_id" in e.appliesTo
-              ? String((e.appliesTo as { _id: string })._id)
-              : "",
-      }));
-
-    let runningOutstanding = 0;
-    let lastDueId: string | null = null;
-    for (const e of dues) {
-      const p = purchaseOf(e);
-      const amount =
-        e.type === "adjustment"
-          ? roundMoney(e.signedAmount ?? e.amount ?? 0)
-          : p
-            ? payableOf(p)
-            : roundMoney(e.amount || 0);
-      const previous = runningOutstanding;
-      const previousPlusAmount = roundMoney(previous + amount);
-      const duePurchaseId = purchaseIdOf(e);
-
-      const paidSlices: PaidSlice[] = [];
-
-      // 1) Payments recorded against this row keep their full amount (overpay = advance).
-      for (const pay of payments) {
-        if (pay.left <= 0) continue;
-        const linkedToPurchase =
-          Boolean(duePurchaseId) && pay.purchaseId === duePurchaseId;
-        const linkedToEntry = pay.appliesTo === e._id;
-        if (!linkedToPurchase && !linkedToEntry) continue;
-        paidSlices.push({ amount: pay.left, date: pay.date, entryId: pay.entryId });
-        pay.left = 0;
+    let baqaya = 0;
+    for (const e of ordered) {
+      let debit = 0;
+      let credit = 0;
+      if (e.type === "payment") {
+        credit = roundMoney(e.amount || 0);
+        baqaya = roundMoney(baqaya - credit);
+      } else if (e.type === "adjustment") {
+        debit = roundMoney(e.signedAmount ?? e.amount ?? 0);
+        baqaya = roundMoney(baqaya + debit);
+      } else {
+        const p = purchaseOf(e);
+        debit = p ? payableOf(p) : roundMoney(e.amount || 0);
+        baqaya = roundMoney(baqaya + debit);
       }
-
-      let paidTotal = roundMoney(paidSlices.reduce((s, x) => s + x.amount, 0));
-      let need = roundMoney(Math.max(0, amount - paidTotal));
-
-      // 2) Unlinked payments: while this row still needs money, take the whole
-      //    payment (no split). That way overpay shows as +advance on this record.
-      for (const pay of payments) {
-        if (need <= 0) break;
-        if (pay.left <= 0) continue;
-        if (pay.purchaseId || pay.appliesTo) continue;
-        const take = pay.left;
-        paidSlices.push({ amount: take, date: pay.date, entryId: pay.entryId });
-        pay.left = 0;
-        paidTotal = roundMoney(paidTotal + take);
-        need = roundMoney(Math.max(0, amount - paidTotal));
-      }
-
-      paidTotal = roundMoney(paidSlices.reduce((s, x) => s + x.amount, 0));
-      const rowRemaining = roundMoney(amount - paidTotal);
-      const carried = roundMoney(previous + rowRemaining);
-      // Overpay on this record → show +advance here; credit still flows into later rows.
-      const balance = rowRemaining < -0.001 ? rowRemaining : carried;
-      runningOutstanding = carried;
-      lastDueId = e._id;
-
-      result.set(e._id, {
-        entry: e,
-        amount,
-        previous,
-        previousPlusAmount,
-        paidSlices,
-        paidTotal,
-        balance,
-      });
-    }
-
-    // Extra unlinked payments after all dues → advance on the latest due row.
-    const leftover = roundMoney(payments.reduce((s, pay) => s + pay.left, 0));
-    if (leftover > 0.001 && lastDueId) {
-      const last = result.get(lastDueId);
-      if (last) {
-        for (const pay of payments) {
-          if (pay.left <= 0) continue;
-          last.paidSlices.push({
-            amount: pay.left,
-            date: pay.date,
-            entryId: pay.entryId,
-          });
-          last.paidTotal = roundMoney(last.paidTotal + pay.left);
-          pay.left = 0;
-        }
-        const rowRemaining = roundMoney(last.amount - last.paidTotal);
-        const carried = roundMoney(last.previous + rowRemaining);
-        last.balance = rowRemaining < -0.001 ? rowRemaining : carried;
-      }
+      rows.push({ entry: e, debit, credit, baqaya });
     }
   }
-
-  return result;
+  return rows;
 }
 
 export function SupplierHistoryCalendar({
@@ -247,11 +152,9 @@ export function SupplierHistoryCalendar({
   const { t, isUrdu } = useI18n();
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [showPreviousPending, setShowPreviousPending] = useState(false);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<LedgerEntry | null>(null);
-  const [editingRow, setEditingRow] = useState<PurchaseRowView | null>(null);
   const [formAmount, setFormAmount] = useState("");
   const [formDate, setFormDate] = useState("");
   const [formNote, setFormNote] = useState("");
@@ -261,89 +164,82 @@ export function SupplierHistoryCalendar({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const [payOpen, setPayOpen] = useState(false);
-  const [payFor, setPayFor] = useState<PurchaseRowView | null>(null);
-  const [payAmount, setPayAmount] = useState("");
-  const [payDate, setPayDate] = useState(todayInput());
-  const [payNote, setPayNote] = useState("");
-  const [savingPay, setSavingPay] = useState(false);
+  const allRows = useMemo(() => buildKhataRows(entries), [entries]);
 
-  const [editingPayment, setEditingPayment] = useState<LedgerEntry | null>(null);
-  const [payEditAmount, setPayEditAmount] = useState("");
-  const [payEditDate, setPayEditDate] = useState("");
-  const [payEditNote, setPayEditNote] = useState("");
-  const [savingPaymentEdit, setSavingPaymentEdit] = useState(false);
-  const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null);
-
-  const purchaseRowsById = useMemo(() => buildPurchaseRows(entries), [entries]);
-
-  const filtered = useMemo(() => {
-    let list = entries.filter((e) => {
-      if (e.type === "purchase") return true;
-      if (e.type === "adjustment" && (e.signedAmount ?? 0) > 0) {
-        if (showPreviousPending) return true;
-        // Always show previous pending that already has payments applied.
-        const row = purchaseRowsById.get(e._id);
-        return Boolean(row && row.paidTotal > 0.001);
-      }
-      return false;
-    });
+  const filteredRows = useMemo(() => {
+    let list = allRows;
     if (dateFrom) {
-      const from = dateFrom;
-      list = list.filter((e) => dayKey(new Date(e.entryDate)) >= from);
+      list = list.filter((r) => dayKey(new Date(r.entry.entryDate)) >= dateFrom);
     }
     if (dateTo) {
-      const to = dateTo;
-      list = list.filter((e) => dayKey(new Date(e.entryDate)) <= to);
+      list = list.filter((r) => dayKey(new Date(r.entry.entryDate)) <= dateTo);
     }
+    // Khata order: oldest at top, latest baqaya at bottom.
     return list
       .slice()
       .sort(
-        (a, b) => new Date(b.entryDate).getTime() - new Date(a.entryDate).getTime()
+        (a, b) =>
+          entryTime(a.entry) - entryTime(b.entry) ||
+          a.entry._id.localeCompare(b.entry._id)
       );
-  }, [entries, dateFrom, dateTo, showPreviousPending, purchaseRowsById]);
-
-  const purchaseViews = useMemo(() => {
-    return filtered
-      .map((e) => purchaseRowsById.get(e._id))
-      .filter((row): row is PurchaseRowView => Boolean(row));
-  }, [filtered, purchaseRowsById]);
+  }, [allRows, dateFrom, dateTo]);
 
   const totals = useMemo(() => {
-    const supplierIds = new Set(purchaseViews.map((row) => supplierIdOf(row.entry)));
+    const totalDebit = roundMoney(filteredRows.reduce((s, r) => s + r.debit, 0));
+    const totalCredit = roundMoney(filteredRows.reduce((s, r) => s + r.credit, 0));
+    // Closing baqaya: last line per supplier in filtered set, summed.
+    const lastBySup = new Map<string, number>();
+    for (const r of filteredRows) {
+      lastBySup.set(supplierIdOf(r.entry), r.baqaya);
+    }
+    let closing = 0;
+    for (const v of lastBySup.values()) closing = roundMoney(closing + v);
+    // If date filter skips early lines, baqaya on rows is still full-history — fix for filter:
+    // Recompute filtered-only running when date filter is on.
+    if (dateFrom || dateTo) {
+      const bySup = new Map<string, KhataRow[]>();
+      for (const r of filteredRows) {
+        const sid = supplierIdOf(r.entry);
+        const list = bySup.get(sid) || [];
+        list.push(r);
+        bySup.set(sid, list);
+      }
+      closing = 0;
+      for (const [, rows] of bySup) {
+        let b = 0;
+        for (const r of rows) {
+          b = roundMoney(b + r.debit - r.credit);
+        }
+        closing = roundMoney(closing + b);
+      }
+    }
+    return { totalDebit, totalCredit, closing };
+  }, [filteredRows, dateFrom, dateTo]);
 
-    const totalAmount = roundMoney(
-      purchaseViews
-        .filter((row) => row.entry.type === "purchase")
-        .reduce((s, row) => s + row.amount, 0)
+  // When date-filtered, show baqaya as running within filtered window only.
+  const displayRows = useMemo(() => {
+    if (!dateFrom && !dateTo) return filteredRows;
+    const bySup = new Map<string, KhataRow[]>();
+    for (const r of filteredRows) {
+      const sid = supplierIdOf(r.entry);
+      const list = bySup.get(sid) || [];
+      list.push(r);
+      bySup.set(sid, list);
+    }
+    const out: KhataRow[] = [];
+    for (const [, rows] of bySup) {
+      let b = 0;
+      for (const r of rows) {
+        b = roundMoney(b + r.debit - r.credit);
+        out.push({ ...r, baqaya: b });
+      }
+    }
+    return out.sort(
+      (a, b) =>
+        entryTime(a.entry) - entryTime(b.entry) ||
+        a.entry._id.localeCompare(b.entry._id)
     );
-
-    const totalPrevious = roundMoney(
-      entries
-        .filter(
-          (e) =>
-            e.type === "adjustment" &&
-            (e.signedAmount ?? 0) > 0 &&
-            (supplierIds.size === 0 || supplierIds.has(supplierIdOf(e)))
-        )
-        .reduce((s, e) => s + (e.signedAmount ?? e.amount ?? 0), 0)
-    );
-
-    const totalPaid = roundMoney(
-      entries
-        .filter(
-          (e) =>
-            e.type === "payment" &&
-            (supplierIds.size === 0 || supplierIds.has(supplierIdOf(e)))
-        )
-        .reduce((s, e) => s + (e.amount || 0), 0)
-    );
-
-    const previousPlusAmount = roundMoney(totalPrevious + totalAmount);
-    const totalBalance = roundMoney(previousPlusAmount - totalPaid);
-
-    return { totalAmount, totalPrevious, previousPlusAmount, totalPaid, totalBalance };
-  }, [purchaseViews, entries]);
+  }, [filteredRows, dateFrom, dateTo]);
 
   const formTotal = useMemo(() => {
     const qty = Number(formQty);
@@ -380,7 +276,12 @@ export function SupplierHistoryCalendar({
     return type === "daig" ? "D" : "S";
   }
 
-  function purchaseDetail(e: LedgerEntry) {
+  function rowDetail(e: LedgerEntry) {
+    if (e.type === "payment") {
+      return e.notes && !isInternalNote(e.notes)
+        ? e.notes
+        : t("supplierDetail.khataPayment");
+    }
     if (e.type === "adjustment") {
       return e.notes && !isInternalNote(e.notes)
         ? e.notes
@@ -391,25 +292,8 @@ export function SupplierHistoryCalendar({
     return `${materialLabel(p.materialType)} · ${formatKg(p.quantityKg)} kg · ${formatMoney(p.ratePerKg)}/kg`;
   }
 
-  const rowPayments = useMemo(() => {
-    if (!editingRow) return [] as LedgerEntry[];
-    const ids = [...new Set(editingRow.paidSlices.map((s) => s.entryId))];
-    return ids
-      .map((id) => entries.find((e) => e._id === id && e.type === "payment"))
-      .filter((e): e is LedgerEntry => Boolean(e))
-      .sort((a, b) => entryTime(a) - entryTime(b));
-  }, [editingRow, entries]);
-
-  useEffect(() => {
-    if (!dialogOpen || !editing || editing.type === "payment") return;
-    const fresh = purchaseRowsById.get(editing._id);
-    setEditingRow(fresh || null);
-  }, [purchaseRowsById, editing, dialogOpen]);
-
-  function openEdit(e: LedgerEntry, row?: PurchaseRowView) {
+  function openEdit(e: LedgerEntry) {
     setEditing(e);
-    setEditingRow(row || null);
-    setEditingPayment(null);
     setFormDate(dayKey(new Date(e.entryDate)));
     if (e.type === "payment" || e.type === "adjustment") {
       setFormAmount(
@@ -423,112 +307,6 @@ export function SupplierHistoryCalendar({
       setFormMaterial((p?.materialType || "scrap") === "daig" ? "daig" : "scrap");
     }
     setDialogOpen(true);
-  }
-
-  function openPaymentEdit(payment: LedgerEntry) {
-    setEditingPayment(payment);
-    setPayEditAmount(String(payment.amount));
-    setPayEditDate(dayKey(new Date(payment.entryDate)));
-    setPayEditNote(
-      payment.notes && !isInternalNote(payment.notes) ? payment.notes : ""
-    );
-  }
-
-  async function savePaymentEdit() {
-    if (!editingPayment) return;
-    const amount = Number(payEditAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      toast.error(t("supplierDetail.enterAmount"));
-      return;
-    }
-    if (!payEditDate) {
-      toast.error(t("supplierDetail.pickDate"));
-      return;
-    }
-    const sid = supplierId || supplierIdOf(editingPayment);
-    setSavingPaymentEdit(true);
-    try {
-      await updateLedgerEntry(sid, editingPayment._id, {
-        amount,
-        entryDate: payEditDate,
-        notes: payEditNote.trim() || "Payment",
-      });
-      toast.success(t("supplierDetail.entryUpdated"));
-      setEditingPayment(null);
-      await onChanged();
-    } catch (err) {
-      toast.error(apiError(err, t("supplierDetail.entrySaveFailed")));
-    } finally {
-      setSavingPaymentEdit(false);
-    }
-  }
-
-  async function deletePayment(payment: LedgerEntry) {
-    if (!confirm(t("supplierDetail.confirmDeletePayment"))) return;
-    const sid = supplierId || supplierIdOf(payment);
-    setDeletingPaymentId(payment._id);
-    try {
-      await deleteLedgerEntry(sid, payment._id);
-      toast.success(t("supplierDetail.entryDeleted"));
-      if (editingPayment?._id === payment._id) setEditingPayment(null);
-      await onChanged();
-    } catch (err) {
-      toast.error(apiError(err, t("supplierDetail.entryDeleteFailed")));
-    } finally {
-      setDeletingPaymentId(null);
-    }
-  }
-
-  function openPay(row: PurchaseRowView) {
-    const dueHere = roundMoney(Math.max(0, row.amount - row.paidTotal));
-    setPayFor(row);
-    setPayAmount(dueHere > 0 ? String(dueHere) : row.balance > 0 ? String(row.balance) : "");
-    setPayDate(todayInput());
-    setPayNote("");
-    setPayOpen(true);
-  }
-
-  async function submitPay() {
-    if (!payFor) return;
-    const amount = Number(payAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      toast.error(t("supplierDetail.enterAmount"));
-      return;
-    }
-    if (!payDate) {
-      toast.error(t("supplierDetail.pickDate"));
-      return;
-    }
-    const sid = supplierId || supplierIdOf(payFor.entry);
-    if (!sid) {
-      toast.error(t("supplierDetail.paymentFailed"));
-      return;
-    }
-
-    setSavingPay(true);
-    try {
-      const target = payFor.entry;
-      const body = {
-        amount,
-        entryDate: payDate,
-        notes: payNote.trim() || undefined,
-        purchaseId:
-          target.type === "purchase" ? purchaseIdOf(target) || undefined : undefined,
-        appliesTo: target.type === "adjustment" ? target._id : undefined,
-      };
-      const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
-        recordPayment(sid, { ...body, confirmDuplicate })
-      );
-      if (cancelled) return;
-      toast.success(t("supplierDetail.paymentRecorded"));
-      setPayOpen(false);
-      setPayFor(null);
-      await onChanged();
-    } catch (err) {
-      toast.error(apiError(err, t("supplierDetail.paymentFailed")));
-    } finally {
-      setSavingPay(false);
-    }
   }
 
   async function saveEdit() {
@@ -571,7 +349,6 @@ export function SupplierHistoryCalendar({
             formNote.trim() ||
             (editing.type === "adjustment" ? "Previous pending" : "Payment"),
         });
-        toast.success(t("supplierDetail.entryUpdated"));
       } else {
         const qty = Math.round(Number(formQty));
         const rate = Number(formRate);
@@ -582,8 +359,8 @@ export function SupplierHistoryCalendar({
           totalAmount: roundMoney(qty * rate),
           purchaseDate: formDate,
         });
-        toast.success(t("supplierDetail.entryUpdated"));
       }
+      toast.success(t("supplierDetail.entryUpdated"));
       setDialogOpen(false);
       await onChanged();
     } catch (err) {
@@ -679,16 +456,6 @@ export function SupplierHistoryCalendar({
             >
               {t("sal.filterThisMonth")}
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={showPreviousPending ? "default" : "outline"}
-              onClick={() => setShowPreviousPending((v) => !v)}
-            >
-              {showPreviousPending
-                ? t("supplierDetail.hidePreviousPending")
-                : t("supplierDetail.showPreviousPending")}
-            </Button>
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="grid gap-1.5">
@@ -708,12 +475,12 @@ export function SupplierHistoryCalendar({
               />
             </div>
             <div className="grid gap-1.5">
-              <Label>{t("common.balance")}</Label>
+              <Label>{t("supplierDetail.khataBaqaya")}</Label>
               <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3">
                 <span
-                  className={`font-data text-base font-semibold ${balanceToneClass(totals.totalBalance) || ""}`}
+                  className={`font-data text-base font-semibold ${baqayaClass(totals.closing) || ""}`}
                 >
-                  {formatBalanceDisplay(totals.totalBalance)}
+                  {formatBaqaya(totals.closing)}
                 </span>
               </div>
             </div>
@@ -721,13 +488,13 @@ export function SupplierHistoryCalendar({
         </CardContent>
       </Card>
 
-      {purchaseViews.length === 0 ? (
+      {displayRows.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-14">
             <p className="text-sm text-muted-foreground">
               {hasDateFilter
                 ? t("sal.ledgerEmptyFiltered")
-                : t("supplierDetail.noPurchaseOnDay")}
+                : t("supplierDetail.noLedger")}
             </p>
             {hasDateFilter ? (
               <Button type="button" variant="outline" onClick={setAllRange}>
@@ -746,24 +513,34 @@ export function SupplierHistoryCalendar({
                   {showSupplierNames ? (
                     <TableHead className="w-[8rem]">{t("purchases.col.supplier")}</TableHead>
                   ) : null}
-                  <TableHead className="w-[11rem]">{t("exp.colDetail")}</TableHead>
-                  <TableHead className="w-[7rem] text-end">{t("common.amount")}</TableHead>
+                  <TableHead>{t("exp.colDetail")}</TableHead>
                   <TableHead className="w-[8rem] text-end">
-                    {t("supplierDetail.previousPlusAmount")}
+                    {t("supplierDetail.khataDebit")}
                   </TableHead>
-                  <TableHead className="min-w-0 text-end">{t("customerDetail.paid")}</TableHead>
-                  <TableHead className="w-[7rem] text-end">{t("common.balance")}</TableHead>
+                  <TableHead className="w-[8rem] text-end">
+                    {t("supplierDetail.khataCredit")}
+                  </TableHead>
+                  <TableHead className="w-[8rem] text-end">
+                    {t("supplierDetail.khataBaqaya")}
+                  </TableHead>
                   <TableHead className="w-[7.5rem] text-end">{t("exp.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {purchaseViews.map((row) => {
+                {displayRows.map((row) => {
                   const e = row.entry;
-                  const isPaid = row.amount - row.paidTotal <= 0.001;
+                  const isPayment = e.type === "payment";
+                  const isCleared = Math.abs(row.baqaya) <= 0.001;
                   return (
                     <TableRow
                       key={e._id}
-                      className={isPaid ? "bg-emerald-50 hover:bg-emerald-50/90 dark:bg-emerald-950/40" : undefined}
+                      className={
+                        isPayment
+                          ? "bg-emerald-100 hover:bg-emerald-100/90 dark:bg-emerald-900/50 dark:hover:bg-emerald-900/60"
+                          : isCleared
+                            ? "bg-muted/40 hover:bg-muted/50"
+                            : undefined
+                      }
                     >
                       <TableCell className="font-data whitespace-nowrap">
                         {formatDate(e.entryDate)}
@@ -774,65 +551,38 @@ export function SupplierHistoryCalendar({
                         </TableCell>
                       ) : null}
                       <TableCell className="whitespace-normal">
-                        <span className="text-sm">{purchaseDetail(e)}</span>
+                        <span
+                          className={`text-sm ${isPayment ? "font-medium text-emerald-800 dark:text-emerald-300" : ""}`}
+                        >
+                          {rowDetail(e)}
+                        </span>
                       </TableCell>
                       <TableCell className="font-data text-end whitespace-nowrap">
-                        {formatMoney(row.amount)}
-                      </TableCell>
-                      <TableCell className="font-data text-end whitespace-nowrap">
-                        {formatMoney(row.previousPlusAmount)}
-                      </TableCell>
-                      <TableCell className="whitespace-normal text-end">
-                        {row.paidSlices.length === 0 ? (
-                          <span className="font-data text-muted-foreground">
-                            {t("supplierDetail.noPaymentsYet")}
-                          </span>
-                        ) : (
-                          <div className="flex flex-col items-end gap-0.5">
-                            {row.paidSlices.map((slice) => (
-                              <span
-                                key={`${slice.entryId}-${slice.amount}`}
-                                className="font-data text-sm leading-snug"
-                              >
-                                {t("supplierDetail.paidOnDate", {
-                                  amount: formatMoney(slice.amount),
-                                  date: formatDate(slice.date),
-                                })}
-                              </span>
-                            ))}
-                          </div>
-                        )}
+                        {row.debit > 0 ? formatMoney(row.debit) : "—"}
                       </TableCell>
                       <TableCell
-                        className={`font-data text-end whitespace-nowrap ${balanceToneClass(row.balance) || ""}`}
-                        title={
-                          row.balance > 0.001
-                            ? t("supplierDetail.balanceOwedHint")
-                            : row.balance < -0.001
-                              ? t("supplierDetail.advanceHint")
-                              : undefined
-                        }
+                        className={`font-data text-end whitespace-nowrap ${
+                          row.credit > 0
+                            ? "font-semibold text-emerald-700 dark:text-emerald-400"
+                            : ""
+                        }`}
                       >
-                        {formatBalanceDisplay(row.balance)}
+                        {row.credit > 0 ? formatMoney(row.credit) : "—"}
+                      </TableCell>
+                      <TableCell
+                        className={`font-data text-end whitespace-nowrap font-medium ${baqayaClass(row.baqaya) || ""}`}
+                      >
+                        {formatBaqaya(row.baqaya)}
                       </TableCell>
                       <TableCell className="text-end">
                         <div className="inline-flex flex-wrap justify-end gap-1">
                           <Button
                             type="button"
                             size="icon-sm"
-                            title={t("supplierDetail.pay")}
-                            aria-label={t("supplierDetail.pay")}
-                            onClick={() => openPay(row)}
-                          >
-                            <Banknote className="size-3.5" />
-                          </Button>
-                          <Button
-                            type="button"
-                            size="icon-sm"
                             variant="outline"
                             title={t("common.edit")}
                             aria-label={t("common.edit")}
-                            onClick={() => openEdit(e, row)}
+                            onClick={() => openEdit(e)}
                           >
                             <Pencil className="size-3.5" />
                           </Button>
@@ -861,18 +611,15 @@ export function SupplierHistoryCalendar({
                     {t("supplierDetail.totals")}
                   </TableCell>
                   <TableCell className="font-data text-end text-base font-semibold whitespace-nowrap">
-                    {formatMoney(totals.totalAmount)}
+                    {formatMoney(totals.totalDebit)}
                   </TableCell>
                   <TableCell className="font-data text-end text-base font-semibold whitespace-nowrap">
-                    {formatMoney(totals.previousPlusAmount)}
-                  </TableCell>
-                  <TableCell className="font-data text-end text-base font-semibold whitespace-nowrap">
-                    {formatMoney(totals.totalPaid)}
+                    {formatMoney(totals.totalCredit)}
                   </TableCell>
                   <TableCell
-                    className={`font-data text-end text-base font-semibold whitespace-nowrap ${balanceToneClass(totals.totalBalance) || ""}`}
+                    className={`font-data text-end text-base font-semibold whitespace-nowrap ${baqayaClass(totals.closing) || ""}`}
                   >
-                    {formatBalanceDisplay(totals.totalBalance)}
+                    {formatBaqaya(totals.closing)}
                   </TableCell>
                   <TableCell />
                 </TableRow>
@@ -883,90 +630,13 @@ export function SupplierHistoryCalendar({
       )}
 
       <Dialog
-        open={payOpen}
-        onOpenChange={(open) => {
-          setPayOpen(open);
-          if (!open) setPayFor(null);
-        }}
-      >
-        <DialogContent showCloseButton>
-          <DialogHeader>
-            <DialogTitle>{t("supplierDetail.recordPayment")}</DialogTitle>
-            <DialogDescription>
-              {payFor
-                ? purchaseDetail(payFor.entry)
-                : t("supplierDetail.recordPaymentDesc")}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3">
-            <div className="flex flex-col gap-1.5">
-              <Label>{t("supplierDetail.payAmount")}</Label>
-              <Input
-                type="number"
-                min={0}
-                step="0.01"
-                value={payAmount}
-                onChange={(e) => setPayAmount(e.target.value)}
-                className="h-11 text-base"
-                autoFocus
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>{t("common.date")}</Label>
-              <Input
-                type="date"
-                value={payDate}
-                onChange={(e) => setPayDate(e.target.value)}
-                className="h-11"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>{t("exp.noteOptional")}</Label>
-              <Input
-                value={payNote}
-                onChange={(e) => setPayNote(e.target.value)}
-                className="h-11"
-              />
-            </div>
-            {payFor && payFor.balance > 0 ? (
-              <p className="text-sm text-muted-foreground">
-                {t("common.balance")}: {formatMoney(payFor.balance)}
-              </p>
-            ) : null}
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setPayOpen(false)}
-            >
-              {t("sal.cancel")}
-            </Button>
-            <Button
-              type="button"
-              className="gap-1.5"
-              disabled={savingPay}
-              onClick={() => void submitPay()}
-            >
-              {savingPay ? <Loader2 className="size-4 animate-spin" /> : <Banknote className="size-4" />}
-              {t("supplierDetail.submitPayment")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
         open={dialogOpen}
         onOpenChange={(open) => {
           setDialogOpen(open);
-          if (!open) {
-            setEditing(null);
-            setEditingRow(null);
-            setEditingPayment(null);
-          }
+          if (!open) setEditing(null);
         }}
       >
-        <DialogContent showCloseButton className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogContent showCloseButton>
           <DialogHeader>
             <DialogTitle>
               {editing?.type === "payment"
@@ -976,11 +646,7 @@ export function SupplierHistoryCalendar({
                   : t("supplierDetail.editPurchase")}
             </DialogTitle>
             <DialogDescription>
-              {editing?.type === "payment"
-                ? t("supplierDetail.paymentHistory")
-                : editing?.type === "adjustment"
-                  ? t("supplierDetail.previousPending")
-                  : t("supplierDetail.purchaseHistory")}
+              {editing ? rowDetail(editing) : ""}
             </DialogDescription>
           </DialogHeader>
 
@@ -1024,7 +690,9 @@ export function SupplierHistoryCalendar({
                   <select
                     className="h-11 rounded-lg border border-input bg-background px-3 text-sm"
                     value={formMaterial}
-                    onChange={(e) => setFormMaterial(e.target.value as "scrap" | "daig")}
+                    onChange={(e) =>
+                      setFormMaterial(e.target.value as "scrap" | "daig")
+                    }
                   >
                     <option value="scrap">{t("prod.scrap")}</option>
                     <option value="daig">{t("prod.daig")}</option>
@@ -1072,130 +740,6 @@ export function SupplierHistoryCalendar({
                 </div>
               </>
             )}
-
-            {editing && editing.type !== "payment" ? (
-              <div className="mt-1 rounded-lg border border-border p-3">
-                <p className="mb-2 text-sm font-medium">
-                  {t("supplierDetail.paymentsOnRecord")}
-                </p>
-                {rowPayments.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    {t("supplierDetail.noPaymentsYet")}
-                  </p>
-                ) : (
-                  <div className="flex flex-col gap-2">
-                    {rowPayments.map((payment) => {
-                      const isEditingThis = editingPayment?._id === payment._id;
-                      return (
-                        <div
-                          key={payment._id}
-                          className="rounded-md border border-border/70 bg-muted/20 p-2.5"
-                        >
-                          {isEditingThis ? (
-                            <div className="grid gap-2">
-                              <div className="grid gap-2 sm:grid-cols-2">
-                                <div className="flex flex-col gap-1">
-                                  <Label>{t("exp.amount")}</Label>
-                                  <Input
-                                    type="number"
-                                    min={0}
-                                    step="0.01"
-                                    value={payEditAmount}
-                                    onChange={(e) => setPayEditAmount(e.target.value)}
-                                    className="h-9"
-                                  />
-                                </div>
-                                <div className="flex flex-col gap-1">
-                                  <Label>{t("common.date")}</Label>
-                                  <Input
-                                    type="date"
-                                    value={payEditDate}
-                                    onChange={(e) => setPayEditDate(e.target.value)}
-                                    className="h-9"
-                                  />
-                                </div>
-                              </div>
-                              <div className="flex flex-col gap-1">
-                                <Label>{t("exp.noteOptional")}</Label>
-                                <Input
-                                  value={payEditNote}
-                                  onChange={(e) => setPayEditNote(e.target.value)}
-                                  className="h-9"
-                                />
-                              </div>
-                              <div className="flex flex-wrap justify-end gap-1.5">
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
-                                  disabled={savingPaymentEdit}
-                                  onClick={() => setEditingPayment(null)}
-                                >
-                                  {t("sal.cancel")}
-                                </Button>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  className="gap-1"
-                                  disabled={savingPaymentEdit}
-                                  onClick={() => void savePaymentEdit()}
-                                >
-                                  {savingPaymentEdit ? (
-                                    <Loader2 className="size-3.5 animate-spin" />
-                                  ) : null}
-                                  {t("common.save")}
-                                </Button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="min-w-0">
-                                <p className="font-data text-sm font-medium">
-                                  {formatMoney(payment.amount)}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  {formatDate(payment.entryDate)}
-                                  {payment.notes && !isInternalNote(payment.notes)
-                                    ? ` · ${payment.notes}`
-                                    : ""}
-                                </p>
-                              </div>
-                              <div className="inline-flex shrink-0 gap-1">
-                                <Button
-                                  type="button"
-                                  size="icon-sm"
-                                  variant="outline"
-                                  title={t("common.edit")}
-                                  aria-label={t("common.edit")}
-                                  onClick={() => openPaymentEdit(payment)}
-                                >
-                                  <Pencil className="size-3.5" />
-                                </Button>
-                                <Button
-                                  type="button"
-                                  size="icon-sm"
-                                  variant="destructive"
-                                  title={t("common.delete")}
-                                  aria-label={t("common.delete")}
-                                  disabled={deletingPaymentId === payment._id}
-                                  onClick={() => void deletePayment(payment)}
-                                >
-                                  {deletingPaymentId === payment._id ? (
-                                    <Loader2 className="size-3.5 animate-spin" />
-                                  ) : (
-                                    <Trash2 className="size-3.5" />
-                                  )}
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            ) : null}
           </div>
 
           <DialogFooter className="sm:justify-between">
