@@ -46,6 +46,25 @@ export type Statement = {
   lines: StatementLine[];
 };
 
+export type GroupStatementParty = {
+  partyId: string;
+  name: string;
+  phone: string;
+  openingBalance: number;
+  closingBalance: number;
+  periodBalance: number;
+  lineCount: number;
+};
+
+export type GroupStatement = {
+  group: { id: string; name: string } | null;
+  period: { from: string | null; to: string | null };
+  openingBalance: number;
+  closingBalance: number;
+  periodBalance: number;
+  parties: GroupStatementParty[];
+};
+
 export async function globalSearch(params: { q: string; limit?: number }) {
   const { data } = await api.get<GlobalSearchResult>("/reports/search", { params });
   return data;
@@ -73,6 +92,28 @@ export async function getSupplierStatement(
   return data.statement;
 }
 
+export async function getGroupStatement(
+  id: string,
+  params?: { dateFrom?: string; dateTo?: string }
+) {
+  const { data } = await api.get<{ statement: GroupStatement }>(
+    `/reports/statements/groups/${id}`,
+    { params }
+  );
+  return data.statement;
+}
+
+export async function getCustomersOverviewStatement(params?: {
+  dateFrom?: string;
+  dateTo?: string;
+}) {
+  const { data } = await api.get<{ statement: GroupStatement }>(
+    "/reports/statements/customers-overview",
+    { params }
+  );
+  return data.statement;
+}
+
 export type MoneyRecord = {
   id: string;
   type: string;
@@ -92,18 +133,30 @@ export type MoneyPartyRollup = {
   partyId: string;
   name: string;
   phone?: string;
+  groupId?: string;
   balance: number;
   recordCount: number;
 };
 
+export type MoneyGroupRollup = {
+  groupId: string;
+  name: string;
+  balance: number;
+  recordCount: number;
+  partyCount: number;
+};
+
 export type ReceivablesReport = {
   period: { from: string | null; to: string | null };
+  group?: { id: string; name: string } | null;
   totals: {
     totalReceivable: number;
     partyCount: number;
+    groupCount?: number;
     recordCount: number;
   };
   byParty: MoneyPartyRollup[];
+  byGroup?: MoneyGroupRollup[];
   records: MoneyRecord[];
 };
 
@@ -118,7 +171,11 @@ export type PayablesReport = {
   records: MoneyRecord[];
 };
 
-export async function getReceivablesReport(params?: { dateFrom?: string; dateTo?: string }) {
+export async function getReceivablesReport(params?: {
+  dateFrom?: string;
+  dateTo?: string;
+  groupId?: string;
+}) {
   const { data } = await api.get<{ report: ReceivablesReport }>("/reports/receivables", {
     params,
   });
@@ -250,6 +307,35 @@ export async function downloadStatementExport(
     responseType: "blob",
   });
   triggerDownload(data as Blob, `${type}-statement.pdf`);
+}
+
+export async function downloadGroupStatementExport(
+  id: string,
+  params: { format: "pdf"; dateFrom?: string; dateTo?: string }
+) {
+  const query: Record<string, string> = { format: params.format };
+  if (params.dateFrom) query.dateFrom = params.dateFrom;
+  if (params.dateTo) query.dateTo = params.dateTo;
+  const { data } = await api.get(`/reports/export/statements/groups/${id}`, {
+    params: query,
+    responseType: "blob",
+  });
+  triggerDownload(data as Blob, "group-statement.pdf");
+}
+
+export async function downloadCustomersOverviewExport(params: {
+  format: "pdf";
+  dateFrom?: string;
+  dateTo?: string;
+}) {
+  const query: Record<string, string> = { format: params.format };
+  if (params.dateFrom) query.dateFrom = params.dateFrom;
+  if (params.dateTo) query.dateTo = params.dateTo;
+  const { data } = await api.get("/reports/export/statements/customers-overview", {
+    params: query,
+    responseType: "blob",
+  });
+  triggerDownload(data as Blob, "customers-overview-statement.pdf");
 }
 
 function triggerDownload(blob: Blob, filename: string) {

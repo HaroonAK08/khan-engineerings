@@ -12,22 +12,12 @@ import {
   deleteBuilty,
   listBuilties,
   paymentStatusLabel,
-  updateBuilty,
   type BuiltyRow,
 } from "@/lib/sales-api";
-import { toDateInput } from "@/lib/date-range";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -45,13 +35,6 @@ export default function BuiltyPage() {
   const [q, setQ] = useState("");
   const [paymentStatus, setPaymentStatus] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
-
-  const [editOpen, setEditOpen] = useState(false);
-  const [editing, setEditing] = useState<BuiltyRow | null>(null);
-  const [formBuiltyNo, setFormBuiltyNo] = useState("");
-  const [formBillNo, setFormBillNo] = useState("");
-  const [formDate, setFormDate] = useState("");
-  const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -71,42 +54,6 @@ export default function BuiltyPage() {
     const timer = setTimeout(load, 200);
     return () => clearTimeout(timer);
   }, [load]);
-
-  function openEdit(row: BuiltyRow) {
-    setEditing(row);
-    setFormBuiltyNo(row.builtyNo || "");
-    setFormBillNo(row.billNo || "");
-    setFormDate(toDateInput(new Date(row.builtyDate)));
-    setEditOpen(true);
-  }
-
-  async function onSaveEdit() {
-    if (!editing) return;
-    if (!formBuiltyNo.trim()) {
-      toast.error(t("builtyNew.needBuiltyNo"));
-      return;
-    }
-    if (!formDate) {
-      toast.error(t("builtyNew.date"));
-      return;
-    }
-    setSaving(true);
-    try {
-      await updateBuilty(editing._id, {
-        builtyNo: formBuiltyNo.trim(),
-        billNo: formBillNo.trim(),
-        builtyDate: formDate,
-      });
-      toast.success(t("builty.updated"));
-      setEditOpen(false);
-      setEditing(null);
-      await load();
-    } catch (err) {
-      toast.error(apiError(err, t("builty.updateFailed")));
-    } finally {
-      setSaving(false);
-    }
-  }
 
   async function onDelete(row: BuiltyRow) {
     if (!confirm(t("builty.confirmDelete"))) return;
@@ -249,7 +196,7 @@ export default function BuiltyPage() {
                           size="sm"
                           variant="outline"
                           className="gap-1"
-                          onClick={() => openEdit(row)}
+                          onClick={() => router.push(`/dashboard/builty/${row._id}/edit`)}
                         >
                           <Pencil className="size-3.5" />
                           {t("common.edit")}
@@ -280,51 +227,6 @@ export default function BuiltyPage() {
           )}
         </CardContent>
       </Card>
-
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-nameplate text-base">{t("builty.edit")}</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-3">
-            <div className="flex flex-col gap-1.5">
-              <Label>{t("builtyNew.builtyNo")}</Label>
-              <Input
-                value={formBuiltyNo}
-                onChange={(e) => setFormBuiltyNo(e.target.value)}
-                className="h-11 text-base"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>{t("builtyNew.billNo")}</Label>
-              <Input
-                value={formBillNo}
-                onChange={(e) => setFormBillNo(e.target.value)}
-                placeholder={t("builtyNew.billNoHint")}
-                className="h-11 text-base"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>{t("builtyNew.date")}</Label>
-              <Input
-                type="date"
-                value={formDate}
-                onChange={(e) => setFormDate(e.target.value)}
-                className="h-11"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>
-              {t("common.cancel")}
-            </Button>
-            <Button type="button" disabled={saving} onClick={() => void onSaveEdit()}>
-              {saving ? <Loader2 className="size-4 animate-spin" /> : null}
-              {t("common.save")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

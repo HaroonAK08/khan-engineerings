@@ -45,6 +45,24 @@ async function supplierStatement(req, res, next) {
   }
 }
 
+async function groupStatement(req, res, next) {
+  try {
+    const statement = await reportsService.groupStatement(req.params.id, req.query);
+    res.json({ statement });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function customersOverviewStatement(req, res, next) {
+  try {
+    const statement = await reportsService.customersOverviewStatement(req.query);
+    res.json({ statement });
+  } catch (err) {
+    next(err);
+  }
+}
+
 function exportHandler(kind) {
   return async (req, res, next) => {
     try {
@@ -85,6 +103,24 @@ async function exportSupplierStatement(req, res, next) {
   }
 }
 
+async function exportGroupStatement(req, res, next) {
+  try {
+    const format = String(req.query.format || "xlsx").toLowerCase() === "pdf" ? "pdf" : "xlsx";
+    await reportsService.exportGroupStatement(req.params.id, req.query, format, res);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function exportCustomersOverviewStatement(req, res, next) {
+  try {
+    const format = String(req.query.format || "xlsx").toLowerCase() === "pdf" ? "pdf" : "xlsx";
+    await reportsService.exportCustomersOverviewStatement(req.query, format, res);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function exportFull(req, res, next) {
   try {
     const format = String(req.query.format || "pdf").toLowerCase() === "xlsx" ? "xlsx" : "pdf";
@@ -118,6 +154,8 @@ module.exports = {
   payables,
   customerStatement,
   supplierStatement,
+  groupStatement,
+  customersOverviewStatement,
   exportSales: exportHandler("sales"),
   exportPurchases: exportHandler("purchases"),
   exportProduction: exportHandler("production"),
@@ -128,6 +166,8 @@ module.exports = {
   exportPayables: exportHandler("payables"),
   exportCustomerStatement,
   exportSupplierStatement,
+  exportGroupStatement,
+  exportCustomersOverviewStatement,
   exportFull,
   exportCustom,
   combinedPreview,

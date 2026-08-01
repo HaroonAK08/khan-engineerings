@@ -1,5 +1,10 @@
 import { api } from "@/lib/api";
 
+export type PartyGroupRef = {
+  _id: string;
+  name: string;
+};
+
 export type Customer = {
   _id: string;
   name: string;
@@ -7,7 +12,17 @@ export type Customer = {
   email: string;
   address: string;
   notes: string;
+  group?: PartyGroupRef | string | null;
   isActive: boolean;
+};
+
+export type PartyGroup = {
+  _id: string;
+  name: string;
+  notes: string;
+  isActive: boolean;
+  partyCount?: number;
+  parties?: Array<{ _id: string; name: string; phone: string; isActive: boolean }>;
 };
 
 export type Salesman = {
@@ -98,11 +113,15 @@ export type CustomerLedgerEntry = {
 };
 
 export type SalesReport = {
+  period?: { from: string | null; to: string | null };
+  group?: { id: string; name: string } | null;
   totals: {
     orderCount: number;
     totalSales: number;
     totalPaid: number;
     outstanding: number;
+    partyCount?: number;
+    groupCount?: number;
   };
   outstanding: Array<{
     orderId: string;
@@ -110,6 +129,7 @@ export type SalesReport = {
     invoiceNo: string;
     customer: string;
     customerId?: string;
+    groupId?: string;
     orderDate: string;
     dueDate?: string | null;
     totalAmount: number;
@@ -120,6 +140,16 @@ export type SalesReport = {
   topCustomers: Array<{
     customerId: string;
     name: string;
+    groupId?: string;
+    orderCount: number;
+    totalSales: number;
+    totalPaid: number;
+    outstanding: number;
+  }>;
+  byGroup?: Array<{
+    groupId: string;
+    name: string;
+    partyCount: number;
     orderCount: number;
     totalSales: number;
     totalPaid: number;
@@ -133,9 +163,56 @@ export type SalesReport = {
   }>;
 };
 
-export async function listCustomers(params?: { q?: string; active?: string }) {
+export async function listCustomers(params?: { q?: string; active?: string; group?: string }) {
   const { data } = await api.get<{ customers: Customer[] }>("/customers", { params });
   return data.customers;
+}
+
+export async function listPartyGroups(params?: { q?: string; active?: string }) {
+  const { data } = await api.get<{ groups: PartyGroup[] }>("/party-groups", { params });
+  return data.groups;
+}
+
+export async function getPartyGroup(id: string) {
+  const { data } = await api.get<{ group: PartyGroup }>(`/party-groups/${id}`);
+  return data.group;
+}
+
+export async function createPartyGroup(body: {
+  name: string;
+  notes?: string;
+  partyIds?: string[];
+  isActive?: boolean;
+}) {
+  const { data } = await api.post<{ group: PartyGroup }>("/party-groups", body);
+  return data.group;
+}
+
+export async function updatePartyGroup(
+  id: string,
+  body: {
+    name?: string;
+    notes?: string;
+    partyIds?: string[];
+    isActive?: boolean;
+  }
+) {
+  const { data } = await api.patch<{ group: PartyGroup }>(`/party-groups/${id}`, body);
+  return data.group;
+}
+
+export async function deletePartyGroup(id: string) {
+  await api.delete(`/party-groups/${id}`);
+}
+
+export function customerGroupId(customer: Customer | null | undefined) {
+  if (!customer?.group) return "";
+  return typeof customer.group === "string" ? customer.group : customer.group._id;
+}
+
+export function customerGroupName(customer: Customer | null | undefined) {
+  if (!customer?.group) return "";
+  return typeof customer.group === "string" ? "" : customer.group.name;
 }
 
 export async function getCustomer(id: string) {
@@ -267,6 +344,7 @@ export async function updateBuilty(
     billNo: string;
     builtyDate: string;
     notes: string;
+    items: BuiltyLineInput[];
     paymentStatus: "unpaid" | "partial" | "paid";
     amountPaid: number;
     paymentGiven: number;
@@ -327,7 +405,11 @@ export async function deleteBuilty(id: string) {
   await api.delete(`/builty/${id}`);
 }
 
-export async function getSalesReport(params?: { dateFrom?: string; dateTo?: string }) {
+export async function getSalesReport(params?: {
+  dateFrom?: string;
+  dateTo?: string;
+  groupId?: string;
+}) {
   const { data } = await api.get<{ report: SalesReport }>("/builty/reports", { params });
   return data.report;
 }

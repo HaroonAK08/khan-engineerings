@@ -201,6 +201,86 @@ async function customerStatement(customerId, { dateFrom, dateTo } = {}) {
   };
 }
 
+async function groupStatement(groupId, { dateFrom, dateTo } = {}) {
+  const PartyGroup = require("../party-groups/party-group.model");
+  const Customer = require("../customers/customer.model");
+  const group = await PartyGroup.findById(groupId);
+  if (!group) throw httpError("Party group not found", 404);
+
+  const members = await Customer.find({ group: groupId }).sort({ name: 1 });
+  const parties = [];
+  let openingBalance = 0;
+  let closingBalance = 0;
+  let periodBalance = 0;
+
+  for (const member of members) {
+    const s = await customerStatement(String(member._id), { dateFrom, dateTo });
+    parties.push({
+      partyId: String(s.party.id),
+      name: s.party.name,
+      phone: s.party.phone || "",
+      openingBalance: s.openingBalance,
+      closingBalance: s.closingBalance,
+      periodBalance: s.periodBalance,
+      lineCount: s.lines.length,
+    });
+    openingBalance += s.openingBalance;
+    closingBalance += s.closingBalance;
+    periodBalance += s.periodBalance;
+  }
+
+  return {
+    group: { id: String(group._id), name: group.name },
+    period: { from: dateFrom || null, to: dateTo || null },
+    openingBalance: Math.round(openingBalance * 100) / 100,
+    closingBalance: Math.round(closingBalance * 100) / 100,
+    periodBalance: Math.round(periodBalance * 100) / 100,
+    parties,
+  };
+}
+
+async function customersOverviewStatement({ dateFrom, dateTo } = {}) {
+  const Customer = require("../customers/customer.model");
+  const members = await Customer.find({ isActive: true }).sort({ name: 1 });
+  const parties = [];
+  let openingBalance = 0;
+  let closingBalance = 0;
+  let periodBalance = 0;
+
+  for (const member of members) {
+    const s = await customerStatement(String(member._id), { dateFrom, dateTo });
+    if (
+      s.openingBalance === 0 &&
+      s.closingBalance === 0 &&
+      s.periodBalance === 0 &&
+      s.lines.length === 0
+    ) {
+      continue;
+    }
+    parties.push({
+      partyId: String(s.party.id),
+      name: s.party.name,
+      phone: s.party.phone || "",
+      openingBalance: s.openingBalance,
+      closingBalance: s.closingBalance,
+      periodBalance: s.periodBalance,
+      lineCount: s.lines.length,
+    });
+    openingBalance += s.openingBalance;
+    closingBalance += s.closingBalance;
+    periodBalance += s.periodBalance;
+  }
+
+  return {
+    group: null,
+    period: { from: dateFrom || null, to: dateTo || null },
+    openingBalance: Math.round(openingBalance * 100) / 100,
+    closingBalance: Math.round(closingBalance * 100) / 100,
+    periodBalance: Math.round(periodBalance * 100) / 100,
+    parties,
+  };
+}
+
 async function supplierStatement(supplierId, { dateFrom, dateTo } = {}) {
   const supplier = await supplierService.getById(supplierId);
   const entries = await ledgerService.listBySupplier(supplierId, { dateFrom, dateTo });
@@ -270,8 +350,43 @@ async function supplierStatement(supplierId, { dateFrom, dateTo } = {}) {
 
 async function exportSales(query, format, res) {
   const report = await builtyService.getSalesReport(query);
-  const columns = ["Builty", "Bill", "Party", "Date", "Total", "Paid", "Balance", "Status"];
-  const rows = (report.outstanding || []).map((o) => [
+  const view = ["whole", "party", "group"].includes(query.view) ? query.view : "party";
+  const viewLabel =
+    view === "whole" ? "Overall" : view === "group" ? "Group wise" : "Party wise";
+  const meta = {
+    "Builty count": report.totals.orderCount,
+    "Total sales": money(report.totals.totalSales),
+    "Total paid": money(report.totals.totalPaid),
+    Outstanding: money(report.totals.outstanding),
+    Period: periodLabel(query.dateFrom, query.dateTo),
+    View: viewLabel,
+    Group: report.group?.name || "All groups",
+  };
+  const title = report.group
+    ? `Sales report — ${report.group.name}`
+    : "Sales & receivables report";
+
+  const partyColumns = ["Party", "Orders", "Sales", "Paid", "Outstanding"];
+  const partyRows = (report.topCustomers || []).map((p) => [
+    p.name,
+    p.orderCount,
+    money(p.totalSales),
+    money(p.totalPaid),
+    money(p.outstanding),
+  ]);
+
+  const groupColumns = ["Group", "Parties", "Orders", "Sales", "Paid", "Outstanding"];
+  const groupRows = (report.byGroup || []).map((g) => [
+    g.name,
+    g.partyCount,
+    g.orderCount,
+    money(g.totalSales),
+    money(g.totalPaid),
+    money(g.outstanding),
+  ]);
+
+  const recordColumns = ["Builty", "Bill", "Party", "Date", "Total", "Paid", "Balance", "Status"];
+  const recordRows = (report.outstanding || []).map((o) => [
     o.orderNo,
     o.invoiceNo,
     o.customer,
@@ -281,30 +396,54 @@ async function exportSales(query, format, res) {
     money(o.balance),
     o.paymentStatus,
   ]);
-  // Also include summary sheet style: prepend totals as meta
-  const meta = {
-    "Builty count": report.totals.orderCount,
-    "Total sales": money(report.totals.totalSales),
-    "Total paid": money(report.totals.totalPaid),
-    Outstanding: money(report.totals.outstanding),
-    Period: periodLabel(query.dateFrom, query.dateTo),
-  };
-  const title = "Sales & receivables report";
+
   if (format === "pdf") {
+    const sections = [];
+    if (view === "group") {
+      sections.push({ heading: "Sales by group", columns: groupColumns, rows: groupRows });
+    } else if (view === "party") {
+      sections.push({ heading: "Sales by party", columns: partyColumns, rows: partyRows });
+      sections.push({
+        heading: "Outstanding invoices",
+        columns: recordColumns,
+        rows: recordRows,
+      });
+    } else {
+      sections.push({
+        heading: "Overall sales",
+        columns: ["Metric", "Value"],
+        rows: [
+          ["Builty count", report.totals.orderCount],
+          ["Total sales", money(report.totals.totalSales)],
+          ["Total paid", money(report.totals.totalPaid)],
+          ["Outstanding", money(report.totals.outstanding)],
+        ],
+      });
+    }
     const buf = await buildPdf({
       title,
       subtitle: "Khan Engineerings",
-      columns,
-      rows,
       metaLines: Object.entries(meta).map(([k, v]) => `${k}: ${v}`),
+      sections,
     });
     return sendPdf(res, buf, `sales-report.pdf`);
   }
   const buf = await buildExcel({
     title,
-    sheetName: "Outstanding",
-    columns,
-    rows,
+    sheetName: "Sales",
+    columns:
+      view === "group" ? groupColumns : view === "whole" ? ["Metric", "Value"] : recordColumns,
+    rows:
+      view === "group"
+        ? groupRows
+        : view === "whole"
+          ? [
+              ["Builty count", report.totals.orderCount],
+              ["Total sales", money(report.totals.totalSales)],
+              ["Total paid", money(report.totals.totalPaid)],
+              ["Outstanding", money(report.totals.outstanding)],
+            ]
+          : recordRows,
     meta,
   });
   return sendExcel(res, buf, `sales-report.xlsx`);
@@ -312,6 +451,8 @@ async function exportSales(query, format, res) {
 
 async function exportPurchases(query, format, res) {
   const report = await purchaseService.getReport(query);
+  const view = ["whole", "party"].includes(query.view) ? query.view : "party";
+  const viewLabel = view === "whole" ? "Overall" : "Party wise";
   const columns = ["Supplier", "Purchases", "Kg", "Spend", "Avg rate"];
   const rows = (report.bySupplier || []).map((s) => [
     s.name || s.supplierName || "Unknown",
@@ -322,18 +463,33 @@ async function exportPurchases(query, format, res) {
   ]);
   const meta = {
     Period: periodLabel(query.dateFrom, query.dateTo),
+    View: viewLabel,
     "Total kg": report.totals?.totalKg ?? "",
     "Total spend": money(report.totals?.totalSpend),
     Purchases: report.totals?.purchaseCount ?? "",
   };
   const title = "Purchase report";
   if (format === "pdf") {
+    const sections =
+      view === "whole"
+        ? [
+            {
+              heading: "Overall purchases",
+              columns: ["Metric", "Value"],
+              rows: [
+                ["Purchases", report.totals?.purchaseCount ?? 0],
+                ["Total kg", report.totals?.totalKg ?? 0],
+                ["Total spend", money(report.totals?.totalSpend)],
+                ["Avg rate", money(report.totals?.avgRate)],
+              ],
+            },
+          ]
+        : [{ heading: "Purchases by supplier", columns, rows }];
     const buf = await buildPdf({
       title,
       subtitle: "Khan Engineerings",
-      columns,
-      rows,
       metaLines: Object.entries(meta).map(([k, v]) => `${k}: ${v}`),
+      sections,
     });
     return sendPdf(res, buf, "purchases-report.pdf");
   }
@@ -554,6 +710,99 @@ async function exportStatement(type, id, query, format, res) {
   return sendExcel(res, buf, `${filename}.xlsx`);
 }
 
+async function exportGroupStatement(groupId, query, format, res) {
+  const statement = await groupStatement(groupId, query);
+  const columns = ["Party", "Phone", "Opening", "Period", "Closing", "Lines"];
+  const rows = statement.parties.map((p) => [
+    p.name,
+    p.phone || "",
+    money(p.openingBalance),
+    money(p.periodBalance),
+    money(p.closingBalance),
+    p.lineCount,
+  ]);
+  if (rows.length > 0) {
+    rows.push([
+      "Total",
+      "",
+      money(statement.openingBalance),
+      money(statement.periodBalance),
+      money(statement.closingBalance),
+      "",
+    ]);
+  }
+  const meta = {
+    Group: statement.group.name,
+    Period: periodLabel(query.dateFrom, query.dateTo),
+    Opening: money(statement.openingBalance),
+    Closing: money(statement.closingBalance),
+    Parties: statement.parties.length,
+  };
+  const title = `Group statement — ${statement.group.name}`;
+  const filename = `group-statement-${statement.group.name.replace(/\s+/g, "-").toLowerCase()}`;
+  if (format === "pdf") {
+    const buf = await buildPdf({
+      title,
+      subtitle: "Khan Engineerings",
+      columns,
+      rows,
+      metaLines: Object.entries(meta).map(([k, v]) => `${k}: ${v}`),
+    });
+    return sendPdf(res, buf, `${filename}.pdf`);
+  }
+  const buf = await buildExcel({ title, sheetName: "Group", columns, rows, meta });
+  return sendExcel(res, buf, `${filename}.xlsx`);
+}
+
+async function exportCustomersOverviewStatement(query, format, res) {
+  const statement = await customersOverviewStatement(query);
+  const columns = ["Party", "Phone", "Opening", "Period", "Closing", "Lines"];
+  const rows = statement.parties.map((p) => [
+    p.name,
+    p.phone || "",
+    money(p.openingBalance),
+    money(p.periodBalance),
+    money(p.closingBalance),
+    p.lineCount,
+  ]);
+  if (rows.length > 0) {
+    rows.push([
+      "Total",
+      "",
+      money(statement.openingBalance),
+      money(statement.periodBalance),
+      money(statement.closingBalance),
+      "",
+    ]);
+  }
+  const meta = {
+    View: "Overall",
+    Period: periodLabel(query.dateFrom, query.dateTo),
+    Opening: money(statement.openingBalance),
+    Closing: money(statement.closingBalance),
+    Parties: statement.parties.length,
+  };
+  const title = "Customer statements — Overall";
+  if (format === "pdf") {
+    const buf = await buildPdf({
+      title,
+      subtitle: "Khan Engineerings",
+      columns,
+      rows,
+      metaLines: Object.entries(meta).map(([k, v]) => `${k}: ${v}`),
+    });
+    return sendPdf(res, buf, "customers-overview-statement.pdf");
+  }
+  const buf = await buildExcel({
+    title,
+    sheetName: "Customers",
+    columns,
+    rows,
+    meta,
+  });
+  return sendExcel(res, buf, "customers-overview-statement.xlsx");
+}
+
 function dateRangeFilter(field, dateFrom, dateTo) {
   if (!dateFrom && !dateTo) return {};
   const range = {};
@@ -591,18 +840,33 @@ function inDateRange(date, dateFrom, dateTo) {
  * Receivables after party payments: payments settle previous pending first,
  * then oldest builties — same as party "Payment pending".
  */
-async function getReceivablesReport({ dateFrom, dateTo } = {}) {
-  const [builties, adjustments, paymentsAgg] = await Promise.all([
+async function getReceivablesReport({ dateFrom, dateTo, groupId } = {}) {
+  const PartyGroup = require("../party-groups/party-group.model");
+  let allowedCustomerIds = null;
+  let groupMeta = null;
+
+  if (groupId) {
+    const group = await PartyGroup.findById(groupId).lean();
+    if (!group) throw httpError("Party group not found", 404);
+    groupMeta = { id: String(group._id), name: group.name };
+    const members = await Customer.find({ group: group._id }).select("_id").lean();
+    allowedCustomerIds = new Set(members.map((m) => String(m._id)));
+  }
+
+  const [builties, adjustments, paymentsAgg, allGroups] = await Promise.all([
     Builty.find({})
-      .populate("customer", "name phone")
+      .populate("customer", "name phone group")
       .sort({ builtyDate: 1, createdAt: 1 })
       .lean(),
     CustomerLedgerEntry.find({ type: "adjustment", signedAmount: { $gt: 0 } })
-      .populate("customer", "name phone")
+      .populate("customer", "name phone group")
       .sort({ entryDate: 1, createdAt: 1 })
       .lean(),
     CustomerPayment.aggregate([{ $group: { _id: "$customer", total: { $sum: "$amount" } } }]),
+    PartyGroup.find({}).select("name").lean(),
   ]);
+
+  const groupNameMap = new Map(allGroups.map((g) => [String(g._id), g.name]));
 
   const paidByCustomer = new Map(
     paymentsAgg.map((p) => [String(p._id), roundMoney(p.total)])
@@ -612,11 +876,21 @@ async function getReceivablesReport({ dateFrom, dateTo } = {}) {
 
   function ensureParty(customerDoc, customerId) {
     const id = String(customerId || "");
+    if (allowedCustomerIds && !allowedCustomerIds.has(id)) return null;
     if (!byCustomer.has(id)) {
+      let partyGroupId = "";
+      if (customerDoc && typeof customerDoc === "object" && customerDoc.group) {
+        partyGroupId = String(customerDoc.group._id || customerDoc.group || "");
+      }
       const c =
         customerDoc && typeof customerDoc === "object"
-          ? { id, name: customerDoc.name || "—", phone: customerDoc.phone || "" }
-          : { id, name: "—", phone: "" };
+          ? {
+              id,
+              name: customerDoc.name || "—",
+              phone: customerDoc.phone || "",
+              groupId: partyGroupId,
+            }
+          : { id, name: "—", phone: "", groupId: "" };
       byCustomer.set(id, { ...c, previousPending: [], builties: [] });
     }
     return byCustomer.get(id);
@@ -626,6 +900,7 @@ async function getReceivablesReport({ dateFrom, dateTo } = {}) {
     const cust = a.customer;
     const id = cust && typeof cust === "object" ? cust._id : a.customer;
     const party = ensureParty(cust, id);
+    if (!party) continue;
     party.previousPending.push({
       type: "previous_pending",
       id: String(a._id),
@@ -640,6 +915,7 @@ async function getReceivablesReport({ dateFrom, dateTo } = {}) {
     const cust = b.customer;
     const id = cust && typeof cust === "object" ? cust._id : b.customer;
     const party = ensureParty(cust, id);
+    if (!party) continue;
     party.builties.push({
       type: "builty",
       id: String(b._id),
@@ -678,6 +954,7 @@ async function getReceivablesReport({ dateFrom, dateTo } = {}) {
         partyId: party.id,
         partyName: party.name,
         partyPhone: party.phone,
+        groupId: party.groupId || "",
         totalAmount: item.totalAmount,
         amountPaid,
         balance,
@@ -700,22 +977,46 @@ async function getReceivablesReport({ dateFrom, dateTo } = {}) {
         partyId: r.partyId,
         name: r.partyName,
         phone: r.partyPhone,
+        groupId: r.groupId || "",
         balance: r.balance,
         recordCount: 1,
       });
     }
   }
   const byParty = [...byPartyMap.values()].sort((a, b) => b.balance - a.balance);
+
+  const byGroupMap = new Map();
+  for (const p of byParty) {
+    const key = p.groupId || "__ungrouped__";
+    const existing = byGroupMap.get(key);
+    if (existing) {
+      existing.balance = roundMoney(existing.balance + p.balance);
+      existing.recordCount += p.recordCount;
+      existing.partyCount += 1;
+    } else {
+      byGroupMap.set(key, {
+        groupId: p.groupId || "",
+        name: p.groupId ? groupNameMap.get(p.groupId) || "—" : "Ungrouped",
+        balance: p.balance,
+        recordCount: p.recordCount,
+        partyCount: 1,
+      });
+    }
+  }
+  const byGroup = [...byGroupMap.values()].sort((a, b) => b.balance - a.balance);
   const totalReceivable = roundMoney(records.reduce((s, r) => s + r.balance, 0));
 
   return {
     period: { from: dateFrom || null, to: dateTo || null },
+    group: groupMeta,
     totals: {
       totalReceivable,
       partyCount: byParty.length,
+      groupCount: byGroup.length,
       recordCount: records.length,
     },
     byParty,
+    byGroup,
     records,
   };
 }
@@ -796,15 +1097,23 @@ async function getPayablesReport({ dateFrom, dateTo } = {}) {
 
 async function exportReceivables(query, format, res) {
   const report = await getReceivablesReport(query);
+  const view = ["whole", "party", "group"].includes(query.view) ? query.view : "party";
   const period = periodLabel(query.dateFrom, query.dateTo);
+  const viewLabel =
+    view === "whole" ? "Overall" : view === "group" ? "Group wise" : "Party wise";
   const meta = {
     Period: period,
     Overall: !query.dateFrom && !query.dateTo ? "All" : period,
+    View: viewLabel,
+    Group: report.group?.name || "All groups",
     "Total receivables": money(report.totals.totalReceivable),
     Parties: report.totals.partyCount,
+    Groups: report.totals.groupCount,
     Records: report.totals.recordCount,
   };
-  const title = "Money receivables report";
+  const title = report.group
+    ? `Money receivables report — ${report.group.name}`
+    : "Money receivables report";
 
   const partyColumns = ["Party", "Records", "Party receivable"];
   const partyRows = (report.byParty || []).map((p) => [
@@ -815,6 +1124,22 @@ async function exportReceivables(query, format, res) {
   if (partyRows.length > 0) {
     partyRows.push([
       "Total receivables",
+      report.totals.recordCount,
+      money(report.totals.totalReceivable),
+    ]);
+  }
+
+  const groupColumns = ["Group", "Parties", "Records", "Group receivable"];
+  const groupRows = (report.byGroup || []).map((g) => [
+    g.name,
+    g.partyCount,
+    g.recordCount,
+    money(g.balance),
+  ]);
+  if (groupRows.length > 0) {
+    groupRows.push([
+      "Total receivables",
+      report.totals.partyCount,
       report.totals.recordCount,
       money(report.totals.totalReceivable),
     ]);
@@ -832,27 +1157,49 @@ async function exportReceivables(query, format, res) {
   ]);
 
   if (format === "pdf") {
+    const sections = [];
+    if (view === "group") {
+      sections.push({
+        heading: "Receivable total of each group",
+        columns: groupColumns,
+        rows: groupRows,
+      });
+    } else if (view === "party") {
+      sections.push({
+        heading: "Receivable total of each party",
+        columns: partyColumns,
+        rows: partyRows,
+      });
+      sections.push({
+        heading: "All records",
+        columns: recordColumns,
+        rows: recordRows,
+      });
+    } else {
+      sections.push({
+        heading: "Overall receivables",
+        columns: ["Metric", "Value"],
+        rows: [
+          ["Total receivables", money(report.totals.totalReceivable)],
+          ["Groups", report.totals.groupCount],
+          ["Parties", report.totals.partyCount],
+          ["Records", report.totals.recordCount],
+        ],
+      });
+    }
+
     const buf = await buildPdf({
       title,
       subtitle: "Khan Engineerings",
       metaLines: [
+        `View: ${viewLabel}`,
         `Overall: ${meta.Overall}`,
+        `Group: ${meta.Group}`,
         `Total receivables: ${meta["Total receivables"]}`,
         `Parties: ${meta.Parties}`,
         `Records: ${meta.Records}`,
       ],
-      sections: [
-        {
-          heading: "Receivable total of each party",
-          columns: partyColumns,
-          rows: partyRows,
-        },
-        {
-          heading: "All records",
-          columns: recordColumns,
-          rows: recordRows,
-        },
-      ],
+      sections,
     });
     return sendPdf(res, buf, "receivables-report.pdf");
   }
@@ -860,8 +1207,18 @@ async function exportReceivables(query, format, res) {
   const buf = await buildExcel({
     title,
     sheetName: "Receivables",
-    columns: recordColumns,
-    rows: recordRows,
+    columns: view === "group" ? groupColumns : view === "whole" ? ["Metric", "Value"] : recordColumns,
+    rows:
+      view === "group"
+        ? groupRows
+        : view === "whole"
+          ? [
+              ["Total receivables", money(report.totals.totalReceivable)],
+              ["Groups", report.totals.groupCount],
+              ["Parties", report.totals.partyCount],
+              ["Records", report.totals.recordCount],
+            ]
+          : recordRows,
     meta,
   });
   return sendExcel(res, buf, "receivables-report.xlsx");
@@ -869,10 +1226,13 @@ async function exportReceivables(query, format, res) {
 
 async function exportPayables(query, format, res) {
   const report = await getPayablesReport(query);
+  const view = ["whole", "party"].includes(query.view) ? query.view : "party";
+  const viewLabel = view === "whole" ? "Overall" : "Party wise";
   const period = periodLabel(query.dateFrom, query.dateTo);
   const meta = {
     Period: period,
     Overall: !query.dateFrom && !query.dateTo ? "All" : period,
+    View: viewLabel,
     "Total payables": money(report.totals.totalPayable),
     Suppliers: report.totals.supplierCount,
     Records: report.totals.recordCount,
@@ -905,27 +1265,42 @@ async function exportPayables(query, format, res) {
   ]);
 
   if (format === "pdf") {
+    const sections =
+      view === "whole"
+        ? [
+            {
+              heading: "Overall payables",
+              columns: ["Metric", "Value"],
+              rows: [
+                ["Total payables", money(report.totals.totalPayable)],
+                ["Suppliers", report.totals.supplierCount],
+                ["Records", report.totals.recordCount],
+              ],
+            },
+          ]
+        : [
+            {
+              heading: "Payable total of each party",
+              columns: partyColumns,
+              rows: partyRows,
+            },
+            {
+              heading: "All records",
+              columns: recordColumns,
+              rows: recordRows,
+            },
+          ];
     const buf = await buildPdf({
       title,
       subtitle: "Khan Engineerings",
       metaLines: [
+        `View: ${viewLabel}`,
         `Overall: ${meta.Overall}`,
         `Total payables: ${meta["Total payables"]}`,
         `Suppliers: ${meta.Suppliers}`,
         `Records: ${meta.Records}`,
       ],
-      sections: [
-        {
-          heading: "Payable total of each party",
-          columns: partyColumns,
-          rows: partyRows,
-        },
-        {
-          heading: "All records",
-          columns: recordColumns,
-          rows: recordRows,
-        },
-      ],
+      sections,
     });
     return sendPdf(res, buf, "payables-report.pdf");
   }
@@ -1235,6 +1610,8 @@ module.exports = {
   globalSearch,
   customerStatement,
   supplierStatement,
+  groupStatement,
+  customersOverviewStatement,
   getReceivablesReport,
   getPayablesReport,
   exportSales,
@@ -1246,6 +1623,8 @@ module.exports = {
   exportReceivables,
   exportPayables,
   exportStatement,
+  exportGroupStatement,
+  exportCustomersOverviewStatement,
   exportFull,
   exportCustom,
   getCombinedPreview,

@@ -1,7 +1,9 @@
+const mongoose = require("mongoose");
 const Customer = require("./customer.model");
 const CustomerLedgerEntry = require("./customer-ledger.model");
 const CustomerPayment = require("./customer-payment.model");
 const Builty = require("../builty/builty.model");
+const PartyGroup = require("../party-groups/party-group.model");
 const {
   dayRange,
   wantsConfirmDuplicate,
@@ -14,9 +16,20 @@ function httpError(message, statusCode) {
   return err;
 }
 
+async function resolveGroupId(value) {
+  if (value === null || value === "" || value === undefined) return null;
+  const id = String(value).trim();
+  if (!mongoose.Types.ObjectId.isValid(id)) throw httpError("Invalid party group", 400);
+  const group = await PartyGroup.findById(id).select("_id");
+  if (!group) throw httpError("Party group not found", 404);
+  return group._id;
+}
+
 async function create(data) {
   const name = data.name?.trim();
   if (!name) throw httpError("Name is required", 400);
+  const group =
+    data.group !== undefined ? await resolveGroupId(data.group) : null;
   return Customer.create({
     name,
     phone: data.phone?.trim() || "",
@@ -24,14 +37,17 @@ async function create(data) {
     city: data.city?.trim() || "",
     address: data.address?.trim() || "",
     notes: data.notes?.trim() || "",
+    group,
     isActive: data.isActive !== undefined ? Boolean(data.isActive) : true,
   });
 }
 
-async function list({ q, active } = {}) {
+async function list({ q, active, group } = {}) {
   const filter = {};
   if (active === "true" || active === true) filter.isActive = true;
   if (active === "false" || active === false) filter.isActive = false;
+  if (group === "none") filter.group = null;
+  else if (group && mongoose.Types.ObjectId.isValid(group)) filter.group = group;
   if (q?.trim()) {
     const term = q.trim();
     filter.$or = [
@@ -40,11 +56,11 @@ async function list({ q, active } = {}) {
       { email: new RegExp(term, "i") },
     ];
   }
-  return Customer.find(filter).sort({ name: 1 });
+  return Customer.find(filter).populate("group", "name").sort({ name: 1 });
 }
 
 async function getById(id) {
-  const customer = await Customer.findById(id);
+  const customer = await Customer.findById(id).populate("group", "name");
   if (!customer) throw httpError("Customer not found", 404);
   return customer;
 }
@@ -218,7 +234,8 @@ async function recordPayment(customerId, data = {}) {
 }
 
 async function update(id, data) {
-  const customer = await getById(id);
+  const customer = await Customer.findById(id);
+  if (!customer) throw httpError("Customer not found", 404);
   if (data.name !== undefined) {
     const name = data.name.trim();
     if (!name) throw httpError("Name is required", 400);
@@ -230,8 +247,9 @@ async function update(id, data) {
   if (data.address !== undefined) customer.address = data.address.trim();
   if (data.notes !== undefined) customer.notes = data.notes.trim();
   if (data.isActive !== undefined) customer.isActive = Boolean(data.isActive);
+  if (data.group !== undefined) customer.group = await resolveGroupId(data.group);
   await customer.save();
-  return customer;
+  return Customer.findById(customer._id).populate("group", "name");
 }
 
 async function remove(id) {

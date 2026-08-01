@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
 import { cn } from "@/lib/utils";
+import { ReportsSubnav } from "@/components/layout/reports-subnav";
 
 type ReportMode = "full" | "custom";
 
@@ -119,13 +120,15 @@ export default function ReportsHubPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+      <ReportsSubnav />
       <div>
         <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
           {t("rep.eyebrow")}
         </p>
         <h1 className="text-nameplate text-xl">Report</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Choose full report or build a custom report, then download.
+          Choose full report or build a custom report, then download. For Overall / Party wise /
+          Group wise, open Receivables, Sales, or Statements above.
         </p>
       </div>
 

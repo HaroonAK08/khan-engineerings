@@ -8,11 +8,13 @@ const customerSchema = new mongoose.Schema(
     city: { type: String, trim: true, default: "" },
     address: { type: String, trim: true, default: "" },
     notes: { type: String, trim: true, default: "" },
+    group: { type: mongoose.Schema.Types.ObjectId, ref: "PartyGroup", default: null },
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true }
 );
 
 customerSchema.index({ name: 1 });
+customerSchema.index({ group: 1 });
 
 module.exports = mongoose.model("Customer", customerSchema);

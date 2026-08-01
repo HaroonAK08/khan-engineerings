@@ -14,7 +14,7 @@ import {
   updatePurchase,
 } from "@/lib/materials-api";
 import type { LedgerEntry } from "@/types/materials";
-import { currentMonthRange, toDateInput, todayInput } from "@/lib/date-range";
+import { thisMonthRange, toDateInput, todayInput } from "@/lib/date-range";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -145,7 +145,7 @@ export function SupplierHistoryCalendar({
   }, [formQty, formRate]);
 
   const today = todayInput();
-  const month = currentMonthRange();
+  const month = thisMonthRange();
   const isTodayRange = dateFrom === today && dateTo === today;
   const isMonthRange = dateFrom === month.from && dateTo === month.to;
   const isAllRange = !dateFrom && !dateTo;
@@ -158,7 +158,7 @@ export function SupplierHistoryCalendar({
   }
 
   function setThisMonthRange() {
-    const m = currentMonthRange();
+    const m = thisMonthRange();
     setDateFrom(m.from);
     setDateTo(m.to);
   }

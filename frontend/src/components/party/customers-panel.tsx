@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -10,10 +10,14 @@ import { Loader2, Plus, Search } from "lucide-react";
 import { apiError } from "@/lib/materials-api";
 import {
   createCustomer,
+  customerGroupId,
+  customerGroupName,
   deleteCustomer,
   listCustomers,
+  listPartyGroups,
   updateCustomer,
   type Customer,
+  type PartyGroup,
 } from "@/lib/sales-api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -26,6 +30,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -41,6 +52,7 @@ const schema = z.object({
   phone: z.string().optional(),
   address: z.string().optional(),
   notes: z.string().optional(),
+  group: z.string().optional(),
   isActive: z.boolean(),
 });
 
@@ -50,6 +62,7 @@ export function CustomersPanel() {
   const { t } = useI18n();
   const router = useRouter();
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [groups, setGroups] = useState<PartyGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -64,6 +77,7 @@ export function CustomersPanel() {
       phone: "",
       address: "",
       notes: "",
+      group: "",
       isActive: true,
     },
   });
@@ -71,7 +85,12 @@ export function CustomersPanel() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setCustomers(await listCustomers(q.trim() ? { q: q.trim() } : undefined));
+      const [partyList, groupList] = await Promise.all([
+        listCustomers(q.trim() ? { q: q.trim() } : undefined),
+        listPartyGroups({ active: "true" }),
+      ]);
+      setCustomers(partyList);
+      setGroups(groupList);
     } catch (err) {
       toast.error(apiError(err, "Failed to load customers"));
     } finally {
@@ -86,7 +105,7 @@ export function CustomersPanel() {
 
   function openCreate() {
     setEditing(null);
-    form.reset({ name: "", phone: "", address: "", notes: "", isActive: true });
+    form.reset({ name: "", phone: "", address: "", notes: "", group: "", isActive: true });
     setDialogOpen(true);
   }
 
@@ -97,6 +116,7 @@ export function CustomersPanel() {
       phone: c.phone || "",
       address: c.address || "",
       notes: c.notes || "",
+      group: customerGroupId(c),
       isActive: c.isActive,
     });
     setDialogOpen(true);
@@ -105,11 +125,19 @@ export function CustomersPanel() {
   async function onSubmit(values: FormValues) {
     setSaving(true);
     try {
+      const body = {
+        name: values.name,
+        phone: values.phone,
+        address: values.address,
+        notes: values.notes,
+        isActive: values.isActive,
+        group: values.group || null,
+      };
       if (editing) {
-        await updateCustomer(editing._id, values);
+        await updateCustomer(editing._id, body);
         toast.success("Customer updated");
       } else {
-        await createCustomer(values);
+        await createCustomer(body);
         toast.success("Customer created");
       }
       setDialogOpen(false);
@@ -134,6 +162,16 @@ export function CustomersPanel() {
       setDeletingId(null);
     }
   }
+
+  const groupValue = form.watch("group") || "";
+
+  const groupSelectItems = useMemo(() => {
+    const items: Record<string, string> = {
+      __none__: t("cus.groupNone"),
+    };
+    for (const g of groups) items[g._id] = g.name;
+    return items;
+  }, [groups, t]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -169,6 +207,7 @@ export function CustomersPanel() {
                 <TableRow>
                   <TableHead>{t("cus.col.name")}</TableHead>
                   <TableHead>{t("cus.col.phone")}</TableHead>
+                  <TableHead>{t("cus.col.group")}</TableHead>
                   <TableHead className="text-right">{t("cus.col.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -188,6 +227,9 @@ export function CustomersPanel() {
                   >
                     <TableCell className="font-medium">{c.name}</TableCell>
                     <TableCell className="font-data text-xs">{c.phone || "—"}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {customerGroupName(c) || "—"}
+                    </TableCell>
                     <TableCell className="text-right">
                       <div
                         className="inline-flex items-center gap-1"
@@ -234,6 +276,26 @@ export function CustomersPanel() {
             <div className="flex flex-col gap-1.5">
               <Label>{t("cus.col.phone")}</Label>
               <Input {...form.register("phone")} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>{t("cus.col.group")}</Label>
+              <Select
+                value={groupValue || "__none__"}
+                onValueChange={(v) => form.setValue("group", !v || v === "__none__" ? "" : v)}
+                items={groupSelectItems}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={t("cus.groupNone")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">{groupSelectItems.__none__}</SelectItem>
+                  {groups.map((g) => (
+                    <SelectItem key={g._id} value={g._id}>
+                      {groupSelectItems[g._id]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex flex-col gap-1.5">
               <Label>{t("cus.address")}</Label>

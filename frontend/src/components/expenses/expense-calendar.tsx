@@ -12,7 +12,7 @@ import {
 } from "@/lib/expenses-api";
 import { apiError, formatDate, formatMoney, withSameDayConfirm } from "@/lib/materials-api";
 import type { BatchExpense } from "@/types/production";
-import { currentMonthRange, toDateInput, todayInput } from "@/lib/date-range";
+import { thisMonthRange, toDateInput, todayInput } from "@/lib/date-range";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -244,7 +244,7 @@ export function ExpenseCalendar({
   const total = useMemo(() => sorted.reduce((s, e) => s + e.amount, 0), [sorted]);
 
   const today = todayInput();
-  const month = currentMonthRange();
+  const month = thisMonthRange();
   const isTodayRange = dateFrom === today && dateTo === today;
   const isMonthRange = dateFrom === month.from && dateTo === month.to;
   const isAllRange = !dateFrom && !dateTo;
@@ -257,7 +257,7 @@ export function ExpenseCalendar({
   }
 
   function setThisMonthRange() {
-    const m = currentMonthRange();
+    const m = thisMonthRange();
     setDateFrom(m.from);
     setDateTo(m.to);
   }

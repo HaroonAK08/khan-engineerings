@@ -359,8 +359,73 @@ async function updateBuilty(id, data) {
   }
   if (data.notes !== undefined) builty.notes = String(data.notes || "").trim();
 
-  await builty.save();
+  if (data.items !== undefined) {
+    const { items, totalAmount } = await normalizeItems(data.items);
+    const warehouse =
+      builty.warehouse || (await inventoryService.getDefaultWarehouse())._id;
 
+    for (const line of builty.items || []) {
+      await inventoryService.recordMovement({
+        itemType: "finished_good",
+        direction: "in",
+        reason: "adjustment",
+        quantity: line.quantity,
+        unit: "pcs",
+        product: line.product,
+        warehouse,
+        refType: "builty_edit",
+        refId: builty._id,
+        movementDate: new Date(),
+        notes: `Builty ${builty.builtyNo} edited (restore)`,
+      });
+    }
+
+    await assertStockAvailable(items, warehouse);
+
+    for (const line of items) {
+      await inventoryService.recordMovement({
+        itemType: "finished_good",
+        direction: "out",
+        reason: "sale",
+        quantity: line.quantity,
+        unit: "pcs",
+        product: line.product,
+        warehouse,
+        refType: "builty",
+        refId: builty._id,
+        movementDate: builty.builtyDate,
+        notes: `Builty ${builty.builtyNo} edited`,
+      });
+    }
+
+    builty.items = items;
+    builty.totalAmount = totalAmount;
+    builty.warehouse = warehouse;
+
+    const invoiceUpdate = await CustomerLedgerEntry.updateMany(
+      { builty: builty._id, type: "invoice" },
+      {
+        $set: {
+          amount: totalAmount,
+          entryDate: builty.builtyDate,
+          notes: `Builty ${builty.builtyNo}`,
+        },
+      }
+    );
+    if (!invoiceUpdate.matchedCount) {
+      await CustomerLedgerEntry.create({
+        customer: builty.customer,
+        type: "invoice",
+        amount: totalAmount,
+        builty: builty._id,
+        entryDate: builty.builtyDate,
+        notes: `Builty ${builty.builtyNo}`,
+      });
+    }
+  }
+
+  await builty.save();
+  await syncCustomerBuiltyPaymentStatuses(builty.customer);
   return getBuilty(builty._id);
 }
 
@@ -575,8 +640,35 @@ async function listLedger(customerId) {
   return { entries, balance };
 }
 
-async function getSalesReport({ dateFrom, dateTo } = {}) {
+async function getSalesReport({ dateFrom, dateTo, groupId } = {}) {
+  const mongoose = require("mongoose");
+  const Customer = require("../customers/customer.model");
+  const PartyGroup = require("../party-groups/party-group.model");
+
   const match = {};
+  let groupMeta = null;
+
+  if (groupId) {
+    if (!mongoose.isValidObjectId(groupId)) throw httpError("Invalid party group", 400);
+    const group = await PartyGroup.findById(groupId).lean();
+    if (!group) throw httpError("Party group not found", 404);
+    groupMeta = { id: String(group._id), name: group.name };
+    const members = await Customer.find({ group: group._id }).select("_id").lean();
+    const ids = members.map((m) => m._id);
+    if (ids.length === 0) {
+      return {
+        period: { from: dateFrom || null, to: dateTo || null },
+        group: groupMeta,
+        totals: { orderCount: 0, totalSales: 0, totalPaid: 0, outstanding: 0 },
+        outstanding: [],
+        topCustomers: [],
+        byGroup: [],
+        whoOwes: [],
+      };
+    }
+    match.customer = { $in: ids };
+  }
+
   if (dateFrom || dateTo) {
     match.builtyDate = {};
     if (dateFrom) match.builtyDate.$gte = parseDate(dateFrom, "dateFrom");
@@ -587,8 +679,11 @@ async function getSalesReport({ dateFrom, dateTo } = {}) {
     }
   }
 
-  const outstanding = await Builty.find({ balance: { $gt: 0 } })
-    .populate("customer", "name phone")
+  const outstandingMatch = { balance: { $gt: 0 } };
+  if (match.customer) outstandingMatch.customer = match.customer;
+
+  const outstanding = await Builty.find(outstandingMatch)
+    .populate("customer", "name phone group")
     .sort({ balance: -1 });
 
   const byCustomer = await Builty.aggregate([
@@ -633,6 +728,7 @@ async function getSalesReport({ dateFrom, dateTo } = {}) {
     invoiceNo: b.billNo || b.builtyNo,
     customer: b.customer?.name || "Unknown",
     customerId: b.customer?._id,
+    groupId: b.customer?.group ? String(b.customer.group) : "",
     orderDate: b.builtyDate,
     dueDate: null,
     totalAmount: b.totalAmount,
@@ -643,22 +739,56 @@ async function getSalesReport({ dateFrom, dateTo } = {}) {
 
   const t = totals[0] || { orderCount: 0, totalSales: 0, totalPaid: 0, outstanding: 0 };
 
+  const topCustomers = byCustomer.map((row) => ({
+    customerId: row._id,
+    name: row.customer?.name || "Unknown",
+    groupId: row.customer?.group ? String(row.customer.group) : "",
+    orderCount: row.orderCount,
+    totalSales: roundMoney(row.totalSales),
+    totalPaid: roundMoney(row.totalPaid),
+    outstanding: roundMoney(row.outstanding),
+  }));
+
+  const allGroups = await PartyGroup.find({}).select("name").lean();
+  const groupNameMap = new Map(allGroups.map((g) => [String(g._id), g.name]));
+  const byGroupMap = new Map();
+  for (const p of topCustomers) {
+    const key = p.groupId || "__ungrouped__";
+    const existing = byGroupMap.get(key);
+    if (existing) {
+      existing.orderCount += p.orderCount;
+      existing.totalSales = roundMoney(existing.totalSales + p.totalSales);
+      existing.totalPaid = roundMoney(existing.totalPaid + p.totalPaid);
+      existing.outstanding = roundMoney(existing.outstanding + p.outstanding);
+      existing.partyCount += 1;
+    } else {
+      byGroupMap.set(key, {
+        groupId: p.groupId || "",
+        name: p.groupId ? groupNameMap.get(p.groupId) || "—" : "Ungrouped",
+        orderCount: p.orderCount,
+        totalSales: p.totalSales,
+        totalPaid: p.totalPaid,
+        outstanding: p.outstanding,
+        partyCount: 1,
+      });
+    }
+  }
+  const byGroup = [...byGroupMap.values()].sort((a, b) => b.totalSales - a.totalSales);
+
   return {
+    period: { from: dateFrom || null, to: dateTo || null },
+    group: groupMeta,
     totals: {
       orderCount: t.orderCount,
       totalSales: roundMoney(t.totalSales || 0),
       totalPaid: roundMoney(t.totalPaid || 0),
       outstanding: roundMoney(t.outstanding || 0),
+      partyCount: topCustomers.length,
+      groupCount: byGroup.length,
     },
     outstanding: unpaidInvoices,
-    topCustomers: byCustomer.map((row) => ({
-      customerId: row._id,
-      name: row.customer?.name || "Unknown",
-      orderCount: row.orderCount,
-      totalSales: roundMoney(row.totalSales),
-      totalPaid: roundMoney(row.totalPaid),
-      outstanding: roundMoney(row.outstanding),
-    })),
+    topCustomers,
+    byGroup,
     whoOwes: unpaidInvoices
       .reduce((acc, inv) => {
         const key = String(inv.customerId || inv.customer);

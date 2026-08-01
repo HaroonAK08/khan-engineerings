@@ -1,21 +1,34 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { ReportsSubnav } from "@/components/layout/reports-subnav";
 import { ExportButtons } from "@/components/reports/export-buttons";
+import {
+  ReportViewToggle,
+  type ReportViewMode,
+} from "@/components/reports/report-view-toggle";
 import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
 import {
   downloadReportExport,
   getReceivablesReport,
   type ReceivablesReport,
 } from "@/lib/reports-api";
-import { currentMonthRange } from "@/lib/date-range";
+import { listPartyGroups, type PartyGroup } from "@/lib/sales-api";
+import { currentMonthRange, thisMonthRange } from "@/lib/date-range";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -33,23 +46,41 @@ export default function ReceivablesReportPage() {
   const defaults = currentMonthRange();
   const [dateFrom, setDateFrom] = useState(defaults.from);
   const [dateTo, setDateTo] = useState(defaults.to);
+  const [groupId, setGroupId] = useState("");
+  const [view, setView] = useState<ReportViewMode>("party");
+  const [groups, setGroups] = useState<PartyGroup[]>([]);
   const [report, setReport] = useState<ReceivablesReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<"pdf" | null>(null);
 
+  useEffect(() => {
+    listPartyGroups({ active: "true" })
+      .then(setGroups)
+      .catch(() => setGroups([]));
+  }, []);
+
+  const groupSelectItems = useMemo(() => {
+    const items: Record<string, string> = {
+      __all__: t("recvReports.allGroups"),
+    };
+    for (const g of groups) items[g._id] = g.name;
+    return items;
+  }, [groups, t]);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const params: { dateFrom?: string; dateTo?: string } = {};
+      const params: { dateFrom?: string; dateTo?: string; groupId?: string } = {};
       if (dateFrom) params.dateFrom = dateFrom;
       if (dateTo) params.dateTo = dateTo;
+      if (groupId) params.groupId = groupId;
       setReport(await getReceivablesReport(params));
     } catch (err) {
       toast.error(apiError(err, t("recvReports.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, t]);
+  }, [dateFrom, dateTo, groupId, t]);
 
   useEffect(() => {
     const timer = setTimeout(load, 200);
@@ -63,6 +94,8 @@ export default function ReceivablesReportPage() {
         format,
         dateFrom: dateFrom || undefined,
         dateTo: dateTo || undefined,
+        groupId: groupId || undefined,
+        view,
       });
       toast.success(t("common.downloaded", { format: format.toUpperCase() }));
     } catch (err) {
@@ -78,7 +111,7 @@ export default function ReceivablesReportPage() {
   }
 
   function setThisMonth() {
-    const range = currentMonthRange();
+    const range = thisMonthRange();
     setDateFrom(range.from);
     setDateTo(range.to);
   }
@@ -89,6 +122,7 @@ export default function ReceivablesReportPage() {
   }
 
   const isAll = !dateFrom && !dateTo;
+  const byGroup = report?.byGroup || [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -130,7 +164,29 @@ export default function ReceivablesReportPage() {
           value={dateTo}
           onChange={(e) => setDateTo(e.target.value)}
         />
+        <div className="grid gap-1.5">
+          <Label className="sr-only">{t("recvReports.group")}</Label>
+          <Select
+            value={groupId || "__all__"}
+            onValueChange={(v) => setGroupId(!v || v === "__all__" ? "" : v)}
+            items={groupSelectItems}
+          >
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder={t("recvReports.allGroups")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">{groupSelectItems.__all__}</SelectItem>
+              {groups.map((g) => (
+                <SelectItem key={g._id} value={g._id}>
+                  {groupSelectItems[g._id]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
+
+      <ReportViewToggle value={view} onChange={setView} />
 
       {loading || !report ? (
         <div className="flex justify-center py-16">
@@ -143,15 +199,21 @@ export default function ReceivablesReportPage() {
               <CardTitle className="text-nameplate text-sm">{t("recvReports.overall")}</CardTitle>
               <CardDescription>
                 {isAll ? t("recvReports.allDates") : `${dateFrom || "…"} → ${dateTo || "…"}`}
+                {report.group ? ` · ${report.group.name}` : ` · ${t("recvReports.allGroups")}`}
+                {` · ${t(`rep.view.${view}` as MessageKey)}`}
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {[
                   {
                     label: t("recvReports.total"),
                     value: formatMoney(report.totals.totalReceivable),
                     emphasize: true,
+                  },
+                  {
+                    label: t("recvReports.groups"),
+                    value: String(report.totals.groupCount ?? byGroup.length),
                   },
                   { label: t("recvReports.parties"), value: String(report.totals.partyCount) },
                   { label: t("recvReports.records"), value: String(report.totals.recordCount) },
@@ -173,121 +235,185 @@ export default function ReceivablesReportPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-nameplate text-sm">{t("recvReports.byParty")}</CardTitle>
-            </CardHeader>
-            <CardContent className="px-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t("recvReports.col.party")}</TableHead>
-                    <TableHead className="text-right">{t("recvReports.col.count")}</TableHead>
-                    <TableHead className="text-right">{t("recvReports.partyTotal")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {report.byParty.length === 0 ? (
+          {view === "group" ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-nameplate text-sm">{t("recvReports.byGroup")}</CardTitle>
+              </CardHeader>
+              <CardContent className="px-0">
+                <Table>
+                  <TableHeader>
                     <TableRow>
-                      <TableCell colSpan={3} className="text-muted-foreground">
-                        {t("recvReports.empty")}
-                      </TableCell>
+                      <TableHead>{t("recvReports.col.group")}</TableHead>
+                      <TableHead className="text-right">{t("recvReports.parties")}</TableHead>
+                      <TableHead className="text-right">{t("recvReports.col.count")}</TableHead>
+                      <TableHead className="text-right">{t("recvReports.groupTotal")}</TableHead>
                     </TableRow>
-                  ) : (
-                    report.byParty.map((p) => (
-                      <TableRow key={p.partyId || p.name}>
-                        <TableCell>
-                          {p.partyId ? (
-                            <Link
-                              href={`/dashboard/party/customers/${p.partyId}`}
-                              className="hover:underline"
-                            >
-                              {p.name}
-                            </Link>
-                          ) : (
-                            p.name
-                          )}
-                        </TableCell>
-                        <TableCell className="font-data text-right text-xs">
-                          {p.recordCount}
-                        </TableCell>
-                        <TableCell className="font-data text-right text-xs text-destructive">
-                          {formatMoney(p.balance)}
+                  </TableHeader>
+                  <TableBody>
+                    {byGroup.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-muted-foreground">
+                          {t("recvReports.empty")}
                         </TableCell>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-                {report.byParty.length > 0 ? (
-                  <TableFooter>
-                    <TableRow>
-                      <TableCell className="font-medium">{t("recvReports.grandTotal")}</TableCell>
-                      <TableCell className="font-data text-right text-xs">
-                        {report.totals.recordCount}
-                      </TableCell>
-                      <TableCell className="font-data text-right text-sm font-medium text-destructive">
-                        {formatMoney(report.totals.totalReceivable)}
-                      </TableCell>
-                    </TableRow>
-                  </TableFooter>
-                ) : null}
-              </Table>
-            </CardContent>
-          </Card>
+                    ) : (
+                      byGroup.map((g) => (
+                        <TableRow key={g.groupId || g.name}>
+                          <TableCell className="font-medium">{g.name}</TableCell>
+                          <TableCell className="font-data text-right text-xs">
+                            {g.partyCount}
+                          </TableCell>
+                          <TableCell className="font-data text-right text-xs">
+                            {g.recordCount}
+                          </TableCell>
+                          <TableCell className="font-data text-right text-xs text-destructive">
+                            {formatMoney(g.balance)}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                  {byGroup.length > 0 ? (
+                    <TableFooter>
+                      <TableRow>
+                        <TableCell className="font-medium">{t("recvReports.grandTotal")}</TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {report.totals.partyCount}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {report.totals.recordCount}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-sm font-medium text-destructive">
+                          {formatMoney(report.totals.totalReceivable)}
+                        </TableCell>
+                      </TableRow>
+                    </TableFooter>
+                  ) : null}
+                </Table>
+              </CardContent>
+            </Card>
+          ) : null}
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-nameplate text-sm">{t("recvReports.allRecords")}</CardTitle>
-            </CardHeader>
-            <CardContent className="px-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t("common.date")}</TableHead>
-                    <TableHead>{t("recvReports.col.type")}</TableHead>
-                    <TableHead>{t("recvReports.col.reference")}</TableHead>
-                    <TableHead>{t("recvReports.col.party")}</TableHead>
-                    <TableHead className="text-right">{t("recvReports.col.total")}</TableHead>
-                    <TableHead className="text-right">{t("recvReports.col.paid")}</TableHead>
-                    <TableHead className="text-right">{t("recvReports.col.balance")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {report.records.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-muted-foreground">
-                        {t("recvReports.empty")}
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    report.records.map((r) => (
-                      <TableRow key={`${r.type}-${r.id}`}>
-                        <TableCell className="font-data text-xs whitespace-nowrap">
-                          {formatDate(r.date)}
-                        </TableCell>
-                        <TableCell className="text-sm">{typeLabel(r.type)}</TableCell>
-                        <TableCell>
-                          <Link href={r.href} className="font-data text-xs hover:underline">
-                            {r.reference}
-                          </Link>
-                        </TableCell>
-                        <TableCell>{r.partyName}</TableCell>
-                        <TableCell className="font-data text-right text-xs">
-                          {formatMoney(r.totalAmount)}
-                        </TableCell>
-                        <TableCell className="font-data text-right text-xs">
-                          {formatMoney(r.amountPaid)}
-                        </TableCell>
-                        <TableCell className="font-data text-right text-xs text-destructive">
-                          {formatMoney(r.balance)}
-                        </TableCell>
+          {view === "party" ? (
+            <>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-nameplate text-sm">{t("recvReports.byParty")}</CardTitle>
+                </CardHeader>
+                <CardContent className="px-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t("recvReports.col.party")}</TableHead>
+                        <TableHead className="text-right">{t("recvReports.col.count")}</TableHead>
+                        <TableHead className="text-right">{t("recvReports.partyTotal")}</TableHead>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+                    </TableHeader>
+                    <TableBody>
+                      {report.byParty.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={3} className="text-muted-foreground">
+                            {t("recvReports.empty")}
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        report.byParty.map((p) => (
+                          <TableRow key={p.partyId || p.name}>
+                            <TableCell>
+                              {p.partyId ? (
+                                <Link
+                                  href={`/dashboard/party/customers/${p.partyId}`}
+                                  className="hover:underline"
+                                >
+                                  {p.name}
+                                </Link>
+                              ) : (
+                                p.name
+                              )}
+                            </TableCell>
+                            <TableCell className="font-data text-right text-xs">
+                              {p.recordCount}
+                            </TableCell>
+                            <TableCell className="font-data text-right text-xs text-destructive">
+                              {formatMoney(p.balance)}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                    {report.byParty.length > 0 ? (
+                      <TableFooter>
+                        <TableRow>
+                          <TableCell className="font-medium">{t("recvReports.grandTotal")}</TableCell>
+                          <TableCell className="font-data text-right text-xs">
+                            {report.totals.recordCount}
+                          </TableCell>
+                          <TableCell className="font-data text-right text-sm font-medium text-destructive">
+                            {formatMoney(report.totals.totalReceivable)}
+                          </TableCell>
+                        </TableRow>
+                      </TableFooter>
+                    ) : null}
+                  </Table>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-nameplate text-sm">{t("recvReports.allRecords")}</CardTitle>
+                </CardHeader>
+                <CardContent className="px-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t("common.date")}</TableHead>
+                        <TableHead>{t("recvReports.col.type")}</TableHead>
+                        <TableHead>{t("recvReports.col.reference")}</TableHead>
+                        <TableHead>{t("recvReports.col.party")}</TableHead>
+                        <TableHead className="text-right">{t("recvReports.col.total")}</TableHead>
+                        <TableHead className="text-right">{t("recvReports.col.paid")}</TableHead>
+                        <TableHead className="text-right">{t("recvReports.col.balance")}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {report.records.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-muted-foreground">
+                            {t("recvReports.empty")}
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        report.records.map((r) => (
+                          <TableRow key={`${r.type}-${r.id}`}>
+                            <TableCell className="font-data text-xs whitespace-nowrap">
+                              {formatDate(r.date)}
+                            </TableCell>
+                            <TableCell className="text-sm">{typeLabel(r.type)}</TableCell>
+                            <TableCell>
+                              <Link href={r.href} className="font-data text-xs hover:underline">
+                                {r.reference}
+                              </Link>
+                            </TableCell>
+                            <TableCell>{r.partyName}</TableCell>
+                            <TableCell className="font-data text-right text-xs">
+                              {formatMoney(r.totalAmount)}
+                            </TableCell>
+                            <TableCell className="font-data text-right text-xs">
+                              {formatMoney(r.amountPaid)}
+                            </TableCell>
+                            <TableCell className="font-data text-right text-xs text-destructive">
+                              {formatMoney(r.balance)}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            </>
+          ) : null}
         </>
       )}
     </div>

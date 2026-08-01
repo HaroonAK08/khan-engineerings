@@ -6,13 +6,17 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { ReportsSubnav } from "@/components/layout/reports-subnav";
 import { ExportButtons } from "@/components/reports/export-buttons";
+import {
+  ReportViewToggle,
+  type ReportViewMode,
+} from "@/components/reports/report-view-toggle";
 import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
 import {
   downloadReportExport,
   getPayablesReport,
   type PayablesReport,
 } from "@/lib/reports-api";
-import { currentMonthRange } from "@/lib/date-range";
+import { currentMonthRange, thisMonthRange } from "@/lib/date-range";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -32,6 +36,7 @@ export default function PayablesReportPage() {
   const defaults = currentMonthRange();
   const [dateFrom, setDateFrom] = useState(defaults.from);
   const [dateTo, setDateTo] = useState(defaults.to);
+  const [view, setView] = useState<ReportViewMode>("party");
   const [report, setReport] = useState<PayablesReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<"pdf" | null>(null);
@@ -62,6 +67,7 @@ export default function PayablesReportPage() {
         format,
         dateFrom: dateFrom || undefined,
         dateTo: dateTo || undefined,
+        view,
       });
       toast.success(t("common.downloaded", { format: format.toUpperCase() }));
     } catch (err) {
@@ -72,7 +78,7 @@ export default function PayablesReportPage() {
   }
 
   function setThisMonth() {
-    const range = currentMonthRange();
+    const range = thisMonthRange();
     setDateFrom(range.from);
     setDateTo(range.to);
   }
@@ -126,6 +132,8 @@ export default function PayablesReportPage() {
         />
       </div>
 
+      <ReportViewToggle value={view} onChange={setView} modes={["whole", "party"]} />
+
       {loading || !report ? (
         <div className="flex justify-center py-16">
           <Loader2 className="size-6 animate-spin text-primary" />
@@ -170,6 +178,8 @@ export default function PayablesReportPage() {
             </CardContent>
           </Card>
 
+          {view === "party" ? (
+            <>
           <Card>
             <CardHeader>
               <CardTitle className="text-nameplate text-sm">{t("payReports.bySupplier")}</CardTitle>
@@ -287,6 +297,8 @@ export default function PayablesReportPage() {
               </Table>
             </CardContent>
           </Card>
+            </>
+          ) : null}
         </>
       )}
     </div>

@@ -127,11 +127,19 @@ export default function BuiltyDetailPage() {
             </Link>
           ) : null}
         </div>
-        <div className="text-right">
-          <p className="font-data text-[10px] text-muted-foreground uppercase">
-            {t("builtyDetail.totalAmount")}
-          </p>
-          <p className="font-data text-2xl">{formatMoney(summary.totalAmount)}</p>
+        <div className="flex flex-col items-end gap-2">
+          <div className="text-right">
+            <p className="font-data text-[10px] text-muted-foreground uppercase">
+              {t("builtyDetail.totalAmount")}
+            </p>
+            <p className="font-data text-2xl">{formatMoney(summary.totalAmount)}</p>
+          </div>
+          <Link
+            href={`/dashboard/builty/${id}/edit`}
+            className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm hover:bg-muted"
+          >
+            {t("builtyDetail.editProducts")}
+          </Link>
         </div>
       </div>
 

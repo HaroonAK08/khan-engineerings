@@ -5,6 +5,10 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { ReportsSubnav } from "@/components/layout/reports-subnav";
 import { ExportButtons } from "@/components/reports/export-buttons";
+import {
+  ReportViewToggle,
+  type ReportViewMode,
+} from "@/components/reports/report-view-toggle";
 import { apiError, formatMoney, formatKg, getPurchaseReport } from "@/lib/materials-api";
 import type { PurchaseReport } from "@/types/materials";
 import { downloadReportExport } from "@/lib/reports-api";
@@ -26,6 +30,7 @@ export default function PurchaseReportsPage() {
   const d = currentMonthRange();
   const [dateFrom, setDateFrom] = useState(d.from);
   const [dateTo, setDateTo] = useState(d.to);
+  const [view, setView] = useState<ReportViewMode>("party");
   const [report, setReport] = useState<PurchaseReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<"pdf" | null>(null);
@@ -49,7 +54,7 @@ export default function PurchaseReportsPage() {
   async function onExport(format: "pdf") {
     setExporting(format);
     try {
-      await downloadReportExport("purchases", { format, dateFrom, dateTo });
+      await downloadReportExport("purchases", { format, dateFrom, dateTo, view });
       toast.success(t("common.downloaded", { format: format.toUpperCase() }));
     } catch (err) {
       toast.error(apiError(err, t("common.exportFailed")));
@@ -72,6 +77,7 @@ export default function PurchaseReportsPage() {
         <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
         <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
       </div>
+      <ReportViewToggle value={view} onChange={setView} modes={["whole", "party"]} />
       {loading || !report ? (
         <div className="flex justify-center py-16">
           <Loader2 className="size-6 animate-spin text-primary" />
@@ -95,47 +101,49 @@ export default function PurchaseReportsPage() {
               </Card>
             ))}
           </div>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-nameplate text-sm">{t("purchReports.bySupplier")}</CardTitle>
-            </CardHeader>
-            <CardContent className="px-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t("common.supplier")}</TableHead>
-                    <TableHead>{t("prod.chargeMaterial")}</TableHead>
-                    <TableHead className="text-right">{t("purchReports.count")}</TableHead>
-                    <TableHead className="text-right">{t("purchReports.kg")}</TableHead>
-                    <TableHead className="text-right">{t("purchReports.spend")}</TableHead>
-                    <TableHead className="text-right">{t("purchReports.avgRate")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {report.bySupplier.map((s, i) => (
-                    <TableRow key={`${String(s.supplierId)}-${s.materialType || "scrap"}-${i}`}>
-                      <TableCell>{s.name}</TableCell>
-                      <TableCell className="capitalize text-muted-foreground">
-                        {s.materialType || "scrap"}
-                      </TableCell>
-                      <TableCell className="font-data text-right text-xs">
-                        {s.purchaseCount}
-                      </TableCell>
-                      <TableCell className="font-data text-right text-xs">
-                        {formatKg(s.totalKg)}
-                      </TableCell>
-                      <TableCell className="font-data text-right text-xs">
-                        {formatMoney(s.totalSpend)}
-                      </TableCell>
-                      <TableCell className="font-data text-right text-xs">
-                        {formatMoney(s.avgRate)}
-                      </TableCell>
+          {view === "party" ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-nameplate text-sm">{t("purchReports.bySupplier")}</CardTitle>
+              </CardHeader>
+              <CardContent className="px-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t("common.supplier")}</TableHead>
+                      <TableHead>{t("prod.chargeMaterial")}</TableHead>
+                      <TableHead className="text-right">{t("purchReports.count")}</TableHead>
+                      <TableHead className="text-right">{t("purchReports.kg")}</TableHead>
+                      <TableHead className="text-right">{t("purchReports.spend")}</TableHead>
+                      <TableHead className="text-right">{t("purchReports.avgRate")}</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {report.bySupplier.map((s, i) => (
+                      <TableRow key={`${String(s.supplierId)}-${s.materialType || "scrap"}-${i}`}>
+                        <TableCell>{s.name}</TableCell>
+                        <TableCell className="capitalize text-muted-foreground">
+                          {s.materialType || "scrap"}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {s.purchaseCount}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {formatKg(s.totalKg)}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {formatMoney(s.totalSpend)}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {formatMoney(s.avgRate)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          ) : null}
         </>
       )}
     </div>
