@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
-import { apiError } from "@/lib/materials-api";
+import { apiError, formatMoney } from "@/lib/materials-api";
 import { getPartyGroup, type PartyGroup } from "@/lib/sales-api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -17,6 +17,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
+function formatPending(balance: number) {
+  const abs = formatMoney(Math.abs(balance));
+  if (balance > 0.001) return abs;
+  if (balance < -0.001) return `+ ${abs}`;
+  return formatMoney(0);
+}
+
+function pendingClass(balance: number) {
+  if (balance > 0.001) return "text-amber-700 dark:text-amber-400";
+  if (balance < -0.001) return "text-emerald-700 dark:text-emerald-400";
+  return "text-muted-foreground";
+}
 
 export default function PartyGroupDetailPage() {
   const { t } = useI18n();
@@ -83,11 +96,13 @@ export default function PartyGroupDetailPage() {
                 <TableRow>
                   <TableHead>{t("cus.col.name")}</TableHead>
                   <TableHead>{t("cus.col.phone")}</TableHead>
-                  <TableHead>{t("cus.col.status")}</TableHead>
+                  <TableHead className="text-end">{t("pgroup.col.pending")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {parties.map((party) => (
+                {parties.map((party) => {
+                  const balance = party.balance ?? 0;
+                  return (
                   <TableRow
                     key={party._id}
                     tabIndex={0}
@@ -102,13 +117,14 @@ export default function PartyGroupDetailPage() {
                   >
                     <TableCell className="font-medium">{party.name}</TableCell>
                     <TableCell className="font-data text-xs">{party.phone || "—"}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {party.isActive === false
-                        ? t("cus.status.inactive")
-                        : t("cus.status.active")}
+                    <TableCell
+                      className={`font-data text-end text-sm font-medium ${pendingClass(balance)}`}
+                    >
+                      {formatPending(balance)}
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           )}

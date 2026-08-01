@@ -59,6 +59,31 @@ router.post("/:id/payments", async (req, res, next) => {
   }
 });
 
+router.patch("/:id/ledger/:entryId", async (req, res, next) => {
+  try {
+    const result = await customerService.updateLedgerEntry(
+      req.params.id,
+      req.params.entryId,
+      req.body
+    );
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete("/:id/ledger/:entryId", async (req, res, next) => {
+  try {
+    const result = await customerService.removeLedgerEntry(
+      req.params.id,
+      req.params.entryId
+    );
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/:id", controller.getOne);
 router.patch("/:id", controller.update);
 router.delete("/:id", controller.remove);

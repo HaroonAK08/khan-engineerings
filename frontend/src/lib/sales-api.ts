@@ -22,7 +22,13 @@ export type PartyGroup = {
   notes: string;
   isActive: boolean;
   partyCount?: number;
-  parties?: Array<{ _id: string; name: string; phone: string; isActive: boolean }>;
+  parties?: Array<{
+    _id: string;
+    name: string;
+    phone: string;
+    isActive: boolean;
+    balance?: number;
+  }>;
 };
 
 export type Salesman = {
@@ -107,7 +113,17 @@ export type CustomerLedgerEntry = {
   type: "invoice" | "payment" | "adjustment";
   amount: number;
   signedAmount?: number | null;
-  builty?: { builtyNo: string; billNo?: string } | null;
+  builty?:
+    | string
+    | {
+        _id: string;
+        builtyNo: string;
+        billNo?: string;
+        totalAmount?: number;
+        builtyDate?: string;
+      }
+    | null;
+  payment?: string | { _id: string; amount: number; method?: string } | null;
   entryDate: string;
   notes: string;
 };
@@ -265,6 +281,25 @@ export async function deleteCustomer(id: string) {
 export async function getCustomerLedger(id: string) {
   const { data } = await api.get<{ entries: CustomerLedgerEntry[]; balance: number }>(
     `/customers/${id}/ledger`
+  );
+  return data;
+}
+
+export async function updateCustomerLedgerEntry(
+  customerId: string,
+  entryId: string,
+  body: { amount?: number; entryDate?: string; notes?: string }
+) {
+  const { data } = await api.patch<{ entry: CustomerLedgerEntry; balance: number }>(
+    `/customers/${customerId}/ledger/${entryId}`,
+    body
+  );
+  return data;
+}
+
+export async function deleteCustomerLedgerEntry(customerId: string, entryId: string) {
+  const { data } = await api.delete<{ balance: number }>(
+    `/customers/${customerId}/ledger/${entryId}`
   );
   return data;
 }

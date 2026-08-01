@@ -124,8 +124,8 @@ async function getWithBalance(id) {
 async function listLedger(customerId) {
   await getById(customerId);
   const entries = await CustomerLedgerEntry.find({ customer: customerId })
-    .populate("builty", "builtyNo billNo")
-    .populate("payment", "amount method")
+    .populate("builty", "builtyNo billNo totalAmount builtyDate")
+    .populate("payment", "amount method paymentDate notes")
     .sort({ entryDate: -1, createdAt: -1 });
   const balance = await getBalance(customerId);
   return { entries, balance };
@@ -233,6 +233,81 @@ async function recordPayment(customerId, data = {}) {
   };
 }
 
+async function updateLedgerEntry(customerId, entryId, data) {
+  await getById(customerId);
+  const entry = await CustomerLedgerEntry.findOne({ _id: entryId, customer: customerId });
+  if (!entry) throw httpError("Ledger entry not found", 404);
+  if (entry.type === "invoice") {
+    throw httpError("Edit this builty from builty history", 400);
+  }
+
+  if (data.amount !== undefined) {
+    const n = Number(data.amount);
+    if (entry.type === "payment") {
+      if (!Number.isFinite(n) || n <= 0) {
+        throw httpError("Payment amount must be greater than 0", 400);
+      }
+      entry.amount = roundMoney(n);
+      entry.signedAmount = null;
+    } else {
+      if (!Number.isFinite(n) || n === 0) {
+        throw httpError("Adjustment amount must be non-zero", 400);
+      }
+      const signed = roundMoney(n);
+      entry.signedAmount = signed;
+      entry.amount = Math.abs(signed);
+    }
+  }
+  if (data.entryDate !== undefined) {
+    entry.entryDate = parseDate(data.entryDate, "Entry date");
+  }
+  if (data.notes !== undefined) {
+    entry.notes = String(data.notes).trim();
+  }
+
+  await entry.save();
+
+  if (entry.type === "payment" && entry.payment) {
+    const payment = await CustomerPayment.findById(entry.payment);
+    if (payment) {
+      payment.amount = entry.amount;
+      payment.paymentDate = entry.entryDate;
+      if (data.notes !== undefined) {
+        payment.notes = entry.notes || "Party payment";
+      }
+      await payment.save();
+    }
+  }
+
+  const builtyService = require("../builty/builty.service");
+  await builtyService.syncCustomerBuiltyPaymentStatuses(customerId);
+
+  const populated = await CustomerLedgerEntry.findById(entry._id)
+    .populate("builty", "builtyNo billNo totalAmount builtyDate")
+    .populate("payment", "amount method paymentDate notes");
+  const balance = await getBalance(customerId);
+  return { entry: populated, balance };
+}
+
+async function removeLedgerEntry(customerId, entryId) {
+  await getById(customerId);
+  const entry = await CustomerLedgerEntry.findOne({ _id: entryId, customer: customerId });
+  if (!entry) throw httpError("Ledger entry not found", 404);
+  if (entry.type === "invoice") {
+    throw httpError("Delete this builty from builty history", 400);
+  }
+
+  if (entry.type === "payment" && entry.payment) {
+    await CustomerPayment.deleteOne({ _id: entry.payment });
+  }
+  await entry.deleteOne();
+
+  const builtyService = require("../builty/builty.service");
+  await builtyService.syncCustomerBuiltyPaymentStatuses(customerId);
+  const balance = await getBalance(customerId);
+  return { balance };
+}
+
 async function update(id, data) {
   const customer = await Customer.findById(id);
   if (!customer) throw httpError("Customer not found", 404);
@@ -272,6 +347,8 @@ module.exports = {
   listLedger,
   recordAdjustment,
   recordPayment,
+  updateLedgerEntry,
+  removeLedgerEntry,
   update,
   remove,
 };

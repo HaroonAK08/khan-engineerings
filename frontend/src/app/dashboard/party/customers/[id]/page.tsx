@@ -2,38 +2,28 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, Plus } from "lucide-react";
-import { apiError, formatDate, formatMoney, withSameDayConfirm } from "@/lib/materials-api";
+import { apiError, formatMoney, withSameDayConfirm } from "@/lib/materials-api";
 import {
   getCustomer,
-  listBuilties,
-  paymentStatusLabel,
+  getCustomerLedger,
   recordCustomerAdjustment,
   recordCustomerPayment,
-  type BuiltyRow,
   type Customer,
+  type CustomerLedgerEntry,
 } from "@/lib/sales-api";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { PartyHistoryCalendar } from "@/components/party/party-history-calendar";
 import { useI18n } from "@/hooks/use-i18n";
 import { todayInput } from "@/lib/date-range";
 
 export default function CustomerDetailPage() {
   const { t } = useI18n();
-  const router = useRouter();
   const params = useParams();
   const id = String(params.id);
   const [customer, setCustomer] = useState<Customer | null>(null);
@@ -44,7 +34,7 @@ export default function CustomerDetailPage() {
     totalPaid: 0,
     totalDue: 0,
   });
-  const [builties, setBuilties] = useState<BuiltyRow[]>([]);
+  const [entries, setEntries] = useState<CustomerLedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [showPendingForm, setShowPendingForm] = useState(false);
@@ -60,44 +50,47 @@ export default function CustomerDetailPage() {
   const [paidNotes, setPaidNotes] = useState("");
   const [savingPaid, setSavingPaid] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [detail, rows] = await Promise.all([
-        getCustomer(id),
-        listBuilties({ customer: id }),
-      ]);
-      setCustomer(detail.customer);
-      setBalance(detail.balance);
-      setStats({
-        orderCount: detail.stats.orderCount || 0,
-        totalSales: detail.stats.totalSales || 0,
-        totalPaid: detail.stats.totalPaid || 0,
-        totalDue:
-          detail.stats.totalDue ??
-          (detail.previousPending || 0) + (detail.stats.totalSales || 0),
-      });
-      setBuilties(rows);
-    } catch (err) {
-      toast.error(apiError(err, t("customerDetail.loadFailed")));
-      setCustomer(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [id, t]);
+  const load = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!opts?.silent) setLoading(true);
+      try {
+        const [detail, ledger] = await Promise.all([
+          getCustomer(id),
+          getCustomerLedger(id),
+        ]);
+        setCustomer(detail.customer);
+        setBalance(detail.balance);
+        setEntries(ledger.entries);
+        setStats({
+          orderCount: detail.stats.orderCount || 0,
+          totalSales: detail.stats.totalSales || 0,
+          totalPaid: detail.stats.totalPaid || 0,
+          totalDue:
+            detail.stats.totalDue ??
+            (detail.previousPending || 0) + (detail.stats.totalSales || 0),
+        });
+      } catch (err) {
+        toast.error(apiError(err, t("customerDetail.loadFailed")));
+        setCustomer(null);
+      } finally {
+        if (!opts?.silent) setLoading(false);
+      }
+    },
+    [id, t]
+  );
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   async function onAddPreviousPending() {
     const amount = Number(pendingAmount);
-    if (!Number.isFinite(amount) || amount === 0) {
-      toast.error(t("common.amount"));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error(t("customerDetail.enterAmount"));
       return;
     }
     if (!pendingDate) {
-      toast.error(t("common.date"));
+      toast.error(t("customerDetail.pickDate"));
       return;
     }
     setSavingPending(true);
@@ -105,14 +98,14 @@ export default function CustomerDetailPage() {
       await recordCustomerAdjustment(id, {
         amount,
         entryDate: pendingDate,
-        notes: pendingNotes.trim() || undefined,
+        notes: pendingNotes.trim() || "Previous pending",
       });
       toast.success(t("customerDetail.previousPendingRecorded"));
       setPendingAmount("");
       setPendingNotes("");
       setPendingDate(todayInput());
       setShowPendingForm(false);
-      await load();
+      await load({ silent: true });
     } catch (err) {
       toast.error(apiError(err, t("customerDetail.previousPendingFailed")));
     } finally {
@@ -123,11 +116,11 @@ export default function CustomerDetailPage() {
   async function onAddPayment() {
     const amount = Number(paidAmount);
     if (!Number.isFinite(amount) || amount <= 0) {
-      toast.error(t("common.amount"));
+      toast.error(t("customerDetail.enterAmount"));
       return;
     }
     if (!paidDate) {
-      toast.error(t("common.date"));
+      toast.error(t("customerDetail.pickDate"));
       return;
     }
     setSavingPaid(true);
@@ -148,7 +141,7 @@ export default function CustomerDetailPage() {
       setPaidDate(todayInput());
       setPaidMethod("cash");
       setShowPaidForm(false);
-      await load();
+      await load({ silent: true });
     } catch (err) {
       toast.error(apiError(err, t("customerDetail.paymentFailed")));
     } finally {
@@ -204,7 +197,13 @@ export default function CustomerDetailPage() {
         {[
           { label: t("customerDetail.totalDue"), value: formatMoney(stats.totalDue) },
           { label: t("customerDetail.paid"), value: formatMoney(stats.totalPaid) },
-          { label: t("customerDetail.paymentPending"), value: formatMoney(balance) },
+          {
+            label:
+              balance < 0
+                ? t("customerDetail.advance")
+                : t("customerDetail.paymentPending"),
+            value: formatMoney(Math.abs(balance)),
+          },
         ].map((s) => (
           <Card key={s.label} className="py-0">
             <CardContent className="p-4">
@@ -247,6 +246,7 @@ export default function CustomerDetailPage() {
                 <Input
                   type="number"
                   step="0.01"
+                  min={0}
                   value={pendingAmount}
                   onChange={(e) => setPendingAmount(e.target.value)}
                   placeholder="0"
@@ -296,7 +296,11 @@ export default function CustomerDetailPage() {
             variant="outline"
             size="sm"
             onClick={() => {
-              setShowPaidForm((v) => !v);
+              setShowPaidForm((v) => {
+                const next = !v;
+                if (next) setPaidAmount(balance > 0 ? String(balance) : "");
+                return next;
+              });
               setShowPendingForm(false);
             }}
           >
@@ -355,56 +359,19 @@ export default function CustomerDetailPage() {
         ) : null}
       </Card>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-nameplate text-sm">{t("customerDetail.builtyHistory")}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {builties.length === 0 ? (
-            <p className="py-10 text-center text-sm text-muted-foreground">
-              {t("customerDetail.noBuilties")}
-            </p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("orders.col.date")}</TableHead>
-                  <TableHead>{t("builty.col.no")}</TableHead>
-                  <TableHead className="text-right">{t("orders.col.total")}</TableHead>
-                  <TableHead>{t("orders.col.payment")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {builties.map((b) => (
-                  <TableRow
-                    key={b._id}
-                    tabIndex={0}
-                    className="cursor-pointer"
-                    onClick={() => router.push(`/dashboard/builty/${b._id}`)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        router.push(`/dashboard/builty/${b._id}`);
-                      }
-                    }}
-                  >
-                    <TableCell className="font-data text-sm">{formatDate(b.builtyDate)}</TableCell>
-                    <TableCell className="font-data text-sm">{b.builtyNo}</TableCell>
-                    <TableCell className="font-data text-right text-sm">
-                      {formatMoney(b.totalAmount)}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="secondary" className="font-data">
-                        {paymentStatusLabel(b.paymentStatus, t)}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+      <div className="flex flex-col gap-2">
+        <div>
+          <h2 className="text-nameplate text-sm">{t("customerDetail.ledgerTitle")}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t("customerDetail.ledgerDesc")}
+          </p>
+        </div>
+        <PartyHistoryCalendar
+          customerId={id}
+          entries={entries}
+          onChanged={() => load({ silent: true })}
+        />
+      </div>
     </div>
   );
 }

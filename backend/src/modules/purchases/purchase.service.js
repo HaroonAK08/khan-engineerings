@@ -227,16 +227,21 @@ async function update(id, data) {
   }
 
   const hasTotal = data.totalAmount !== undefined && data.totalAmount !== null && data.totalAmount !== "";
+  // Ignore old amountPaid for validation — payments are supplier-level and
+  // re-allocated by syncPurchasePaid after save. Clamping avoids blocking
+  // rate/qty edits when the new payable is lower than a prior allocation.
   const amounts = computeAmounts({
     quantityKg: purchase.quantityKg,
     ratePerKg: data.ratePerKg !== undefined ? data.ratePerKg : purchase.ratePerKg,
     totalAmount: hasTotal ? data.totalAmount : undefined,
     freightAmount: data.freightAmount !== undefined ? data.freightAmount : purchase.freightAmount,
-    amountPaid: purchase.amountPaid,
+    amountPaid: 0,
   });
   purchase.ratePerKg = amounts.ratePerKg;
   purchase.totalAmount = amounts.totalAmount;
   purchase.freightAmount = amounts.freightAmount;
+  purchase.amountPaid = Math.min(roundMoney(purchase.amountPaid || 0), amounts.payable);
+  purchase.balance = roundMoney(amounts.payable - purchase.amountPaid);
 
   if (data.purchaseDate !== undefined) {
     purchase.purchaseDate = parseDate(data.purchaseDate, "Purchase date");

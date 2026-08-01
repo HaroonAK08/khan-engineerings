@@ -153,7 +153,13 @@ export default function ReceivablesReportPage() {
   }
 
   const isAll = !dateFrom && !dateTo;
-  const byGroup = report?.byGroup || [];
+  const byGroup = (report?.byGroup || []).filter((g) => Boolean(g.groupId));
+  const groupViewTotals = {
+    totalReceivable: byGroup.reduce((s, g) => s + (g.balance || 0), 0),
+    partyCount: byGroup.reduce((s, g) => s + (g.partyCount || 0), 0),
+    recordCount: byGroup.reduce((s, g) => s + (g.recordCount || 0), 0),
+    groupCount: byGroup.length,
+  };
   const drilledGroup = Boolean(groupId) && !partyId;
   const drilledParty = Boolean(partyId);
 
@@ -292,15 +298,37 @@ export default function ReceivablesReportPage() {
                 {[
                   {
                     label: t("recvReports.total"),
-                    value: formatMoney(report.totals.totalReceivable),
+                    value: formatMoney(
+                      view === "group" && !drilledParty && !drilledGroup
+                        ? groupViewTotals.totalReceivable
+                        : report.totals.totalReceivable
+                    ),
                     emphasize: true,
                   },
                   {
                     label: t("recvReports.groups"),
-                    value: String(report.totals.groupCount ?? byGroup.length),
+                    value: String(
+                      view === "group" && !drilledParty && !drilledGroup
+                        ? groupViewTotals.groupCount
+                        : (report.totals.groupCount ?? byGroup.length)
+                    ),
                   },
-                  { label: t("recvReports.parties"), value: String(report.totals.partyCount) },
-                  { label: t("recvReports.records"), value: String(report.totals.recordCount) },
+                  {
+                    label: t("recvReports.parties"),
+                    value: String(
+                      view === "group" && !drilledParty && !drilledGroup
+                        ? groupViewTotals.partyCount
+                        : report.totals.partyCount
+                    ),
+                  },
+                  {
+                    label: t("recvReports.records"),
+                    value: String(
+                      view === "group" && !drilledParty && !drilledGroup
+                        ? groupViewTotals.recordCount
+                        : report.totals.recordCount
+                    ),
+                  },
                 ].map((s) => (
                   <div key={s.label} className="rounded-lg border border-border/70 px-4 py-3">
                     <p className="font-data text-[10px] tracking-wider text-muted-foreground uppercase">
@@ -377,13 +405,13 @@ export default function ReceivablesReportPage() {
                       <TableRow>
                         <TableCell className="font-medium">{t("recvReports.grandTotal")}</TableCell>
                         <TableCell className="font-data text-right text-xs">
-                          {report.totals.partyCount}
+                          {groupViewTotals.partyCount}
                         </TableCell>
                         <TableCell className="font-data text-right text-xs">
-                          {report.totals.recordCount}
+                          {groupViewTotals.recordCount}
                         </TableCell>
                         <TableCell className="font-data text-right text-sm font-medium text-destructive">
-                          {formatMoney(report.totals.totalReceivable)}
+                          {formatMoney(groupViewTotals.totalReceivable)}
                         </TableCell>
                       </TableRow>
                     </TableFooter>

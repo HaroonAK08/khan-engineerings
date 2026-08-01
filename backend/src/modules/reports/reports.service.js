@@ -1054,7 +1054,9 @@ async function getReceivablesReport({ dateFrom, dateTo, groupId, customerId } = 
       });
     }
   }
-  const byGroup = [...byGroupMap.values()].sort((a, b) => b.balance - a.balance);
+  const byGroup = [...byGroupMap.values()]
+    .filter((g) => Boolean(g.groupId))
+    .sort((a, b) => b.balance - a.balance);
   const totalReceivable = roundMoney(records.reduce((s, r) => s + r.balance, 0));
 
   return {

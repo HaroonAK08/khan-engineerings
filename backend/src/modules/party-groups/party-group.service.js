@@ -1,11 +1,16 @@
 const mongoose = require("mongoose");
 const PartyGroup = require("./party-group.model");
 const Customer = require("../customers/customer.model");
+const CustomerLedgerEntry = require("../customers/customer-ledger.model");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
   err.statusCode = statusCode;
   return err;
+}
+
+function roundMoney(n) {
+  return Math.round(n * 100) / 100;
 }
 
 function normalizeIds(ids) {
@@ -72,9 +77,46 @@ async function getWithMembers(id) {
     .select("name phone isActive")
     .sort({ name: 1 })
     .lean();
+
+  const ids = parties.map((p) => p._id);
+  const balanceMap = new Map();
+  if (ids.length) {
+    const balances = await CustomerLedgerEntry.aggregate([
+      { $match: { customer: { $in: ids } } },
+      {
+        $group: {
+          _id: "$customer",
+          balance: {
+            $sum: {
+              $switch: {
+                branches: [
+                  {
+                    case: { $eq: ["$type", "payment"] },
+                    then: { $multiply: ["$amount", -1] },
+                  },
+                  {
+                    case: { $eq: ["$type", "adjustment"] },
+                    then: { $ifNull: ["$signedAmount", 0] },
+                  },
+                ],
+                default: "$amount",
+              },
+            },
+          },
+        },
+      },
+    ]);
+    for (const row of balances) {
+      balanceMap.set(String(row._id), roundMoney(row.balance || 0));
+    }
+  }
+
   return {
     ...group.toObject(),
-    parties,
+    parties: parties.map((p) => ({
+      ...p,
+      balance: balanceMap.get(String(p._id)) || 0,
+    })),
     partyCount: parties.length,
   };
 }
