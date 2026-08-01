@@ -15,6 +15,7 @@ const productionService = require("../production/production.service");
 const expenseService = require("../expenses/expense.service");
 const inventoryService = require("../inventory/inventory.service");
 const financeService = require("../finance/finance.service");
+const mongoose = require("mongoose");
 const { buildExcel, buildExcelMulti, buildPdf, money, fmtDate, sendExcel, sendPdf } = require("./export.util");
 
 function httpError(message, statusCode) {
@@ -503,16 +504,28 @@ async function exportProduction(query, format, res) {
   }
   const report = await productionService.getReport(query);
   const columns = ["Product", "Batches", "Good", "Rejected", "Net kg"];
-  const rows = (report.byProduct || []).map((p) => [
+  const toRow = (p) => [
     p.name,
     p.batchCount,
     p.goodUnits,
     p.rejectedUnits,
     p.netConsumedKg,
-  ]);
+  ];
+  const hubRows = (report.byProduct || [])
+    .filter((p) => (p.family || "hub") === "hub")
+    .map(toRow);
+  const drumRows = (report.byProduct || [])
+    .filter((p) => p.family === "drum")
+    .map(toRow);
+  const sections = [
+    { heading: "Hub", columns, rows: hubRows.length ? hubRows : [["—", 0, 0, 0, 0]] },
+    { heading: "Drum", columns, rows: drumRows.length ? drumRows : [["—", 0, 0, 0, 0]] },
+  ];
   const meta = {
     Period: periodLabel(query.dateFrom, query.dateTo),
     Batches: report.totals.batchCount,
+    Hub: report.totals.byFamily?.hub ?? 0,
+    Drum: report.totals.byFamily?.drum ?? 0,
     "Good units": report.totals.goodUnits,
     "Reject rate": `${report.totals.rejectRate}%`,
   };
@@ -521,13 +534,17 @@ async function exportProduction(query, format, res) {
     const buf = await buildPdf({
       title,
       subtitle: "Khan Engineerings",
-      columns,
-      rows,
+      sections,
       metaLines: Object.entries(meta).map(([k, v]) => `${k}: ${v}`),
     });
     return sendPdf(res, buf, "production-report.pdf");
   }
-  const buf = await buildExcel({ title, sheetName: "Production", columns, rows, meta });
+  const buf = await buildExcel({
+    title,
+    sheetName: "Production",
+    sections,
+    meta,
+  });
   return sendExcel(res, buf, "production-report.xlsx");
 }
 
@@ -840,12 +857,21 @@ function inDateRange(date, dateFrom, dateTo) {
  * Receivables after party payments: payments settle previous pending first,
  * then oldest builties — same as party "Payment pending".
  */
-async function getReceivablesReport({ dateFrom, dateTo, groupId } = {}) {
+async function getReceivablesReport({ dateFrom, dateTo, groupId, customerId } = {}) {
   const PartyGroup = require("../party-groups/party-group.model");
   let allowedCustomerIds = null;
   let groupMeta = null;
+  let partyMeta = null;
 
-  if (groupId) {
+  if (groupId === "__ungrouped__" || groupId === "ungrouped") {
+    groupMeta = { id: "", name: "Ungrouped" };
+    const members = await Customer.find({
+      $or: [{ group: null }, { group: { $exists: false } }],
+    })
+      .select("_id")
+      .lean();
+    allowedCustomerIds = new Set(members.map((m) => String(m._id)));
+  } else if (groupId) {
     const group = await PartyGroup.findById(groupId).lean();
     if (!group) throw httpError("Party group not found", 404);
     groupMeta = { id: String(group._id), name: group.name };
@@ -853,9 +879,23 @@ async function getReceivablesReport({ dateFrom, dateTo, groupId } = {}) {
     allowedCustomerIds = new Set(members.map((m) => String(m._id)));
   }
 
+  if (customerId) {
+    if (!mongoose.isValidObjectId(customerId)) throw httpError("Invalid party", 400);
+    const customer = await Customer.findById(customerId).select("name phone").lean();
+    if (!customer) throw httpError("Party not found", 404);
+    partyMeta = { id: String(customer._id), name: customer.name };
+    const id = String(customer._id);
+    if (allowedCustomerIds && !allowedCustomerIds.has(id)) {
+      allowedCustomerIds = new Set();
+    } else {
+      allowedCustomerIds = new Set([id]);
+    }
+  }
+
   const [builties, adjustments, paymentsAgg, allGroups] = await Promise.all([
     Builty.find({})
       .populate("customer", "name phone group")
+      .populate({ path: "items.product", select: "name sku" })
       .sort({ builtyDate: 1, createdAt: 1 })
       .lean(),
     CustomerLedgerEntry.find({ type: "adjustment", signedAmount: { $gt: 0 } })
@@ -907,6 +947,7 @@ async function getReceivablesReport({ dateFrom, dateTo, groupId } = {}) {
       date: a.entryDate,
       reference: a.notes?.trim() || "Previous pending",
       totalAmount: roundMoney(a.signedAmount || a.amount),
+      products: [],
       href: `/dashboard/party/customers/${party.id}`,
     });
   }
@@ -916,12 +957,21 @@ async function getReceivablesReport({ dateFrom, dateTo, groupId } = {}) {
     const id = cust && typeof cust === "object" ? cust._id : b.customer;
     const party = ensureParty(cust, id);
     if (!party) continue;
+    const products = (Array.isArray(b.items) ? b.items : [])
+      .map((line) => {
+        const name =
+          line.product && typeof line.product === "object" ? line.product.name : "Item";
+        const qty = line.quantity || 0;
+        return `${name} x ${qty}`;
+      })
+      .filter(Boolean);
     party.builties.push({
       type: "builty",
       id: String(b._id),
       date: b.builtyDate,
       reference: b.builtyNo,
       totalAmount: roundMoney(b.totalAmount),
+      products,
       href: `/dashboard/builty/${b._id}`,
     });
   }
@@ -955,6 +1005,7 @@ async function getReceivablesReport({ dateFrom, dateTo, groupId } = {}) {
         partyName: party.name,
         partyPhone: party.phone,
         groupId: party.groupId || "",
+        products: item.products || [],
         totalAmount: item.totalAmount,
         amountPaid,
         balance,
@@ -1009,6 +1060,7 @@ async function getReceivablesReport({ dateFrom, dateTo, groupId } = {}) {
   return {
     period: { from: dateFrom || null, to: dateTo || null },
     group: groupMeta,
+    party: partyMeta,
     totals: {
       totalReceivable,
       partyCount: byParty.length,
@@ -1106,14 +1158,17 @@ async function exportReceivables(query, format, res) {
     Overall: !query.dateFrom && !query.dateTo ? "All" : period,
     View: viewLabel,
     Group: report.group?.name || "All groups",
+    Party: report.party?.name || "All parties",
     "Total receivables": money(report.totals.totalReceivable),
     Parties: report.totals.partyCount,
     Groups: report.totals.groupCount,
     Records: report.totals.recordCount,
   };
-  const title = report.group
-    ? `Money receivables report — ${report.group.name}`
-    : "Money receivables report";
+  const title = report.party
+    ? `Money receivables — ${report.party.name}`
+    : report.group
+      ? `Money receivables report — ${report.group.name}`
+      : "Money receivables report";
 
   const partyColumns = ["Party", "Records", "Party receivable"];
   const partyRows = (report.byParty || []).map((p) => [
@@ -1145,12 +1200,22 @@ async function exportReceivables(query, format, res) {
     ]);
   }
 
-  const recordColumns = ["Date", "Type", "Reference", "Party", "Total", "Paid", "Balance"];
+  const recordColumns = [
+    "Date",
+    "Type",
+    "Reference",
+    "Party",
+    "Products",
+    "Total",
+    "Paid",
+    "Balance",
+  ];
   const recordRows = (report.records || []).map((r) => [
     fmtDate(r.date),
     r.type === "previous_pending" ? "Previous pending" : "Builty",
     r.reference,
     r.partyName,
+    Array.isArray(r.products) && r.products.length ? r.products.join(", ") : "—",
     money(r.totalAmount),
     money(r.amountPaid),
     money(r.balance),
@@ -1158,7 +1223,20 @@ async function exportReceivables(query, format, res) {
 
   if (format === "pdf") {
     const sections = [];
-    if (view === "group") {
+    if (query.customerId || report.party) {
+      sections.push({
+        heading: report.party
+          ? `Receivables — ${report.party.name}`
+          : "Party receivables",
+        columns: partyColumns,
+        rows: partyRows,
+      });
+      sections.push({
+        heading: "All records",
+        columns: recordColumns,
+        rows: recordRows,
+      });
+    } else if (view === "group") {
       sections.push({
         heading: "Receivable total of each group",
         columns: groupColumns,
@@ -1195,6 +1273,7 @@ async function exportReceivables(query, format, res) {
         `View: ${viewLabel}`,
         `Overall: ${meta.Overall}`,
         `Group: ${meta.Group}`,
+        `Party: ${meta.Party}`,
         `Total receivables: ${meta["Total receivables"]}`,
         `Parties: ${meta.Parties}`,
         `Records: ${meta.Records}`,
@@ -1377,21 +1456,43 @@ async function collectModuleSection(kind, query) {
 
   if (kind === "production") {
     const report = await productionService.getReport(query);
+    const columns = ["Product", "Batches", "Good", "Rejected", "Net kg"];
+    const toRow = (p) => [
+      p.name,
+      p.batchCount,
+      p.goodUnits,
+      p.rejectedUnits,
+      p.netConsumedKg,
+    ];
+    const hubRows = (report.byProduct || [])
+      .filter((p) => (p.family || "hub") === "hub")
+      .map(toRow);
+    const drumRows = (report.byProduct || [])
+      .filter((p) => p.family === "drum")
+      .map(toRow);
     return {
       id: "production",
       sheetName: "Production",
       title: "Production",
       heading: "Production",
-      columns: ["Product", "Batches", "Good", "Rejected", "Net kg"],
-      rows: (report.byProduct || []).map((p) => [
-        p.name,
-        p.batchCount,
-        p.goodUnits,
-        p.rejectedUnits,
-        p.netConsumedKg,
-      ]),
+      columns,
+      rows: [...hubRows, ...drumRows],
+      subsections: [
+        {
+          heading: "Hub",
+          columns,
+          rows: hubRows.length ? hubRows : [["—", 0, 0, 0, 0]],
+        },
+        {
+          heading: "Drum",
+          columns,
+          rows: drumRows.length ? drumRows : [["—", 0, 0, 0, 0]],
+        },
+      ],
       meta: {
         Batches: report.totals.batchCount,
+        Hub: report.totals.byFamily?.hub ?? 0,
+        Drum: report.totals.byFamily?.drum ?? 0,
         "Good units": report.totals.goodUnits,
       },
     };
@@ -1543,30 +1644,54 @@ async function exportCombined(modules, query, format, res, filenameBase) {
       title,
       subtitle: "Khan Engineerings",
       metaLines,
-      sections: sections.map((s) => ({
-        heading: `${s.heading}${
-          Object.keys(s.meta || {}).length
-            ? ` — ${Object.entries(s.meta)
-                .map(([k, v]) => `${k}: ${v}`)
-                .join(" · ")}`
-            : ""
-        }`,
-        columns: s.columns,
-        rows: s.rows,
-      })),
+      sections: sections.flatMap((s) => {
+        const metaSuffix = Object.keys(s.meta || {}).length
+          ? ` — ${Object.entries(s.meta)
+              .map(([k, v]) => `${k}: ${v}`)
+              .join(" · ")}`
+          : "";
+        if (Array.isArray(s.subsections) && s.subsections.length > 0) {
+          return s.subsections.map((sub) => ({
+            heading: `${s.heading} — ${sub.heading}${metaSuffix}`,
+            columns: sub.columns,
+            rows: sub.rows,
+          }));
+        }
+        return [
+          {
+            heading: `${s.heading}${metaSuffix}`,
+            columns: s.columns,
+            rows: s.rows,
+          },
+        ];
+      }),
     });
     return sendPdf(res, buf, `${filenameBase}.pdf`);
   }
 
   const buf = await buildExcelMulti({
     title,
-    sheets: sections.map((s) => ({
-      sheetName: s.sheetName,
-      title: s.title,
-      columns: s.columns,
-      rows: s.rows,
-      meta: { Period: period, ...(s.meta || {}) },
-    })),
+    sheets: sections.flatMap((s) => {
+      const meta = { Period: period, ...(s.meta || {}) };
+      if (Array.isArray(s.subsections) && s.subsections.length > 0) {
+        return s.subsections.map((sub) => ({
+          sheetName: String(`${s.sheetName}-${sub.heading}`).slice(0, 31),
+          title: `${s.title} — ${sub.heading}`,
+          columns: sub.columns,
+          rows: sub.rows,
+          meta,
+        }));
+      }
+      return [
+        {
+          sheetName: s.sheetName,
+          title: s.title,
+          columns: s.columns,
+          rows: s.rows,
+          meta,
+        },
+      ];
+    }),
   });
   return sendExcel(res, buf, `${filenameBase}.xlsx`);
 }
@@ -1601,6 +1726,7 @@ async function getCombinedPreview(query) {
       heading: s.heading,
       columns: s.columns,
       rows: s.rows,
+      subsections: s.subsections || null,
       meta: s.meta || {},
     })),
   };

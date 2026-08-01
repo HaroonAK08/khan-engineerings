@@ -17,6 +17,7 @@ import {
   Handshake,
   Package,
   ScrollText,
+  FolderKanban,
 } from "lucide-react";
 import type { MessageKey } from "@/lib/i18n/messages";
 
@@ -42,6 +43,11 @@ export const EXPENSES_CHILDREN: NavChild[] = [
   { labelKey: "nav.expenses.other", href: "/dashboard/expenses/other", icon: MoreHorizontal },
 ];
 
+export const PARTY_CHILDREN: NavChild[] = [
+  { labelKey: "nav.party.parties", href: "/dashboard/party", icon: Users, exact: true },
+  { labelKey: "nav.party.groups", href: "/dashboard/party/groups", icon: FolderKanban },
+];
+
 export const NAV_ITEMS: NavItem[] = [
   { labelKey: "nav.dashboard", href: "/dashboard", icon: LayoutDashboard, ready: true },
   { labelKey: "nav.inventory", href: "/dashboard/inventory", icon: Boxes, ready: true },
@@ -54,7 +60,13 @@ export const NAV_ITEMS: NavItem[] = [
     ready: true,
     children: EXPENSES_CHILDREN,
   },
-  { labelKey: "nav.party", href: "/dashboard/party", icon: Users, ready: true },
+  {
+    labelKey: "nav.party",
+    href: "/dashboard/party",
+    icon: Users,
+    ready: true,
+    children: PARTY_CHILDREN,
+  },
   { labelKey: "nav.builty", href: "/dashboard/builty", icon: ScrollText, ready: true },
   { labelKey: "nav.claims", href: "/dashboard/claims", icon: RotateCcw, ready: true },
   { labelKey: "nav.suppliers", href: "/dashboard/suppliers", icon: Truck, ready: true },

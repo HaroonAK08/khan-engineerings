@@ -4,9 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { History, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, Pencil, Trash2 } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
-import { thisMonthRange } from "@/lib/date-range";
+import { thisMonthRange, toDateInput } from "@/lib/date-range";
 import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
 import {
   customerName,
@@ -17,8 +17,9 @@ import {
 } from "@/lib/sales-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -28,37 +29,51 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-export default function BuiltyPage() {
+function endOfPreviousMonth(now = new Date()) {
+  return toDateInput(new Date(now.getFullYear(), now.getMonth(), 0));
+}
+
+export default function BuiltyHistoryPage() {
   const { t } = useI18n();
   const router = useRouter();
-  const month = useMemo(() => thisMonthRange(), []);
+  const defaults = useMemo(
+    () => ({
+      dateFrom: "",
+      dateTo: endOfPreviousMonth(),
+    }),
+    []
+  );
   const [rows, setRows] = useState<BuiltyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [paymentStatus, setPaymentStatus] = useState("");
+  const [dateFrom, setDateFrom] = useState(defaults.dateFrom);
+  const [dateTo, setDateTo] = useState(defaults.dateTo);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      const monthStart = thisMonthRange().from;
       const params: {
         q?: string;
         paymentStatus?: string;
-        dateFrom: string;
-        dateTo: string;
-      } = {
-        dateFrom: month.from,
-        dateTo: month.to,
-      };
+        dateFrom?: string;
+        dateTo?: string;
+      } = {};
       if (q.trim()) params.q = q.trim();
       if (paymentStatus) params.paymentStatus = paymentStatus;
+      if (dateFrom) params.dateFrom = dateFrom;
+      // Cap at day before this month so current-month rows stay on the main page
+      const cappedTo = dateTo && dateTo < monthStart ? dateTo : endOfPreviousMonth();
+      params.dateTo = cappedTo;
       setRows(await listBuilties(params));
     } catch (err) {
       toast.error(apiError(err, t("builty.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, [q, paymentStatus, month.from, month.to, t]);
+  }, [q, paymentStatus, dateFrom, dateTo, t]);
 
   useEffect(() => {
     const timer = setTimeout(load, 200);
@@ -81,34 +96,27 @@ export default function BuiltyPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
+          <Link
+            href="/dashboard/builty"
+            className="mb-2 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="size-4" />
+            {t("builty.backToList")}
+          </Link>
           <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
             {t("builty.eyebrow")}
           </p>
-          <h1 className="text-nameplate text-xl">{t("builty.title")}</h1>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href="/dashboard/builty/history"
-            className="inline-flex h-12 w-fit min-w-44 items-center justify-center gap-2 rounded-lg border border-input bg-background px-8 text-base font-semibold text-foreground shadow-sm transition-colors hover:bg-muted"
-          >
-            <History className="size-5" />
-            {t("builty.history")}
-          </Link>
-          <Link
-            href="/dashboard/builty/new"
-            className="inline-flex h-12 w-fit min-w-44 items-center justify-center gap-2 rounded-lg bg-primary px-8 text-base font-semibold text-primary-foreground shadow-sm"
-          >
-            <Plus className="size-5" />
-            {t("builty.new")}
-          </Link>
+          <h1 className="text-nameplate text-xl">{t("builty.historyTitle")}</h1>
         </div>
       </div>
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <CardTitle className="text-base">{t("builty.historyTitle")}</CardTitle>
+          <CardDescription>{t("builty.historyDesc")}</CardDescription>
+          <div className="grid grid-cols-1 gap-2 pt-2 sm:grid-cols-2 lg:grid-cols-4">
             <Input
               placeholder={t("builty.search")}
               value={q}
@@ -124,6 +132,24 @@ export default function BuiltyPage() {
               <option value="partial">{t("orders.partial")}</option>
               <option value="paid">{t("orders.paid")}</option>
             </select>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">{t("builty.dateFrom")}</Label>
+              <Input
+                type="date"
+                value={dateFrom}
+                max={endOfPreviousMonth()}
+                onChange={(e) => setDateFrom(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">{t("builty.dateTo")}</Label>
+              <Input
+                type="date"
+                value={dateTo}
+                max={endOfPreviousMonth()}
+                onChange={(e) => setDateTo(e.target.value)}
+              />
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -132,7 +158,7 @@ export default function BuiltyPage() {
               <Loader2 className="size-6 animate-spin text-primary" />
             </div>
           ) : rows.length === 0 ? (
-            <p className="py-10 text-center text-sm text-muted-foreground">{t("builty.emptyMonth")}</p>
+            <p className="py-10 text-center text-sm text-muted-foreground">{t("builty.historyEmpty")}</p>
           ) : (
             <Table>
               <TableHeader>

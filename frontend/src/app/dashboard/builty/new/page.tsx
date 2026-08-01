@@ -12,9 +12,11 @@ import {
   createBuilty,
   createCustomer,
   getCustomer,
+  getPartyProductPrice,
   listCustomers,
   type BuiltyLineInput,
   type Customer,
+  type PartyProductPrice,
   type PricingMode,
 } from "@/lib/sales-api";
 import type { Product } from "@/types/production";
@@ -53,6 +55,26 @@ function emptyLine(): Line {
   return { product: "", quantity: 1, pricingMode: "rate_kg", ratePerKg: 0, fixedAmount: 0 };
 }
 
+function applyPartyPrice(
+  product: Product,
+  last: PartyProductPrice | null,
+  current: Line
+): Partial<Line> {
+  if (last) {
+    return {
+      product: product._id,
+      pricingMode: last.pricingMode,
+      ratePerKg: last.pricingMode === "rate_kg" ? last.ratePerKg : 0,
+      fixedAmount: last.pricingMode === "fixed" ? last.unitPrice : 0,
+    };
+  }
+  return {
+    product: product._id,
+    ratePerKg:
+      Number(product.pricePerKg) > 0 ? Number(product.pricePerKg) : current.ratePerKg || 0,
+  };
+}
+
 function lineTotal(products: Product[], line: Line) {
   const product = products.find((p) => p._id === line.product);
   const weightKg = Number(product?.weightKg) || 0;
@@ -84,6 +106,7 @@ function BuiltyForm() {
   const [productPickerIndex, setProductPickerIndex] = useState<number | null>(null);
   const [productSearch, setProductSearch] = useState("");
   const [productFamilyFilter, setProductFamilyFilter] = useState<"all" | "hub" | "drum">("all");
+  const [partyPriceHint, setPartyPriceHint] = useState<Record<number, boolean>>({});
 
   const [newCustomerOpen, setNewCustomerOpen] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState("");
@@ -168,6 +191,22 @@ function BuiltyForm() {
 
   function updateLine(index: number, patch: Partial<Line>) {
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
+  }
+
+  async function selectProduct(index: number, product: Product) {
+    let last: PartyProductPrice | null = null;
+    if (customer) {
+      try {
+        last = await getPartyProductPrice(customer, product._id);
+      } catch {
+        last = null;
+      }
+    }
+    updateLine(index, applyPartyPrice(product, last, lines[index] || emptyLine()));
+    setPartyPriceHint((prev) => ({ ...prev, [index]: Boolean(last) }));
+    setProductPickerIndex(null);
+    setProductSearch("");
+    setProductFamilyFilter("all");
   }
 
   function removeLine(index: number) {
@@ -497,18 +536,7 @@ function BuiltyForm() {
                                         "flex w-full flex-col gap-0.5 px-3 py-2 text-left text-sm",
                                         familyPickerItemClass(p.family, line.product === p._id)
                                       )}
-                                      onClick={() => {
-                                        updateLine(index, {
-                                          product: p._id,
-                                          ratePerKg:
-                                            Number(p.pricePerKg) > 0
-                                              ? Number(p.pricePerKg)
-                                              : line.ratePerKg || 0,
-                                        });
-                                        setProductPickerIndex(null);
-                                        setProductSearch("");
-                                        setProductFamilyFilter("all");
-                                      }}
+                                      onClick={() => void selectProduct(index, p)}
                                     >
                                       <span className="font-medium">{p.name}</span>
                                       <span
@@ -585,6 +613,11 @@ function BuiltyForm() {
                           {t("builtyNew.mode.fixed")}
                         </button>
                       </div>
+                      {partyPriceHint[index] ? (
+                        <p className="text-[11px] text-muted-foreground">
+                          {t("builtyNew.partyLastPrice")}
+                        </p>
+                      ) : null}
                     </div>
                     {line.pricingMode === "rate_kg" ? (
                       <div className="flex flex-col gap-1">

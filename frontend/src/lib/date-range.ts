@@ -10,7 +10,7 @@ export function todayInput() {
   return toDateInput(new Date());
 }
 
-/** First and last day of the calendar month that is currently running. */
+/** First and last day of the current calendar month. */
 export function thisMonthRange(now = new Date()) {
   return {
     from: toDateInput(new Date(now.getFullYear(), now.getMonth(), 1)),
@@ -18,18 +18,7 @@ export function thisMonthRange(now = new Date()) {
   };
 }
 
-/** First and last day of the previous calendar month. */
-export function previousMonthRange(now = new Date()) {
-  return {
-    from: toDateInput(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
-    to: toDateInput(new Date(now.getFullYear(), now.getMonth(), 0)),
-  };
-}
-
-/**
- * Default range for report/list filters: previous month.
- * (Early in a new month, work is still usually on last month’s data.)
- */
+/** Default range for report/list filters: current calendar month. */
 export function currentMonthRange(now = new Date()) {
-  return previousMonthRange(now);
+  return thisMonthRange(now);
 }

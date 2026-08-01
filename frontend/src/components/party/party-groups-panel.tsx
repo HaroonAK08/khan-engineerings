@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -48,6 +49,7 @@ type FormValues = z.infer<typeof schema>;
 
 export function PartyGroupsPanel() {
   const { t } = useI18n();
+  const router = useRouter();
   const [groups, setGroups] = useState<PartyGroup[]>([]);
   const [allParties, setAllParties] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -198,12 +200,26 @@ export function PartyGroupsPanel() {
               </TableHeader>
               <TableBody>
                 {groups.map((g) => (
-                  <TableRow key={g._id}>
+                  <TableRow
+                    key={g._id}
+                    tabIndex={0}
+                    className="cursor-pointer"
+                    onClick={() => router.push(`/dashboard/party/groups/${g._id}`)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        router.push(`/dashboard/party/groups/${g._id}`);
+                      }
+                    }}
+                  >
                     <TableCell className="font-medium">{g.name}</TableCell>
                     <TableCell className="font-data text-xs">{g.partyCount ?? 0}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell
+                      className="text-right"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <div className="inline-flex items-center gap-1">
-                        <Button size="sm" variant="ghost" onClick={() => openEdit(g)}>
+                        <Button size="sm" variant="ghost" onClick={() => void openEdit(g)}>
                           {t("cus.edit")}
                         </Button>
                         <Button
@@ -211,7 +227,7 @@ export function PartyGroupsPanel() {
                           variant="ghost"
                           className="text-muted-foreground hover:text-destructive"
                           disabled={deletingId === g._id}
-                          onClick={() => onDelete(g)}
+                          onClick={() => void onDelete(g)}
                         >
                           {deletingId === g._id ? (
                             <Loader2 className="size-4 animate-spin" />

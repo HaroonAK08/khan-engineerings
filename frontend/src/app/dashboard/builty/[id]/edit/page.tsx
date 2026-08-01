@@ -11,11 +11,13 @@ import { getFinishedStock } from "@/lib/inventory-api";
 import {
   customerName,
   getBuilty,
+  getPartyProductPrice,
   listCustomers,
   productName,
   updateBuilty,
   type Builty,
   type BuiltyLineInput,
+  type PartyProductPrice,
   type PricingMode,
 } from "@/lib/sales-api";
 import type { Product } from "@/types/production";
@@ -42,6 +44,26 @@ type Line = {
 
 function emptyLine(): Line {
   return { product: "", quantity: 1, pricingMode: "rate_kg", ratePerKg: 0, fixedAmount: 0 };
+}
+
+function applyPartyPrice(
+  product: Product,
+  last: PartyProductPrice | null,
+  current: Line
+): Partial<Line> {
+  if (last) {
+    return {
+      product: product._id,
+      pricingMode: last.pricingMode,
+      ratePerKg: last.pricingMode === "rate_kg" ? last.ratePerKg : 0,
+      fixedAmount: last.pricingMode === "fixed" ? last.unitPrice : 0,
+    };
+  }
+  return {
+    product: product._id,
+    ratePerKg:
+      Number(product.pricePerKg) > 0 ? Number(product.pricePerKg) : current.ratePerKg || 0,
+  };
 }
 
 function toDateInput(value?: string) {
@@ -164,6 +186,27 @@ function EditBuiltyForm() {
 
   function updateLine(index: number, patch: Partial<Line>) {
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
+  }
+
+  async function selectProduct(index: number, product: Product) {
+    const customerId =
+      builty?.customer && typeof builty.customer === "object"
+        ? builty.customer._id
+        : typeof builty?.customer === "string"
+          ? builty.customer
+          : "";
+    let last: PartyProductPrice | null = null;
+    if (customerId) {
+      try {
+        last = await getPartyProductPrice(customerId, product._id);
+      } catch {
+        last = null;
+      }
+    }
+    updateLine(index, applyPartyPrice(product, last, lines[index] || emptyLine()));
+    setProductPickerIndex(null);
+    setProductSearch("");
+    setProductFamilyFilter("all");
   }
 
   function removeLine(index: number) {
@@ -396,18 +439,7 @@ function EditBuiltyForm() {
                                         "flex w-full flex-col gap-0.5 px-3 py-2 text-left text-sm",
                                         familyPickerItemClass(p.family, line.product === p._id)
                                       )}
-                                      onClick={() => {
-                                        updateLine(index, {
-                                          product: p._id,
-                                          ratePerKg:
-                                            Number(p.pricePerKg) > 0
-                                              ? Number(p.pricePerKg)
-                                              : line.ratePerKg || 0,
-                                        });
-                                        setProductPickerIndex(null);
-                                        setProductSearch("");
-                                        setProductFamilyFilter("all");
-                                      }}
+                                      onClick={() => void selectProduct(index, p)}
                                     >
                                       <span className="font-medium">{p.name}</span>
                                       <span

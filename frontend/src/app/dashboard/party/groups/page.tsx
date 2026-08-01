@@ -3,16 +3,16 @@
 import { Suspense } from "react";
 import { Loader2 } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
-import { CustomersPanel } from "@/components/party/customers-panel";
+import { PartyGroupsPanel } from "@/components/party/party-groups-panel";
 
-export default function PartyPage() {
+export default function PartyGroupsPage() {
   const { t } = useI18n();
 
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-nameplate text-xl">{t("party.title")}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{t("party.partiesSubtitle")}</p>
+        <h1 className="text-nameplate text-xl">{t("pgroup.pageTitle")}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{t("pgroup.pageSubtitle")}</p>
       </div>
 
       <Suspense
@@ -22,7 +22,7 @@ export default function PartyPage() {
           </div>
         }
       >
-        <CustomersPanel />
+        <PartyGroupsPanel />
       </Suspense>
     </div>
   );

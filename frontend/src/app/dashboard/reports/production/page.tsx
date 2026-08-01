@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -50,6 +50,15 @@ export default function ProductionReportsHubPage() {
     return () => clearTimeout(t);
   }, [load]);
 
+  const hubProducts = useMemo(
+    () => (report?.byProduct || []).filter((p) => (p.family || "hub") === "hub"),
+    [report]
+  );
+  const drumProducts = useMemo(
+    () => (report?.byProduct || []).filter((p) => p.family === "drum"),
+    [report]
+  );
+
   async function onExport(format: "pdf") {
     setExporting(format);
     try {
@@ -60,6 +69,75 @@ export default function ProductionReportsHubPage() {
     } finally {
       setExporting(null);
     }
+  }
+
+  function renderFamilyTable(
+    family: "hub" | "drum",
+    rows: NonNullable<ProductionReport["byProduct"]>
+  ) {
+    const title = family === "hub" ? t("prod.hub") : t("prod.drum");
+    const accent =
+      family === "hub"
+        ? "border-sky-500/30 bg-sky-500/5"
+        : "border-amber-500/30 bg-amber-500/5";
+
+    return (
+      <Card className={accent}>
+        <CardHeader>
+          <CardTitle className="text-nameplate text-sm">{title}</CardTitle>
+        </CardHeader>
+        <CardContent className="px-0">
+          {rows.length === 0 ? (
+            <p className="px-6 py-8 text-center text-sm text-muted-foreground">
+              {t("prodReports.noProdRange")}
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("common.product")}</TableHead>
+                  <TableHead className="text-right">{t("prodReports.runs")}</TableHead>
+                  <TableHead className="text-right">{t("prodReports.pieces")}</TableHead>
+                  <TableHead className="text-right">{t("prodReportsHub.usedKg")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((p) => {
+                  const href = `/dashboard/reports/production/${p.productId}?dateFrom=${encodeURIComponent(dateFrom)}&dateTo=${encodeURIComponent(dateTo)}`;
+                  return (
+                    <TableRow
+                      key={String(p.productId)}
+                      className="cursor-pointer hover:bg-muted/50"
+                    >
+                      <TableCell>
+                        <Link href={href} className="block font-medium hover:underline">
+                          {p.name}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="font-data text-right text-xs">
+                        <Link href={href} className="block">
+                          {p.batchCount}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="font-data text-right text-xs">
+                        <Link href={href} className="block">
+                          {p.goodUnits}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="font-data text-right text-xs">
+                        <Link href={href} className="block">
+                          {formatKg(p.netConsumedKg)}
+                        </Link>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    );
   }
 
   return (
@@ -108,55 +186,36 @@ export default function ProductionReportsHubPage() {
               </Card>
             ))}
           </div>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-nameplate text-sm">{t("prodReports.byProduct")}</CardTitle>
-            </CardHeader>
-            <CardContent className="px-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t("common.product")}</TableHead>
-                    <TableHead className="text-right">{t("prodReports.runs")}</TableHead>
-                    <TableHead className="text-right">{t("prodReports.pieces")}</TableHead>
-                    <TableHead className="text-right">{t("prodReportsHub.usedKg")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(report.byProduct || []).map((p) => {
-                    const href = `/dashboard/reports/production/${p.productId}?dateFrom=${encodeURIComponent(dateFrom)}&dateTo=${encodeURIComponent(dateTo)}`;
-                    return (
-                      <TableRow
-                        key={String(p.productId)}
-                        className="cursor-pointer hover:bg-muted/50"
-                      >
-                        <TableCell>
-                          <Link href={href} className="block font-medium hover:underline">
-                            {p.name}
-                          </Link>
-                        </TableCell>
-                        <TableCell className="font-data text-right text-xs">
-                          <Link href={href} className="block">
-                            {p.batchCount}
-                          </Link>
-                        </TableCell>
-                        <TableCell className="font-data text-right text-xs">
-                          <Link href={href} className="block">
-                            {p.goodUnits}
-                          </Link>
-                        </TableCell>
-                        <TableCell className="font-data text-right text-xs">
-                          <Link href={href} className="block">
-                            {formatKg(p.netConsumedKg)}
-                          </Link>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+          <div className="grid grid-cols-2 gap-3">
+            <Card className="border-sky-500/30 bg-sky-500/5 py-0">
+              <CardContent className="p-4">
+                <p className="font-data text-[10px] tracking-wider text-muted-foreground uppercase">
+                  {t("prod.hub")}
+                </p>
+                <p className="font-data mt-1 text-xl">
+                  {report.totals.byFamily?.hub ?? 0} {t("prodReports.runs").toLowerCase()}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {hubProducts.reduce((s, p) => s + p.goodUnits, 0)} {t("prodReports.pieces").toLowerCase()}
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="border-amber-500/30 bg-amber-500/5 py-0">
+              <CardContent className="p-4">
+                <p className="font-data text-[10px] tracking-wider text-muted-foreground uppercase">
+                  {t("prod.drum")}
+                </p>
+                <p className="font-data mt-1 text-xl">
+                  {report.totals.byFamily?.drum ?? 0} {t("prodReports.runs").toLowerCase()}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {drumProducts.reduce((s, p) => s + p.goodUnits, 0)} {t("prodReports.pieces").toLowerCase()}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+          {renderFamilyTable("hub", hubProducts)}
+          {renderFamilyTable("drum", drumProducts)}
         </>
       )}
     </div>

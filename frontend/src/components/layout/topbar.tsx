@@ -153,7 +153,7 @@ export function Topbar() {
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent
           side={isUrdu ? "right" : "left"}
-          className="w-80 gap-0 border-sidebar-border bg-sidebar p-0 text-sidebar-foreground"
+          className="w-60 gap-0 border-sidebar-border bg-sidebar p-0 text-sidebar-foreground"
           showCloseButton
         >
           <SheetHeader className="sr-only">

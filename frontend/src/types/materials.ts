@@ -39,6 +39,7 @@ export type LedgerEntry = {
   type: "purchase" | "payment" | "adjustment";
   amount: number;
   signedAmount?: number | null;
+  appliesTo?: string | null;
   purchase?:
     | string
     | null

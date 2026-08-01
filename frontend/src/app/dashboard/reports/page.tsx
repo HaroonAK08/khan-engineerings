@@ -299,7 +299,7 @@ export default function ReportsHubPage() {
             </p>
           ) : (
             preview.sections.map((section) => (
-              <div key={section.id} className="flex flex-col gap-2">
+              <div key={section.id} className="flex flex-col gap-3">
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                   <h3 className="text-nameplate text-sm">{section.heading || section.title}</h3>
                   {Object.keys(section.meta || {}).length > 0 && (
@@ -310,7 +310,44 @@ export default function ReportsHubPage() {
                     </p>
                   )}
                 </div>
-                {section.rows.length === 0 ? (
+                {section.subsections && section.subsections.length > 0 ? (
+                  section.subsections.map((sub) => (
+                    <div key={`${section.id}-${sub.heading}`} className="flex flex-col gap-2">
+                      <h4 className="text-sm font-medium">{sub.heading}</h4>
+                      {sub.rows.length === 0 ? (
+                        <p className="rounded-lg border border-border/60 px-3 py-4 text-sm text-muted-foreground">
+                          No rows in this section.
+                        </p>
+                      ) : (
+                        <div className="overflow-hidden rounded-lg border border-border/60">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                {sub.columns.map((col) => (
+                                  <TableHead key={col}>{col}</TableHead>
+                                ))}
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {sub.rows.map((row, rowIndex) => (
+                                <TableRow key={`${section.id}-${sub.heading}-${rowIndex}`}>
+                                  {row.map((cell, cellIndex) => (
+                                    <TableCell
+                                      key={`${section.id}-${sub.heading}-${rowIndex}-${cellIndex}`}
+                                      className="font-data text-xs"
+                                    >
+                                      {cell == null || cell === "" ? "—" : String(cell)}
+                                    </TableCell>
+                                  ))}
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      )}
+                    </div>
+                  ))
+                ) : section.rows.length === 0 ? (
                   <p className="rounded-lg border border-border/60 px-3 py-4 text-sm text-muted-foreground">
                     No rows in this section.
                   </p>

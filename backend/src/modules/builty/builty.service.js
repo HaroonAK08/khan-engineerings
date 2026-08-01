@@ -328,6 +328,8 @@ async function createBuilty(data) {
   }
 
   await syncCustomerBuiltyPaymentStatuses(data.customer);
+  const partyPriceService = require("../party-prices/party-product-price.service");
+  await partyPriceService.rememberFromItems(data.customer, items);
   return getBuilty(builty._id);
 }
 
@@ -414,6 +416,9 @@ async function updateBuilty(id, data) {
         notes: `Builty ${builty.builtyNo}`,
       });
     }
+
+    const partyPriceService = require("../party-prices/party-product-price.service");
+    await partyPriceService.rememberFromItems(builty.customer, items);
   }
 
   await builty.save();
@@ -640,7 +645,27 @@ async function getSalesReport({ dateFrom, dateTo, groupId } = {}) {
   const match = {};
   let groupMeta = null;
 
-  if (groupId) {
+  if (groupId === "__ungrouped__" || groupId === "ungrouped") {
+    groupMeta = { id: "", name: "Ungrouped" };
+    const members = await Customer.find({
+      $or: [{ group: null }, { group: { $exists: false } }],
+    })
+      .select("_id")
+      .lean();
+    const ids = members.map((m) => m._id);
+    if (ids.length === 0) {
+      return {
+        period: { from: dateFrom || null, to: dateTo || null },
+        group: groupMeta,
+        totals: { orderCount: 0, totalSales: 0, totalPaid: 0, outstanding: 0 },
+        outstanding: [],
+        topCustomers: [],
+        byGroup: [],
+        whoOwes: [],
+      };
+    }
+    match.customer = { $in: ids };
+  } else if (groupId) {
     if (!mongoose.isValidObjectId(groupId)) throw httpError("Invalid party group", 400);
     const group = await PartyGroup.findById(groupId).lean();
     if (!group) throw httpError("Party group not found", 404);

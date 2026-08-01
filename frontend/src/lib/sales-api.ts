@@ -225,6 +225,29 @@ export async function getCustomer(id: string) {
   return data;
 }
 
+export type PartyProductPrice = {
+  customer: string;
+  product: string;
+  pricingMode: PricingMode;
+  ratePerKg: number;
+  unitPrice: number;
+  updatedAt?: string | null;
+};
+
+export async function getPartyProductPrice(customerId: string, productId: string) {
+  const { data } = await api.get<{ price: PartyProductPrice | null }>(
+    `/customers/${customerId}/product-prices/${productId}`
+  );
+  return data.price;
+}
+
+export async function listPartyProductPrices(customerId: string) {
+  const { data } = await api.get<{ prices: PartyProductPrice[] }>(
+    `/customers/${customerId}/product-prices`
+  );
+  return data.prices;
+}
+
 export async function createCustomer(body: Partial<Customer>) {
   const { data } = await api.post<{ customer: Customer }>("/customers", body);
   return data.customer;

@@ -123,6 +123,7 @@ export type MoneyRecord = {
   partyName: string;
   partyPhone?: string;
   materialType?: string;
+  products?: string[];
   totalAmount: number;
   amountPaid: number;
   balance: number;
@@ -149,6 +150,7 @@ export type MoneyGroupRollup = {
 export type ReceivablesReport = {
   period: { from: string | null; to: string | null };
   group?: { id: string; name: string } | null;
+  party?: { id: string; name: string } | null;
   totals: {
     totalReceivable: number;
     partyCount: number;
@@ -175,6 +177,7 @@ export async function getReceivablesReport(params?: {
   dateFrom?: string;
   dateTo?: string;
   groupId?: string;
+  customerId?: string;
 }) {
   const { data } = await api.get<{ report: ReceivablesReport }>("/reports/receivables", {
     params,
@@ -268,6 +271,11 @@ export type CombinedReportSection = {
   heading: string;
   columns: string[];
   rows: Array<Array<string | number>>;
+  subsections?: Array<{
+    heading: string;
+    columns: string[];
+    rows: Array<Array<string | number>>;
+  }> | null;
   meta: Record<string, string | number>;
 };
 

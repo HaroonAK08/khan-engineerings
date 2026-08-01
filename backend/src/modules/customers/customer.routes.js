@@ -1,6 +1,7 @@
 const { Router } = require("express");
 const controller = require("./customer.controller");
 const customerService = require("./customer.service");
+const partyPriceService = require("../party-prices/party-product-price.service");
 const { requireAuth } = require("../../middleware/auth");
 
 const router = Router();
@@ -13,6 +14,28 @@ router.get("/:id/ledger", async (req, res, next) => {
   try {
     const result = await customerService.listLedger(req.params.id);
     res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/:id/product-prices", async (req, res, next) => {
+  try {
+    if (req.query.product) {
+      const price = await partyPriceService.getOne(req.params.id, req.query.product);
+      return res.json({ price });
+    }
+    const prices = await partyPriceService.listForCustomer(req.params.id);
+    res.json({ prices });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/:id/product-prices/:productId", async (req, res, next) => {
+  try {
+    const price = await partyPriceService.getOne(req.params.id, req.params.productId);
+    res.json({ price });
   } catch (err) {
     next(err);
   }

@@ -841,9 +841,9 @@ async function getReport({ dateFrom, dateTo, family } = {}) {
   }
 
   const batches = await ProductionBatch.find(match)
-    .populate("outputs.product", "name sku")
-    .populate("outputProgress.product", "name sku")
-    .populate("product", "name sku")
+    .populate("outputs.product", "name sku family")
+    .populate("outputProgress.product", "name sku family")
+    .populate("product", "name sku family")
     .lean();
 
   let batchCount = 0;
@@ -877,9 +877,14 @@ async function getReport({ dateFrom, dateTo, family } = {}) {
         const name =
           (typeof p.product === "object" && p.product?.name) ||
           "Product";
+        const productFamily =
+          (typeof p.product === "object" && p.product?.family) ||
+          b.family ||
+          "hub";
         const row = byProductMap.get(pid) || {
           productId: pid,
           name,
+          family: productFamily,
           batchCount: 0,
           goodUnits: 0,
           rejectedUnits: 0,
@@ -896,6 +901,56 @@ async function getReport({ dateFrom, dateTo, family } = {}) {
       brokenUnits += b.rejectedUnits || 0;
       finishedUnits += b.goodUnits || 0;
       batchFinished += b.goodUnits || 0;
+
+      const outputLines = Array.isArray(b.outputs) ? b.outputs : [];
+      if (outputLines.length) {
+        for (const out of outputLines) {
+          const pid = String(out.product?._id || out.product || "");
+          if (!pid) continue;
+          const name =
+            (typeof out.product === "object" && out.product?.name) || "Product";
+          const productFamily =
+            out.family ||
+            (typeof out.product === "object" && out.product?.family) ||
+            b.family ||
+            "hub";
+          const row = byProductMap.get(pid) || {
+            productId: pid,
+            name,
+            family: productFamily,
+            batchCount: 0,
+            goodUnits: 0,
+            rejectedUnits: 0,
+            netConsumedKg: 0,
+          };
+          row.batchCount += 1;
+          row.goodUnits += out.quantity || 0;
+          byProductMap.set(pid, row);
+        }
+      } else {
+        const legacyPid = String(b.product?._id || b.product || "");
+        if (legacyPid && batchFinished > 0) {
+          const name =
+            (typeof b.product === "object" && b.product?.name) || "Product";
+          const productFamily =
+            (typeof b.product === "object" && b.product?.family) ||
+            b.family ||
+            "hub";
+          const row = byProductMap.get(legacyPid) || {
+            productId: legacyPid,
+            name,
+            family: productFamily,
+            batchCount: 0,
+            goodUnits: 0,
+            rejectedUnits: 0,
+            netConsumedKg: 0,
+          };
+          row.batchCount += 1;
+          row.goodUnits += b.goodUnits || 0;
+          row.rejectedUnits += b.rejectedUnits || 0;
+          byProductMap.set(legacyPid, row);
+        }
+      }
     }
 
     // Spread batch material across output products for report
@@ -940,9 +995,11 @@ async function getReport({ dateFrom, dateTo, family } = {}) {
       lossRate,
       byFamily,
     },
-    byProduct: Array.from(byProductMap.values()).sort((a, b) =>
-      a.name.localeCompare(b.name)
-    ),
+    byProduct: Array.from(byProductMap.values()).sort((a, b) => {
+      const fam = String(a.family || "hub").localeCompare(String(b.family || "hub"));
+      if (fam !== 0) return fam;
+      return a.name.localeCompare(b.name);
+    }),
   };
 }
 

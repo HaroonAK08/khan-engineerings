@@ -14,6 +14,7 @@ import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
 import { getSalesReport, listPartyGroups, type PartyGroup, type SalesReport } from "@/lib/sales-api";
 import { downloadReportExport } from "@/lib/reports-api";
 import { currentMonthRange } from "@/lib/date-range";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -56,6 +57,7 @@ export default function SalesReportsHubPage() {
   const groupSelectItems = useMemo(() => {
     const items: Record<string, string> = {
       __all__: t("recvReports.allGroups"),
+      __ungrouped__: t("recvReports.ungrouped"),
     };
     for (const g of groups) items[g._id] = g.name;
     return items;
@@ -101,7 +103,18 @@ export default function SalesReportsHubPage() {
     }
   }
 
+  function openGroup(g: { groupId: string; name: string }) {
+    setGroupId(g.groupId || "__ungrouped__");
+    setView("party");
+  }
+
+  function backToGroups() {
+    setGroupId("");
+    setView("group");
+  }
+
   const byGroup = report?.byGroup || [];
+  const drilledGroup = Boolean(groupId);
 
   return (
     <div className="flex flex-col gap-6">
@@ -129,6 +142,7 @@ export default function SalesReportsHubPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="__all__">{groupSelectItems.__all__}</SelectItem>
+              <SelectItem value="__ungrouped__">{groupSelectItems.__ungrouped__}</SelectItem>
               {groups.map((g) => (
                 <SelectItem key={g._id} value={g._id}>
                   {groupSelectItems[g._id]}
@@ -139,7 +153,28 @@ export default function SalesReportsHubPage() {
         </div>
       </div>
 
-      <ReportViewToggle value={view} onChange={setView} />
+      <ReportViewToggle
+        value={view}
+        onChange={(next) => {
+          if (next === "group") setGroupId("");
+          setView(next);
+        }}
+      />
+
+      {drilledGroup && view === "party" ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" size="sm" variant="outline" onClick={backToGroups}>
+            {t("recvReports.backToGroups")}
+          </Button>
+          <p className="text-sm text-muted-foreground">
+            {report?.group?.name ||
+              (groupId === "__ungrouped__"
+                ? t("recvReports.ungrouped")
+                : groupSelectItems[groupId]) ||
+              t("recvReports.group")}
+          </p>
+        </div>
+      ) : null}
 
       {loading || !report ? (
         <div className="flex justify-center py-16">
@@ -169,6 +204,7 @@ export default function SalesReportsHubPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-nameplate text-sm">{t("salesReportsHub.byGroup")}</CardTitle>
+                <CardDescription>{t("recvReports.clickGroup")}</CardDescription>
               </CardHeader>
               <CardContent className="px-0">
                 <Table>
@@ -190,8 +226,21 @@ export default function SalesReportsHubPage() {
                       </TableRow>
                     ) : (
                       byGroup.map((g) => (
-                        <TableRow key={g.groupId || g.name}>
-                          <TableCell className="font-medium">{g.name}</TableCell>
+                        <TableRow
+                          key={g.groupId || g.name}
+                          tabIndex={0}
+                          className="cursor-pointer"
+                          onClick={() => openGroup(g)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openGroup(g);
+                            }
+                          }}
+                        >
+                          <TableCell className="font-medium text-primary underline-offset-2 hover:underline">
+                            {g.name}
+                          </TableCell>
                           <TableCell className="font-data text-right text-xs">
                             {g.partyCount}
                           </TableCell>

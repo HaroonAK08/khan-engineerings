@@ -16,7 +16,7 @@ import {
   getPayablesReport,
   type PayablesReport,
 } from "@/lib/reports-api";
-import { currentMonthRange, thisMonthRange } from "@/lib/date-range";
+import { thisMonthRange } from "@/lib/date-range";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -33,9 +33,8 @@ import { useI18n } from "@/hooks/use-i18n";
 
 export default function PayablesReportPage() {
   const { t } = useI18n();
-  const defaults = currentMonthRange();
-  const [dateFrom, setDateFrom] = useState(defaults.from);
-  const [dateTo, setDateTo] = useState(defaults.to);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [view, setView] = useState<ReportViewMode>("party");
   const [report, setReport] = useState<PayablesReport | null>(null);
   const [loading, setLoading] = useState(true);

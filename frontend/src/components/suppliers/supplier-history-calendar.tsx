@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Loader2, Pencil, Trash2 } from "lucide-react";
+import { Banknote, Loader2, Pencil, Trash2 } from "lucide-react";
 import {
   apiError,
   deleteLedgerEntry,
@@ -10,8 +10,10 @@ import {
   formatDate,
   formatKg,
   formatMoney,
+  recordPayment,
   updateLedgerEntry,
   updatePurchase,
+  withSameDayConfirm,
 } from "@/lib/materials-api";
 import type { LedgerEntry } from "@/types/materials";
 import { thisMonthRange, toDateInput, todayInput } from "@/lib/date-range";
@@ -38,11 +40,8 @@ import {
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
 
-type HistoryKind = "purchase" | "payment";
-
 type Props = {
   supplierId?: string;
-  kind: HistoryKind;
   entries: LedgerEntry[];
   onChanged: () => void | Promise<void>;
   showSupplierNames?: boolean;
@@ -84,18 +83,163 @@ function payableOf(p: NonNullable<ReturnType<typeof purchaseOf>>) {
   return roundMoney((p.totalAmount || 0) + (p.freightAmount || 0));
 }
 
-function paidOf(p: NonNullable<ReturnType<typeof purchaseOf>>) {
-  return roundMoney(p.amountPaid || 0);
+type PaidSlice = { amount: number; date: string; entryId: string };
+
+type PurchaseRowView = {
+  entry: LedgerEntry;
+  amount: number;
+  previous: number;
+  previousPlusAmount: number;
+  paidSlices: PaidSlice[];
+  paidTotal: number;
+  balance: number;
+};
+
+function formatBalanceDisplay(balance: number) {
+  const abs = formatMoney(Math.abs(balance));
+  if (balance > 0.001) return `− ${abs}`;
+  if (balance < -0.001) return `+ ${abs}`;
+  return formatMoney(0);
 }
 
-function balanceOf(p: NonNullable<ReturnType<typeof purchaseOf>>) {
-  if (typeof p.balance === "number") return roundMoney(p.balance);
-  return roundMoney(Math.max(0, payableOf(p) - paidOf(p)));
+function balanceToneClass(balance: number) {
+  if (balance > 0.001) return "text-amber-700 dark:text-amber-400";
+  if (balance < -0.001) return "text-emerald-700 dark:text-emerald-400";
+  return undefined;
+}
+
+function entryTime(e: LedgerEntry) {
+  return new Date(e.entryDate).getTime();
+}
+
+function buildPurchaseRows(entries: LedgerEntry[]): Map<string, PurchaseRowView> {
+  const bySupplier = new Map<string, LedgerEntry[]>();
+  for (const e of entries) {
+    const sid = supplierIdOf(e);
+    const list = bySupplier.get(sid) || [];
+    list.push(e);
+    bySupplier.set(sid, list);
+  }
+
+  const result = new Map<string, PurchaseRowView>();
+
+  for (const [, list] of bySupplier) {
+    // Purchases + previous pending (positive adjustments), oldest first.
+    const dues = list
+      .filter(
+        (e) =>
+          e.type === "purchase" ||
+          (e.type === "adjustment" && (e.signedAmount ?? 0) > 0)
+      )
+      .slice()
+      .sort((a, b) => entryTime(a) - entryTime(b) || a._id.localeCompare(b._id));
+
+    const payments = list
+      .filter((e) => e.type === "payment")
+      .slice()
+      .sort((a, b) => entryTime(a) - entryTime(b) || a._id.localeCompare(b._id))
+      .map((e) => ({
+        entryId: e._id,
+        date: e.entryDate,
+        left: roundMoney(e.amount || 0),
+        purchaseId: purchaseIdOf(e) || "",
+        appliesTo:
+          typeof e.appliesTo === "string"
+            ? e.appliesTo
+            : e.appliesTo && typeof e.appliesTo === "object" && "_id" in e.appliesTo
+              ? String((e.appliesTo as { _id: string })._id)
+              : "",
+      }));
+
+    let runningOutstanding = 0;
+    let lastDueId: string | null = null;
+    for (const e of dues) {
+      const p = purchaseOf(e);
+      const amount =
+        e.type === "adjustment"
+          ? roundMoney(e.signedAmount ?? e.amount ?? 0)
+          : p
+            ? payableOf(p)
+            : roundMoney(e.amount || 0);
+      const previous = runningOutstanding;
+      const previousPlusAmount = roundMoney(previous + amount);
+      const duePurchaseId = purchaseIdOf(e);
+
+      const paidSlices: PaidSlice[] = [];
+
+      // 1) Payments recorded against this row keep their full amount (overpay = advance).
+      for (const pay of payments) {
+        if (pay.left <= 0) continue;
+        const linkedToPurchase =
+          Boolean(duePurchaseId) && pay.purchaseId === duePurchaseId;
+        const linkedToEntry = pay.appliesTo === e._id;
+        if (!linkedToPurchase && !linkedToEntry) continue;
+        paidSlices.push({ amount: pay.left, date: pay.date, entryId: pay.entryId });
+        pay.left = 0;
+      }
+
+      let paidTotal = roundMoney(paidSlices.reduce((s, x) => s + x.amount, 0));
+      let need = roundMoney(Math.max(0, amount - paidTotal));
+
+      // 2) Unlinked payments: while this row still needs money, take the whole
+      //    payment (no split). That way overpay shows as +advance on this record.
+      for (const pay of payments) {
+        if (need <= 0) break;
+        if (pay.left <= 0) continue;
+        if (pay.purchaseId || pay.appliesTo) continue;
+        const take = pay.left;
+        paidSlices.push({ amount: take, date: pay.date, entryId: pay.entryId });
+        pay.left = 0;
+        paidTotal = roundMoney(paidTotal + take);
+        need = roundMoney(Math.max(0, amount - paidTotal));
+      }
+
+      paidTotal = roundMoney(paidSlices.reduce((s, x) => s + x.amount, 0));
+      const rowRemaining = roundMoney(amount - paidTotal);
+      const carried = roundMoney(previous + rowRemaining);
+      // Overpay on this record → show +advance here; credit still flows into later rows.
+      const balance = rowRemaining < -0.001 ? rowRemaining : carried;
+      runningOutstanding = carried;
+      lastDueId = e._id;
+
+      result.set(e._id, {
+        entry: e,
+        amount,
+        previous,
+        previousPlusAmount,
+        paidSlices,
+        paidTotal,
+        balance,
+      });
+    }
+
+    // Extra unlinked payments after all dues → advance on the latest due row.
+    const leftover = roundMoney(payments.reduce((s, pay) => s + pay.left, 0));
+    if (leftover > 0.001 && lastDueId) {
+      const last = result.get(lastDueId);
+      if (last) {
+        for (const pay of payments) {
+          if (pay.left <= 0) continue;
+          last.paidSlices.push({
+            amount: pay.left,
+            date: pay.date,
+            entryId: pay.entryId,
+          });
+          last.paidTotal = roundMoney(last.paidTotal + pay.left);
+          pay.left = 0;
+        }
+        const rowRemaining = roundMoney(last.amount - last.paidTotal);
+        const carried = roundMoney(last.previous + rowRemaining);
+        last.balance = rowRemaining < -0.001 ? rowRemaining : carried;
+      }
+    }
+  }
+
+  return result;
 }
 
 export function SupplierHistoryCalendar({
   supplierId,
-  kind,
   entries,
   onChanged,
   showSupplierNames = false,
@@ -103,9 +247,11 @@ export function SupplierHistoryCalendar({
   const { t, isUrdu } = useI18n();
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [showPreviousPending, setShowPreviousPending] = useState(false);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<LedgerEntry | null>(null);
+  const [editingRow, setEditingRow] = useState<PurchaseRowView | null>(null);
   const [formAmount, setFormAmount] = useState("");
   const [formDate, setFormDate] = useState("");
   const [formNote, setFormNote] = useState("");
@@ -115,8 +261,30 @@ export function SupplierHistoryCalendar({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  const [payOpen, setPayOpen] = useState(false);
+  const [payFor, setPayFor] = useState<PurchaseRowView | null>(null);
+  const [payAmount, setPayAmount] = useState("");
+  const [payDate, setPayDate] = useState(todayInput());
+  const [payNote, setPayNote] = useState("");
+  const [savingPay, setSavingPay] = useState(false);
+
+  const [editingPayment, setEditingPayment] = useState<LedgerEntry | null>(null);
+  const [payEditAmount, setPayEditAmount] = useState("");
+  const [payEditDate, setPayEditDate] = useState("");
+  const [payEditNote, setPayEditNote] = useState("");
+  const [savingPaymentEdit, setSavingPaymentEdit] = useState(false);
+  const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null);
+
+  const purchaseRowsById = useMemo(() => buildPurchaseRows(entries), [entries]);
+
   const filtered = useMemo(() => {
-    let list = entries.filter((e) => e.type === kind);
+    let list = entries.filter((e) => {
+      if (e.type === "purchase") return true;
+      if (e.type === "adjustment" && (e.signedAmount ?? 0) > 0) {
+        return showPreviousPending;
+      }
+      return false;
+    });
     if (dateFrom) {
       const from = dateFrom;
       list = list.filter((e) => dayKey(new Date(e.entryDate)) >= from);
@@ -130,11 +298,20 @@ export function SupplierHistoryCalendar({
       .sort(
         (a, b) => new Date(b.entryDate).getTime() - new Date(a.entryDate).getTime()
       );
-  }, [entries, kind, dateFrom, dateTo]);
+  }, [entries, dateFrom, dateTo, showPreviousPending]);
+
+  const purchaseViews = useMemo(() => {
+    return filtered
+      .map((e) => purchaseRowsById.get(e._id))
+      .filter((row): row is PurchaseRowView => Boolean(row));
+  }, [filtered, purchaseRowsById]);
 
   const total = useMemo(
-    () => filtered.reduce((s, e) => s + e.amount, 0),
-    [filtered]
+    () =>
+      purchaseViews
+        .filter((row) => row.entry.type === "purchase")
+        .reduce((s, row) => s + row.amount, 0),
+    [purchaseViews]
   );
 
   const formTotal = useMemo(() => {
@@ -169,41 +346,44 @@ export function SupplierHistoryCalendar({
   }
 
   function materialLabel(type?: string) {
-    return type === "daig" ? t("prod.daig") : t("prod.scrap");
-  }
-
-  function payStatus(p: NonNullable<ReturnType<typeof purchaseOf>>) {
-    const paid = paidOf(p);
-    const payable = payableOf(p);
-    if (paid <= 0) return "unpaid" as const;
-    if (paid + 0.001 >= payable) return "paid" as const;
-    return "partial" as const;
+    return type === "daig" ? "D" : "S";
   }
 
   function purchaseDetail(e: LedgerEntry) {
+    if (e.type === "adjustment") {
+      return e.notes && !isInternalNote(e.notes)
+        ? e.notes
+        : t("supplierDetail.previousPending");
+    }
     const p = purchaseOf(e);
     if (!p) return t("supplierDetail.purchaseHistory");
     return `${materialLabel(p.materialType)} · ${formatKg(p.quantityKg)} kg · ${formatMoney(p.ratePerKg)}/kg`;
   }
 
-  function paymentDetail(e: LedgerEntry) {
-    const p = purchaseOf(e);
-    if (!p) {
-      return e.notes && !isInternalNote(e.notes)
-        ? e.notes
-        : t("supplierDetail.paymentHistory");
-    }
-    return t("supplierDetail.paymentForPurchase", {
-      detail: `${materialLabel(p.materialType)} · ${formatKg(p.quantityKg)} kg`,
-      date: formatDate(p.purchaseDate || e.entryDate),
-    });
-  }
+  const rowPayments = useMemo(() => {
+    if (!editingRow) return [] as LedgerEntry[];
+    const ids = [...new Set(editingRow.paidSlices.map((s) => s.entryId))];
+    return ids
+      .map((id) => entries.find((e) => e._id === id && e.type === "payment"))
+      .filter((e): e is LedgerEntry => Boolean(e))
+      .sort((a, b) => entryTime(a) - entryTime(b));
+  }, [editingRow, entries]);
 
-  function openEdit(e: LedgerEntry) {
+  useEffect(() => {
+    if (!dialogOpen || !editing || editing.type === "payment") return;
+    const fresh = purchaseRowsById.get(editing._id);
+    setEditingRow(fresh || null);
+  }, [purchaseRowsById, editing, dialogOpen]);
+
+  function openEdit(e: LedgerEntry, row?: PurchaseRowView) {
     setEditing(e);
+    setEditingRow(row || null);
+    setEditingPayment(null);
     setFormDate(dayKey(new Date(e.entryDate)));
-    if (kind === "payment") {
-      setFormAmount(String(e.amount));
+    if (e.type === "payment" || e.type === "adjustment") {
+      setFormAmount(
+        String(e.type === "adjustment" ? (e.signedAmount ?? e.amount) : e.amount)
+      );
       setFormNote(e.notes && !isInternalNote(e.notes) ? e.notes : "");
     } else {
       const p = purchaseOf(e);
@@ -214,13 +394,119 @@ export function SupplierHistoryCalendar({
     setDialogOpen(true);
   }
 
+  function openPaymentEdit(payment: LedgerEntry) {
+    setEditingPayment(payment);
+    setPayEditAmount(String(payment.amount));
+    setPayEditDate(dayKey(new Date(payment.entryDate)));
+    setPayEditNote(
+      payment.notes && !isInternalNote(payment.notes) ? payment.notes : ""
+    );
+  }
+
+  async function savePaymentEdit() {
+    if (!editingPayment) return;
+    const amount = Number(payEditAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error(t("supplierDetail.enterAmount"));
+      return;
+    }
+    if (!payEditDate) {
+      toast.error(t("supplierDetail.pickDate"));
+      return;
+    }
+    const sid = supplierId || supplierIdOf(editingPayment);
+    setSavingPaymentEdit(true);
+    try {
+      await updateLedgerEntry(sid, editingPayment._id, {
+        amount,
+        entryDate: payEditDate,
+        notes: payEditNote.trim() || "Payment",
+      });
+      toast.success(t("supplierDetail.entryUpdated"));
+      setEditingPayment(null);
+      await onChanged();
+    } catch (err) {
+      toast.error(apiError(err, t("supplierDetail.entrySaveFailed")));
+    } finally {
+      setSavingPaymentEdit(false);
+    }
+  }
+
+  async function deletePayment(payment: LedgerEntry) {
+    if (!confirm(t("supplierDetail.confirmDeletePayment"))) return;
+    const sid = supplierId || supplierIdOf(payment);
+    setDeletingPaymentId(payment._id);
+    try {
+      await deleteLedgerEntry(sid, payment._id);
+      toast.success(t("supplierDetail.entryDeleted"));
+      if (editingPayment?._id === payment._id) setEditingPayment(null);
+      await onChanged();
+    } catch (err) {
+      toast.error(apiError(err, t("supplierDetail.entryDeleteFailed")));
+    } finally {
+      setDeletingPaymentId(null);
+    }
+  }
+
+  function openPay(row: PurchaseRowView) {
+    const dueHere = roundMoney(Math.max(0, row.amount - row.paidTotal));
+    setPayFor(row);
+    setPayAmount(dueHere > 0 ? String(dueHere) : row.balance > 0 ? String(row.balance) : "");
+    setPayDate(todayInput());
+    setPayNote("");
+    setPayOpen(true);
+  }
+
+  async function submitPay() {
+    if (!payFor) return;
+    const amount = Number(payAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error(t("supplierDetail.enterAmount"));
+      return;
+    }
+    if (!payDate) {
+      toast.error(t("supplierDetail.pickDate"));
+      return;
+    }
+    const sid = supplierId || supplierIdOf(payFor.entry);
+    if (!sid) {
+      toast.error(t("supplierDetail.paymentFailed"));
+      return;
+    }
+
+    setSavingPay(true);
+    try {
+      const target = payFor.entry;
+      const body = {
+        amount,
+        entryDate: payDate,
+        notes: payNote.trim() || undefined,
+        purchaseId:
+          target.type === "purchase" ? purchaseIdOf(target) || undefined : undefined,
+        appliesTo: target.type === "adjustment" ? target._id : undefined,
+      };
+      const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
+        recordPayment(sid, { ...body, confirmDuplicate })
+      );
+      if (cancelled) return;
+      toast.success(t("supplierDetail.paymentRecorded"));
+      setPayOpen(false);
+      setPayFor(null);
+      await onChanged();
+    } catch (err) {
+      toast.error(apiError(err, t("supplierDetail.paymentFailed")));
+    } finally {
+      setSavingPay(false);
+    }
+  }
+
   async function saveEdit() {
     if (!editing) return;
     if (!formDate) {
       toast.error(t("supplierDetail.pickDate"));
       return;
     }
-    if (kind === "payment") {
+    if (editing.type === "payment" || editing.type === "adjustment") {
       const amount = Number(formAmount);
       if (!Number.isFinite(amount) || amount <= 0) {
         toast.error(t("supplierDetail.enterAmount"));
@@ -246,11 +532,13 @@ export function SupplierHistoryCalendar({
 
     setSaving(true);
     try {
-      if (kind === "payment") {
+      if (editing.type === "payment" || editing.type === "adjustment") {
         await updateLedgerEntry(supplierId || supplierIdOf(editing), editing._id, {
           amount: Number(formAmount),
           entryDate: formDate,
-          notes: formNote.trim() || "Payment",
+          notes:
+            formNote.trim() ||
+            (editing.type === "adjustment" ? "Previous pending" : "Payment"),
         });
         toast.success(t("supplierDetail.entryUpdated"));
       } else {
@@ -277,13 +565,15 @@ export function SupplierHistoryCalendar({
   async function removeEntry() {
     if (!editing) return;
     const confirmMsg =
-      kind === "payment"
+      editing.type === "payment"
         ? t("supplierDetail.confirmDeletePayment")
-        : t("supplierDetail.confirmDeletePurchase");
+        : editing.type === "adjustment"
+          ? t("supplierDetail.confirmDeletePreviousPending")
+          : t("supplierDetail.confirmDeletePurchase");
     if (!confirm(confirmMsg)) return;
     setDeleting(true);
     try {
-      if (kind === "payment") {
+      if (editing.type === "payment" || editing.type === "adjustment") {
         await deleteLedgerEntry(supplierId || supplierIdOf(editing), editing._id);
       } else {
         const purchaseId = purchaseIdOf(editing);
@@ -305,12 +595,14 @@ export function SupplierHistoryCalendar({
 
   async function deleteDirect(e: LedgerEntry) {
     const confirmMsg =
-      kind === "payment"
+      e.type === "payment"
         ? t("supplierDetail.confirmDeletePayment")
-        : t("supplierDetail.confirmDeletePurchase");
+        : e.type === "adjustment"
+          ? t("supplierDetail.confirmDeletePreviousPending")
+          : t("supplierDetail.confirmDeletePurchase");
     if (!confirm(confirmMsg)) return;
     try {
-      if (kind === "payment") {
+      if (e.type === "payment" || e.type === "adjustment") {
         await deleteLedgerEntry(supplierId || supplierIdOf(e), e._id);
       } else {
         const purchaseId = purchaseIdOf(e);
@@ -356,6 +648,16 @@ export function SupplierHistoryCalendar({
             >
               {t("sal.filterThisMonth")}
             </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={showPreviousPending ? "default" : "outline"}
+              onClick={() => setShowPreviousPending((v) => !v)}
+            >
+              {showPreviousPending
+                ? t("supplierDetail.hidePreviousPending")
+                : t("supplierDetail.showPreviousPending")}
+            </Button>
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="grid gap-1.5">
@@ -386,15 +688,13 @@ export function SupplierHistoryCalendar({
         </CardContent>
       </Card>
 
-      {filtered.length === 0 ? (
+      {purchaseViews.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-14">
             <p className="text-sm text-muted-foreground">
               {hasDateFilter
                 ? t("sal.ledgerEmptyFiltered")
-                : kind === "payment"
-                  ? t("supplierDetail.noPaymentOnDay")
-                  : t("supplierDetail.noPurchaseOnDay")}
+                : t("supplierDetail.noPurchaseOnDay")}
             </p>
             {hasDateFilter ? (
               <Button type="button" variant="outline" onClick={setAllRange}>
@@ -403,28 +703,30 @@ export function SupplierHistoryCalendar({
             ) : null}
           </CardContent>
         </Card>
-      ) : kind === "purchase" ? (
+      ) : (
         <Card className="overflow-hidden py-0">
           <CardContent className="p-0">
-            <Table>
+            <Table className="table-fixed" containerClassName="overflow-x-hidden">
               <TableHeader>
                 <TableRow>
-                  <TableHead>{t("common.date")}</TableHead>
+                  <TableHead className="w-[7.5rem]">{t("common.date")}</TableHead>
                   {showSupplierNames ? (
-                    <TableHead>{t("purchases.col.supplier")}</TableHead>
+                    <TableHead className="w-[8rem]">{t("purchases.col.supplier")}</TableHead>
                   ) : null}
-                  <TableHead>{t("exp.colDetail")}</TableHead>
-                  <TableHead className="text-end">{t("common.amount")}</TableHead>
-                  <TableHead className="text-end">{t("customerDetail.paid")}</TableHead>
-                  <TableHead className="text-end">{t("common.balance")}</TableHead>
-                  <TableHead className="text-end">{t("exp.actions")}</TableHead>
+                  <TableHead className="w-[11rem]">{t("exp.colDetail")}</TableHead>
+                  <TableHead className="w-[7rem] text-end">{t("common.amount")}</TableHead>
+                  <TableHead className="w-[8rem] text-end">
+                    {t("supplierDetail.previousPlusAmount")}
+                  </TableHead>
+                  <TableHead className="min-w-0 text-end">{t("customerDetail.paid")}</TableHead>
+                  <TableHead className="w-[7rem] text-end">{t("common.balance")}</TableHead>
+                  <TableHead className="w-[7.5rem] text-end">{t("exp.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((e) => {
-                  const p = purchaseOf(e);
-                  const remaining = p ? balanceOf(p) : 0;
-                  const isPaid = p ? payStatus(p) === "paid" : false;
+                {purchaseViews.map((row) => {
+                  const e = row.entry;
+                  const isPaid = row.amount - row.paidTotal <= 0.001;
                   return (
                     <TableRow
                       key={e._id}
@@ -434,43 +736,82 @@ export function SupplierHistoryCalendar({
                         {formatDate(e.entryDate)}
                       </TableCell>
                       {showSupplierNames ? (
-                        <TableCell className="font-medium">
+                        <TableCell className="truncate font-medium">
                           {supplierNameOf(e, isUrdu) || "—"}
                         </TableCell>
                       ) : null}
-                      <TableCell>
+                      <TableCell className="whitespace-normal">
                         <span className="text-sm">{purchaseDetail(e)}</span>
                       </TableCell>
                       <TableCell className="font-data text-end whitespace-nowrap">
-                        {formatMoney(p ? payableOf(p) : e.amount)}
+                        {formatMoney(row.amount)}
                       </TableCell>
                       <TableCell className="font-data text-end whitespace-nowrap">
-                        {formatMoney(p ? paidOf(p) : 0)}
+                        {formatMoney(row.previousPlusAmount)}
                       </TableCell>
-                      <TableCell className="font-data text-end whitespace-nowrap">
-                        {formatMoney(remaining)}
+                      <TableCell className="whitespace-normal text-end">
+                        {row.paidSlices.length === 0 ? (
+                          <span className="font-data text-muted-foreground">
+                            {t("supplierDetail.noPaymentsYet")}
+                          </span>
+                        ) : (
+                          <div className="flex flex-col items-end gap-0.5">
+                            {row.paidSlices.map((slice) => (
+                              <span
+                                key={`${slice.entryId}-${slice.amount}`}
+                                className="font-data text-sm leading-snug"
+                              >
+                                {t("supplierDetail.paidOnDate", {
+                                  amount: formatMoney(slice.amount),
+                                  date: formatDate(slice.date),
+                                })}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell
+                        className={`font-data text-end whitespace-nowrap ${balanceToneClass(row.balance) || ""}`}
+                        title={
+                          row.balance > 0.001
+                            ? t("supplierDetail.balanceOwedHint")
+                            : row.balance < -0.001
+                              ? t("supplierDetail.advanceHint")
+                              : undefined
+                        }
+                      >
+                        {formatBalanceDisplay(row.balance)}
                       </TableCell>
                       <TableCell className="text-end">
-                        <div className="inline-flex flex-wrap justify-end gap-1.5">
+                        <div className="inline-flex flex-wrap justify-end gap-1">
                           <Button
                             type="button"
-                            size="sm"
-                            variant="outline"
-                            className="gap-1"
-                            onClick={() => openEdit(e)}
+                            size="icon-sm"
+                            title={t("supplierDetail.pay")}
+                            aria-label={t("supplierDetail.pay")}
+                            onClick={() => openPay(row)}
                           >
-                            <Pencil className="size-3.5" />
-                            {t("common.edit")}
+                            <Banknote className="size-3.5" />
                           </Button>
                           <Button
                             type="button"
-                            size="sm"
+                            size="icon-sm"
+                            variant="outline"
+                            title={t("common.edit")}
+                            aria-label={t("common.edit")}
+                            onClick={() => openEdit(e, row)}
+                          >
+                            <Pencil className="size-3.5" />
+                          </Button>
+                          <Button
+                            type="button"
+                            size="icon-sm"
                             variant="destructive"
-                            className="gap-1"
+                            title={t("common.delete")}
+                            aria-label={t("common.delete")}
                             onClick={() => void deleteDirect(e)}
                           >
                             <Trash2 className="size-3.5" />
-                            {t("common.delete")}
                           </Button>
                         </div>
                       </TableCell>
@@ -489,83 +830,7 @@ export function SupplierHistoryCalendar({
                   <TableCell className="font-data text-end text-base font-semibold whitespace-nowrap">
                     {formatMoney(total)}
                   </TableCell>
-                  <TableCell colSpan={3} />
-                </TableRow>
-              </TableFooter>
-            </Table>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card className="overflow-hidden py-0">
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("common.date")}</TableHead>
-                  {showSupplierNames ? (
-                    <TableHead>{t("purchases.col.supplier")}</TableHead>
-                  ) : null}
-                  <TableHead>{t("supplierDetail.paidFor")}</TableHead>
-                  <TableHead className="text-end">{t("exp.amount")}</TableHead>
-                  <TableHead className="text-end">{t("exp.actions")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((e) => (
-                  <TableRow key={e._id}>
-                    <TableCell className="font-data whitespace-nowrap">
-                      {formatDate(e.entryDate)}
-                    </TableCell>
-                    {showSupplierNames ? (
-                      <TableCell className="font-medium">
-                        {supplierNameOf(e, isUrdu) || "—"}
-                      </TableCell>
-                    ) : null}
-                    <TableCell>
-                      <span className="text-sm">{paymentDetail(e)}</span>
-                    </TableCell>
-                    <TableCell className="font-data text-end font-medium whitespace-nowrap">
-                      {formatMoney(e.amount)}
-                    </TableCell>
-                    <TableCell className="text-end">
-                      <div className="inline-flex flex-wrap justify-end gap-1.5">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="gap-1"
-                          onClick={() => openEdit(e)}
-                        >
-                          <Pencil className="size-3.5" />
-                          {t("sal.editPayment")}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="destructive"
-                          className="gap-1"
-                          onClick={() => void deleteDirect(e)}
-                        >
-                          <Trash2 className="size-3.5" />
-                          {t("common.delete")}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-              <TableFooter>
-                <TableRow>
-                  <TableCell
-                    colSpan={showSupplierNames ? 3 : 2}
-                    className="font-semibold"
-                  >
-                    {t("customerDetail.totalPaid")}
-                  </TableCell>
-                  <TableCell className="font-data text-end text-base font-semibold whitespace-nowrap">
-                    {formatMoney(total)}
-                  </TableCell>
-                  <TableCell />
+                  <TableCell colSpan={4} />
                 </TableRow>
               </TableFooter>
             </Table>
@@ -573,23 +838,110 @@ export function SupplierHistoryCalendar({
         </Card>
       )}
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog
+        open={payOpen}
+        onOpenChange={(open) => {
+          setPayOpen(open);
+          if (!open) setPayFor(null);
+        }}
+      >
         <DialogContent showCloseButton>
           <DialogHeader>
+            <DialogTitle>{t("supplierDetail.recordPayment")}</DialogTitle>
+            <DialogDescription>
+              {payFor
+                ? purchaseDetail(payFor.entry)
+                : t("supplierDetail.recordPaymentDesc")}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label>{t("supplierDetail.payAmount")}</Label>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                value={payAmount}
+                onChange={(e) => setPayAmount(e.target.value)}
+                className="h-11 text-base"
+                autoFocus
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>{t("common.date")}</Label>
+              <Input
+                type="date"
+                value={payDate}
+                onChange={(e) => setPayDate(e.target.value)}
+                className="h-11"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>{t("exp.noteOptional")}</Label>
+              <Input
+                value={payNote}
+                onChange={(e) => setPayNote(e.target.value)}
+                className="h-11"
+              />
+            </div>
+            {payFor && payFor.balance > 0 ? (
+              <p className="text-sm text-muted-foreground">
+                {t("common.balance")}: {formatMoney(payFor.balance)}
+              </p>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPayOpen(false)}
+            >
+              {t("sal.cancel")}
+            </Button>
+            <Button
+              type="button"
+              className="gap-1.5"
+              disabled={savingPay}
+              onClick={() => void submitPay()}
+            >
+              {savingPay ? <Loader2 className="size-4 animate-spin" /> : <Banknote className="size-4" />}
+              {t("supplierDetail.submitPayment")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) {
+            setEditing(null);
+            setEditingRow(null);
+            setEditingPayment(null);
+          }
+        }}
+      >
+        <DialogContent showCloseButton className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
             <DialogTitle>
-              {kind === "payment"
+              {editing?.type === "payment"
                 ? t("supplierDetail.editPayment")
-                : t("supplierDetail.editPurchase")}
+                : editing?.type === "adjustment"
+                  ? t("supplierDetail.editPreviousPending")
+                  : t("supplierDetail.editPurchase")}
             </DialogTitle>
             <DialogDescription>
-              {kind === "payment"
+              {editing?.type === "payment"
                 ? t("supplierDetail.paymentHistory")
-                : t("supplierDetail.purchaseHistory")}
+                : editing?.type === "adjustment"
+                  ? t("supplierDetail.previousPending")
+                  : t("supplierDetail.purchaseHistory")}
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-3">
-            {kind === "payment" ? (
+            {editing?.type === "payment" || editing?.type === "adjustment" ? (
               <>
                 <div className="flex flex-col gap-1.5">
                   <Label>{t("exp.amount")}</Label>
@@ -676,6 +1028,130 @@ export function SupplierHistoryCalendar({
                 </div>
               </>
             )}
+
+            {editing && editing.type !== "payment" ? (
+              <div className="mt-1 rounded-lg border border-border p-3">
+                <p className="mb-2 text-sm font-medium">
+                  {t("supplierDetail.paymentsOnRecord")}
+                </p>
+                {rowPayments.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    {t("supplierDetail.noPaymentsYet")}
+                  </p>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {rowPayments.map((payment) => {
+                      const isEditingThis = editingPayment?._id === payment._id;
+                      return (
+                        <div
+                          key={payment._id}
+                          className="rounded-md border border-border/70 bg-muted/20 p-2.5"
+                        >
+                          {isEditingThis ? (
+                            <div className="grid gap-2">
+                              <div className="grid gap-2 sm:grid-cols-2">
+                                <div className="flex flex-col gap-1">
+                                  <Label>{t("exp.amount")}</Label>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    step="0.01"
+                                    value={payEditAmount}
+                                    onChange={(e) => setPayEditAmount(e.target.value)}
+                                    className="h-9"
+                                  />
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                  <Label>{t("common.date")}</Label>
+                                  <Input
+                                    type="date"
+                                    value={payEditDate}
+                                    onChange={(e) => setPayEditDate(e.target.value)}
+                                    className="h-9"
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex flex-col gap-1">
+                                <Label>{t("exp.noteOptional")}</Label>
+                                <Input
+                                  value={payEditNote}
+                                  onChange={(e) => setPayEditNote(e.target.value)}
+                                  className="h-9"
+                                />
+                              </div>
+                              <div className="flex flex-wrap justify-end gap-1.5">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={savingPaymentEdit}
+                                  onClick={() => setEditingPayment(null)}
+                                >
+                                  {t("sal.cancel")}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  className="gap-1"
+                                  disabled={savingPaymentEdit}
+                                  onClick={() => void savePaymentEdit()}
+                                >
+                                  {savingPaymentEdit ? (
+                                    <Loader2 className="size-3.5 animate-spin" />
+                                  ) : null}
+                                  {t("common.save")}
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="font-data text-sm font-medium">
+                                  {formatMoney(payment.amount)}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {formatDate(payment.entryDate)}
+                                  {payment.notes && !isInternalNote(payment.notes)
+                                    ? ` · ${payment.notes}`
+                                    : ""}
+                                </p>
+                              </div>
+                              <div className="inline-flex shrink-0 gap-1">
+                                <Button
+                                  type="button"
+                                  size="icon-sm"
+                                  variant="outline"
+                                  title={t("common.edit")}
+                                  aria-label={t("common.edit")}
+                                  onClick={() => openPaymentEdit(payment)}
+                                >
+                                  <Pencil className="size-3.5" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="icon-sm"
+                                  variant="destructive"
+                                  title={t("common.delete")}
+                                  aria-label={t("common.delete")}
+                                  disabled={deletingPaymentId === payment._id}
+                                  onClick={() => void deletePayment(payment)}
+                                >
+                                  {deletingPaymentId === payment._id ? (
+                                    <Loader2 className="size-3.5 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="size-3.5" />
+                                  )}
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
 
           <DialogFooter className="sm:justify-between">

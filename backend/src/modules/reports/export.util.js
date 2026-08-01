@@ -22,7 +22,7 @@ async function workbookToBuffer(workbook) {
  * @param {Array<Array<string|number>>} rows
  * @param {Record<string, string|number>=} meta
  */
-async function buildExcel({ title, sheetName, columns, rows, meta = {} }) {
+async function buildExcel({ title, sheetName, columns, rows, meta = {}, sections = null }) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Khan Engineerings";
   workbook.created = new Date();
@@ -33,12 +33,34 @@ async function buildExcel({ title, sheetName, columns, rows, meta = {} }) {
   sheet.addRow([`Generated: ${new Date().toISOString()}`]);
   Object.entries(meta).forEach(([k, v]) => sheet.addRow([`${k}: ${v}`]));
   sheet.addRow([]);
-  sheet.addRow(columns);
-  sheet.getRow(sheet.rowCount).font = { bold: true };
-  rows.forEach((r) => sheet.addRow(r));
-  columns.forEach((_, i) => {
-    sheet.getColumn(i + 1).width = Math.min(36, Math.max(12, String(columns[i]).length + 4));
+
+  const tableSections =
+    Array.isArray(sections) && sections.length > 0
+      ? sections
+      : [{ heading: null, columns: columns || [], rows: rows || [] }];
+
+  let maxCols = 0;
+  tableSections.forEach((section, sectionIndex) => {
+    if (sectionIndex > 0) sheet.addRow([]);
+    if (section.heading) {
+      sheet.addRow([section.heading]);
+      sheet.getRow(sheet.rowCount).font = { bold: true, size: 12 };
+    }
+    const cols = section.columns || [];
+    maxCols = Math.max(maxCols, cols.length);
+    if (cols.length) {
+      sheet.addRow(cols);
+      sheet.getRow(sheet.rowCount).font = { bold: true };
+    }
+    (section.rows || []).forEach((r) => sheet.addRow(r));
   });
+
+  const widthSource =
+    (tableSections[0] && tableSections[0].columns) || columns || [];
+  for (let i = 0; i < Math.max(maxCols, widthSource.length); i += 1) {
+    const label = widthSource[i] || `Col ${i + 1}`;
+    sheet.getColumn(i + 1).width = Math.min(36, Math.max(12, String(label).length + 4));
+  }
   return workbookToBuffer(workbook);
 }
 

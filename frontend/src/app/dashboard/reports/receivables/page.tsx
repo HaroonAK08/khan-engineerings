@@ -17,7 +17,7 @@ import {
   type ReceivablesReport,
 } from "@/lib/reports-api";
 import { listPartyGroups, type PartyGroup } from "@/lib/sales-api";
-import { currentMonthRange, thisMonthRange } from "@/lib/date-range";
+import { thisMonthRange } from "@/lib/date-range";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -43,10 +43,10 @@ import type { MessageKey } from "@/lib/i18n/messages";
 
 export default function ReceivablesReportPage() {
   const { t } = useI18n();
-  const defaults = currentMonthRange();
-  const [dateFrom, setDateFrom] = useState(defaults.from);
-  const [dateTo, setDateTo] = useState(defaults.to);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [groupId, setGroupId] = useState("");
+  const [partyId, setPartyId] = useState("");
   const [view, setView] = useState<ReportViewMode>("party");
   const [groups, setGroups] = useState<PartyGroup[]>([]);
   const [report, setReport] = useState<ReceivablesReport | null>(null);
@@ -62,6 +62,7 @@ export default function ReceivablesReportPage() {
   const groupSelectItems = useMemo(() => {
     const items: Record<string, string> = {
       __all__: t("recvReports.allGroups"),
+      __ungrouped__: t("recvReports.ungrouped"),
     };
     for (const g of groups) items[g._id] = g.name;
     return items;
@@ -70,17 +71,23 @@ export default function ReceivablesReportPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const params: { dateFrom?: string; dateTo?: string; groupId?: string } = {};
+      const params: {
+        dateFrom?: string;
+        dateTo?: string;
+        groupId?: string;
+        customerId?: string;
+      } = {};
       if (dateFrom) params.dateFrom = dateFrom;
       if (dateTo) params.dateTo = dateTo;
       if (groupId) params.groupId = groupId;
+      if (partyId) params.customerId = partyId;
       setReport(await getReceivablesReport(params));
     } catch (err) {
       toast.error(apiError(err, t("recvReports.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, groupId, t]);
+  }, [dateFrom, dateTo, groupId, partyId, t]);
 
   useEffect(() => {
     const timer = setTimeout(load, 200);
@@ -95,7 +102,8 @@ export default function ReceivablesReportPage() {
         dateFrom: dateFrom || undefined,
         dateTo: dateTo || undefined,
         groupId: groupId || undefined,
-        view,
+        customerId: partyId || undefined,
+        view: partyId ? "party" : view,
       });
       toast.success(t("common.downloaded", { format: format.toUpperCase() }));
     } catch (err) {
@@ -121,8 +129,33 @@ export default function ReceivablesReportPage() {
     setDateTo("");
   }
 
+  function openGroup(g: { groupId: string; name: string }) {
+    setPartyId("");
+    setGroupId(g.groupId || "__ungrouped__");
+    setView("party");
+  }
+
+  function openParty(p: { partyId: string; name: string }) {
+    if (!p.partyId) return;
+    setPartyId(p.partyId);
+    setView("party");
+  }
+
+  function backToGroups() {
+    setPartyId("");
+    setGroupId("");
+    setView("group");
+  }
+
+  function backToParties() {
+    setPartyId("");
+    setView("party");
+  }
+
   const isAll = !dateFrom && !dateTo;
   const byGroup = report?.byGroup || [];
+  const drilledGroup = Boolean(groupId) && !partyId;
+  const drilledParty = Boolean(partyId);
 
   return (
     <div className="flex flex-col gap-6">
@@ -168,7 +201,10 @@ export default function ReceivablesReportPage() {
           <Label className="sr-only">{t("recvReports.group")}</Label>
           <Select
             value={groupId || "__all__"}
-            onValueChange={(v) => setGroupId(!v || v === "__all__" ? "" : v)}
+            onValueChange={(v) => {
+              setPartyId("");
+              setGroupId(!v || v === "__all__" ? "" : v);
+            }}
             items={groupSelectItems}
           >
             <SelectTrigger className="w-[180px]">
@@ -176,6 +212,7 @@ export default function ReceivablesReportPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="__all__">{groupSelectItems.__all__}</SelectItem>
+              <SelectItem value="__ungrouped__">{groupSelectItems.__ungrouped__}</SelectItem>
               {groups.map((g) => (
                 <SelectItem key={g._id} value={g._id}>
                   {groupSelectItems[g._id]}
@@ -186,7 +223,53 @@ export default function ReceivablesReportPage() {
         </div>
       </div>
 
-      <ReportViewToggle value={view} onChange={setView} />
+      <ReportViewToggle
+        value={view}
+        onChange={(next) => {
+          setPartyId("");
+          if (next === "group") setGroupId("");
+          setView(next);
+        }}
+      />
+
+      {drilledGroup && view === "party" ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" size="sm" variant="outline" onClick={backToGroups}>
+            {t("recvReports.backToGroups")}
+          </Button>
+          <p className="text-sm text-muted-foreground">
+            {report?.group?.name ||
+              (groupId === "__ungrouped__"
+                ? t("recvReports.ungrouped")
+                : groupSelectItems[groupId]) ||
+              t("recvReports.group")}
+          </p>
+        </div>
+      ) : null}
+
+      {drilledParty ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" size="sm" variant="outline" onClick={backToParties}>
+            {t("recvReports.backToParties")}
+          </Button>
+          {groupId ? (
+            <Button type="button" size="sm" variant="ghost" onClick={backToGroups}>
+              {t("recvReports.backToGroups")}
+            </Button>
+          ) : null}
+          <p className="text-sm text-muted-foreground">
+            {report?.party?.name || t("recvReports.col.party")}
+          </p>
+          {report?.party?.id ? (
+            <Link
+              href={`/dashboard/party/customers/${report.party.id}`}
+              className="text-sm text-primary hover:underline"
+            >
+              {t("recvReports.openPartyPage")}
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
 
       {loading || !report ? (
         <div className="flex justify-center py-16">
@@ -200,6 +283,7 @@ export default function ReceivablesReportPage() {
               <CardDescription>
                 {isAll ? t("recvReports.allDates") : `${dateFrom || "…"} → ${dateTo || "…"}`}
                 {report.group ? ` · ${report.group.name}` : ` · ${t("recvReports.allGroups")}`}
+                {report.party ? ` · ${report.party.name}` : ""}
                 {` · ${t(`rep.view.${view}` as MessageKey)}`}
               </CardDescription>
             </CardHeader>
@@ -235,10 +319,11 @@ export default function ReceivablesReportPage() {
             </CardContent>
           </Card>
 
-          {view === "group" ? (
+          {view === "group" && !drilledParty ? (
             <Card>
               <CardHeader>
                 <CardTitle className="text-nameplate text-sm">{t("recvReports.byGroup")}</CardTitle>
+                <CardDescription>{t("recvReports.clickGroup")}</CardDescription>
               </CardHeader>
               <CardContent className="px-0">
                 <Table>
@@ -259,8 +344,21 @@ export default function ReceivablesReportPage() {
                       </TableRow>
                     ) : (
                       byGroup.map((g) => (
-                        <TableRow key={g.groupId || g.name}>
-                          <TableCell className="font-medium">{g.name}</TableCell>
+                        <TableRow
+                          key={g.groupId || g.name}
+                          tabIndex={0}
+                          className="cursor-pointer"
+                          onClick={() => openGroup(g)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openGroup(g);
+                            }
+                          }}
+                        >
+                          <TableCell className="font-medium text-primary underline-offset-2 hover:underline">
+                            {g.name}
+                          </TableCell>
                           <TableCell className="font-data text-right text-xs">
                             {g.partyCount}
                           </TableCell>
@@ -295,124 +393,159 @@ export default function ReceivablesReportPage() {
             </Card>
           ) : null}
 
-          {view === "party" ? (
-            <>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-nameplate text-sm">{t("recvReports.byParty")}</CardTitle>
-                </CardHeader>
-                <CardContent className="px-0">
-                  <Table>
-                    <TableHeader>
+          {view === "party" && !drilledParty ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-nameplate text-sm">{t("recvReports.byParty")}</CardTitle>
+                <CardDescription>{t("recvReports.clickParty")}</CardDescription>
+              </CardHeader>
+              <CardContent className="px-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t("recvReports.col.party")}</TableHead>
+                      <TableHead className="text-right">{t("recvReports.col.count")}</TableHead>
+                      <TableHead className="text-right">{t("recvReports.partyTotal")}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {report.byParty.length === 0 ? (
                       <TableRow>
-                        <TableHead>{t("recvReports.col.party")}</TableHead>
-                        <TableHead className="text-right">{t("recvReports.col.count")}</TableHead>
-                        <TableHead className="text-right">{t("recvReports.partyTotal")}</TableHead>
+                        <TableCell colSpan={3} className="text-muted-foreground">
+                          {t("recvReports.empty")}
+                        </TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {report.byParty.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={3} className="text-muted-foreground">
-                            {t("recvReports.empty")}
+                    ) : (
+                      report.byParty.map((p) => (
+                        <TableRow
+                          key={p.partyId || p.name}
+                          tabIndex={0}
+                          className="cursor-pointer"
+                          onClick={() => openParty(p)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openParty(p);
+                            }
+                          }}
+                        >
+                          <TableCell className="font-medium text-primary underline-offset-2 hover:underline">
+                            {p.name}
                           </TableCell>
-                        </TableRow>
-                      ) : (
-                        report.byParty.map((p) => (
-                          <TableRow key={p.partyId || p.name}>
-                            <TableCell>
-                              {p.partyId ? (
-                                <Link
-                                  href={`/dashboard/party/customers/${p.partyId}`}
-                                  className="hover:underline"
-                                >
-                                  {p.name}
-                                </Link>
-                              ) : (
-                                p.name
-                              )}
-                            </TableCell>
-                            <TableCell className="font-data text-right text-xs">
-                              {p.recordCount}
-                            </TableCell>
-                            <TableCell className="font-data text-right text-xs text-destructive">
-                              {formatMoney(p.balance)}
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                    {report.byParty.length > 0 ? (
-                      <TableFooter>
-                        <TableRow>
-                          <TableCell className="font-medium">{t("recvReports.grandTotal")}</TableCell>
                           <TableCell className="font-data text-right text-xs">
-                            {report.totals.recordCount}
+                            {p.recordCount}
                           </TableCell>
-                          <TableCell className="font-data text-right text-sm font-medium text-destructive">
-                            {formatMoney(report.totals.totalReceivable)}
+                          <TableCell className="font-data text-right text-xs text-destructive">
+                            {formatMoney(p.balance)}
                           </TableCell>
                         </TableRow>
-                      </TableFooter>
-                    ) : null}
-                  </Table>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-nameplate text-sm">{t("recvReports.allRecords")}</CardTitle>
-                </CardHeader>
-                <CardContent className="px-0">
-                  <Table>
-                    <TableHeader>
+                      ))
+                    )}
+                  </TableBody>
+                  {report.byParty.length > 0 ? (
+                    <TableFooter>
                       <TableRow>
-                        <TableHead>{t("common.date")}</TableHead>
-                        <TableHead>{t("recvReports.col.type")}</TableHead>
-                        <TableHead>{t("recvReports.col.reference")}</TableHead>
-                        <TableHead>{t("recvReports.col.party")}</TableHead>
-                        <TableHead className="text-right">{t("recvReports.col.total")}</TableHead>
-                        <TableHead className="text-right">{t("recvReports.col.paid")}</TableHead>
-                        <TableHead className="text-right">{t("recvReports.col.balance")}</TableHead>
+                        <TableCell className="font-medium">{t("recvReports.grandTotal")}</TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {report.totals.recordCount}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-sm font-medium text-destructive">
+                          {formatMoney(report.totals.totalReceivable)}
+                        </TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {report.records.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={7} className="text-muted-foreground">
-                            {t("recvReports.empty")}
+                    </TableFooter>
+                  ) : null}
+                </Table>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {view === "party" && drilledParty ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-nameplate text-sm">
+                  {report.party
+                    ? t("recvReports.partyRecords", { name: report.party.name })
+                    : t("recvReports.allRecords")}
+                </CardTitle>
+                <CardDescription>{t("recvReports.partyPdfHint")}</CardDescription>
+              </CardHeader>
+              <CardContent className="px-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t("common.date")}</TableHead>
+                      <TableHead>{t("recvReports.col.type")}</TableHead>
+                      <TableHead>{t("recvReports.col.reference")}</TableHead>
+                      <TableHead>{t("recvReports.col.products")}</TableHead>
+                      <TableHead className="text-right">{t("recvReports.col.total")}</TableHead>
+                      <TableHead className="text-right">{t("recvReports.col.paid")}</TableHead>
+                      <TableHead className="text-right">{t("recvReports.col.balance")}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {report.records.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-muted-foreground">
+                          {t("recvReports.empty")}
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      report.records.map((r) => (
+                        <TableRow key={`${r.type}-${r.id}`}>
+                          <TableCell className="font-data text-xs whitespace-nowrap">
+                            {formatDate(r.date)}
+                          </TableCell>
+                          <TableCell className="text-sm">{typeLabel(r.type)}</TableCell>
+                          <TableCell>
+                            <Link href={r.href} className="font-data text-xs hover:underline">
+                              {r.reference}
+                            </Link>
+                          </TableCell>
+                          <TableCell className="max-w-[16rem]">
+                            {r.products && r.products.length > 0 ? (
+                              <div className="flex flex-col gap-0.5">
+                                {r.products.map((line, index) => (
+                                  <span
+                                    key={`${r.id}-p-${index}`}
+                                    className="text-sm leading-snug"
+                                  >
+                                    {line}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-sm text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="font-data text-right text-xs">
+                            {formatMoney(r.totalAmount)}
+                          </TableCell>
+                          <TableCell className="font-data text-right text-xs">
+                            {formatMoney(r.amountPaid)}
+                          </TableCell>
+                          <TableCell className="font-data text-right text-xs text-destructive">
+                            {formatMoney(r.balance)}
                           </TableCell>
                         </TableRow>
-                      ) : (
-                        report.records.map((r) => (
-                          <TableRow key={`${r.type}-${r.id}`}>
-                            <TableCell className="font-data text-xs whitespace-nowrap">
-                              {formatDate(r.date)}
-                            </TableCell>
-                            <TableCell className="text-sm">{typeLabel(r.type)}</TableCell>
-                            <TableCell>
-                              <Link href={r.href} className="font-data text-xs hover:underline">
-                                {r.reference}
-                              </Link>
-                            </TableCell>
-                            <TableCell>{r.partyName}</TableCell>
-                            <TableCell className="font-data text-right text-xs">
-                              {formatMoney(r.totalAmount)}
-                            </TableCell>
-                            <TableCell className="font-data text-right text-xs">
-                              {formatMoney(r.amountPaid)}
-                            </TableCell>
-                            <TableCell className="font-data text-right text-xs text-destructive">
-                              {formatMoney(r.balance)}
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            </>
+                      ))
+                    )}
+                  </TableBody>
+                  {report.records.length > 0 ? (
+                    <TableFooter>
+                      <TableRow>
+                        <TableCell colSpan={6} className="font-medium">
+                          {t("recvReports.grandTotal")}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-sm font-medium text-destructive">
+                          {formatMoney(report.totals.totalReceivable)}
+                        </TableCell>
+                      </TableRow>
+                    </TableFooter>
+                  ) : null}
+                </Table>
+              </CardContent>
+            </Card>
           ) : null}
         </>
       )}

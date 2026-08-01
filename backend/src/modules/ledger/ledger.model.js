@@ -9,6 +9,8 @@ const ledgerEntrySchema = new mongoose.Schema(
     /** For adjustments only: positive = increase owed, negative = decrease owed */
     signedAmount: { type: Number, default: null },
     purchase: { type: mongoose.Schema.Types.ObjectId, ref: "Purchase", default: null },
+    /** Optional due ledger entry this payment was recorded against (e.g. previous pending). */
+    appliesTo: { type: mongoose.Schema.Types.ObjectId, ref: "LedgerEntry", default: null },
     entryDate: { type: Date, required: true, index: true },
     notes: { type: String, trim: true, default: "" },
   },

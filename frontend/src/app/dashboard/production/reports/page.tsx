@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2 } from "lucide-react";
@@ -56,7 +56,68 @@ export default function ProductionReportsPage() {
     return () => clearTimeout(t);
   }, [load]);
 
-  const byProduct = report?.byProduct || [];
+  const hubProducts = useMemo(
+    () => (report?.byProduct || []).filter((p) => (p.family || "hub") === "hub"),
+    [report]
+  );
+  const drumProducts = useMemo(
+    () => (report?.byProduct || []).filter((p) => p.family === "drum"),
+    [report]
+  );
+
+  function renderFamilyTable(
+    family: "hub" | "drum",
+    rows: NonNullable<ProductionReport["byProduct"]>
+  ) {
+    const title = family === "hub" ? t("prod.hub") : t("prod.drum");
+    const accent =
+      family === "hub"
+        ? "border-sky-500/30 bg-sky-500/5"
+        : "border-amber-500/30 bg-amber-500/5";
+
+    return (
+      <Card className={accent}>
+        <CardHeader>
+          <CardTitle className="text-nameplate text-sm">{title}</CardTitle>
+          <CardDescription>{t("prodReports.byProductDesc")}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {rows.length === 0 ? (
+            <p className="py-10 text-center text-sm text-muted-foreground">
+              {t("prodReports.noProdRange")}
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("common.product")}</TableHead>
+                  <TableHead className="text-right">{t("prodReports.runs")}</TableHead>
+                  <TableHead className="text-right">{t("prod.col.usedKg")}</TableHead>
+                  <TableHead className="text-right">{t("prodReports.pieces")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((row) => (
+                  <TableRow key={row.productId}>
+                    <TableCell className="font-medium">{row.name}</TableCell>
+                    <TableCell className="font-data text-right text-xs">
+                      {row.batchCount}
+                    </TableCell>
+                    <TableCell className="font-data text-right text-xs">
+                      {formatKg(row.netConsumedKg)}
+                    </TableCell>
+                    <TableCell className="font-data text-right text-xs">
+                      {row.goodUnits}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -128,46 +189,8 @@ export default function ProductionReportsPage() {
             ))}
           </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-nameplate text-sm">{t("prodReports.byProduct")}</CardTitle>
-              <CardDescription>{t("prodReports.byProductDesc")}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {byProduct.length === 0 ? (
-                <p className="py-10 text-center text-sm text-muted-foreground">
-                  {t("prodReports.noProdRange")}
-                </p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{t("common.product")}</TableHead>
-                      <TableHead className="text-right">{t("prodReports.runs")}</TableHead>
-                      <TableHead className="text-right">{t("prod.col.usedKg")}</TableHead>
-                      <TableHead className="text-right">{t("prodReports.pieces")}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {byProduct.map((row) => (
-                      <TableRow key={row.productId}>
-                        <TableCell className="font-medium">{row.name}</TableCell>
-                        <TableCell className="font-data text-right text-xs">
-                          {row.batchCount}
-                        </TableCell>
-                        <TableCell className="font-data text-right text-xs">
-                          {formatKg(row.netConsumedKg)}
-                        </TableCell>
-                        <TableCell className="font-data text-right text-xs">
-                          {row.goodUnits}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
+          {renderFamilyTable("hub", hubProducts)}
+          {renderFamilyTable("drum", drumProducts)}
         </>
       )}
     </div>

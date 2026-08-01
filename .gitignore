@@ -11,5 +11,6 @@ node_modules/
 .mongo-logs/
 
 .mongo-prod-dump/
+.mongo-dump-prod/
 .mongo-data/
 .mongo-logs/

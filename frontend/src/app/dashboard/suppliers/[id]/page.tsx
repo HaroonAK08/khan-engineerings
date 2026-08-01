@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import {
   apiError,
+  createPurchase,
   formatMoney,
   getLedger,
   getSupplier,
@@ -23,10 +24,12 @@ import { SupplierHistoryCalendar } from "@/components/suppliers/supplier-history
 import { useI18n } from "@/hooks/use-i18n";
 import { todayInput } from "@/lib/date-range";
 
-type HistoryKind = "purchase" | "payment";
-
 function isInternalNote(notes: string) {
   return /^sup-[a-z0-9-]+$/i.test(notes.trim());
+}
+
+function roundMoney(n: number) {
+  return Math.round(n * 100) / 100;
 }
 
 export default function SupplierDetailPage() {
@@ -43,7 +46,14 @@ export default function SupplierDetailPage() {
   });
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [historyKind, setHistoryKind] = useState<HistoryKind>("purchase");
+
+  const [showPurchaseForm, setShowPurchaseForm] = useState(false);
+  const [purchaseMaterial, setPurchaseMaterial] = useState<"scrap" | "daig">("scrap");
+  const [purchaseQty, setPurchaseQty] = useState("");
+  const [purchaseRate, setPurchaseRate] = useState("");
+  const [purchaseDate, setPurchaseDate] = useState(todayInput());
+  const [purchaseNotes, setPurchaseNotes] = useState("");
+  const [savingPurchase, setSavingPurchase] = useState(false);
 
   const [showPendingForm, setShowPendingForm] = useState(false);
   const [pendingAmount, setPendingAmount] = useState("");
@@ -85,6 +95,60 @@ export default function SupplierDetailPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const purchaseTotal = (() => {
+    const qty = Math.round(Number(purchaseQty));
+    const rate = Number(purchaseRate);
+    if (!Number.isFinite(qty) || qty <= 0 || !Number.isFinite(rate) || rate <= 0) return 0;
+    return roundMoney(qty * rate);
+  })();
+
+  async function onAddPurchase() {
+    const qty = Math.round(Number(purchaseQty));
+    const rate = Number(purchaseRate);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      toast.error(t("purchases.enterQty"));
+      return;
+    }
+    if (!Number.isFinite(rate) || rate <= 0) {
+      toast.error(t("purchases.enterRate"));
+      return;
+    }
+    if (!purchaseDate) {
+      toast.error(t("supplierDetail.pickDate"));
+      return;
+    }
+    setSavingPurchase(true);
+    try {
+      const total = roundMoney(qty * rate);
+      const body = {
+        supplier: id,
+        materialType: purchaseMaterial,
+        quantityKg: qty,
+        ratePerKg: rate,
+        totalAmount: total,
+        purchaseDate,
+        notes: purchaseNotes.trim() || undefined,
+        freightAmount: 0,
+        amountPaid: 0,
+      };
+      const { result: purchase, cancelled } = await withSameDayConfirm((confirmDuplicate) =>
+        createPurchase({ ...body, confirmDuplicate })
+      );
+      if (cancelled || !purchase) return;
+      toast.success(t("purchases.saved"));
+      setPurchaseQty("");
+      setPurchaseRate("");
+      setPurchaseNotes("");
+      setPurchaseDate(todayInput());
+      setShowPurchaseForm(false);
+      await load({ silent: true });
+    } catch (err) {
+      toast.error(apiError(err, t("supplierDetail.purchaseFailed")));
+    } finally {
+      setSavingPurchase(false);
+    }
+  }
 
   async function onAddPreviousPending() {
     const amount = Number(pendingAmount);
@@ -178,7 +242,7 @@ export default function SupplierDetailPage() {
     supplier.notes && !isInternalNote(supplier.notes) ? supplier.notes : "";
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+    <div className="flex w-full flex-col gap-6">
       <div>
         <Link
           href="/dashboard/suppliers"
@@ -205,7 +269,13 @@ export default function SupplierDetailPage() {
         {[
           { label: t("supplierDetail.totalDue"), value: formatMoney(stats.totalDue) },
           { label: t("supplierDetail.paid"), value: formatMoney(stats.totalPaid) },
-          { label: t("supplierDetail.paymentLeft"), value: formatMoney(balance) },
+          {
+            label:
+              balance < 0
+                ? t("supplierDetail.advance")
+                : t("supplierDetail.paymentLeft"),
+            value: formatMoney(Math.abs(balance)),
+          },
         ].map((s) => (
           <Card key={s.label} className="py-0">
             <CardContent className="p-4">
@@ -217,6 +287,104 @@ export default function SupplierDetailPage() {
           </Card>
         ))}
       </div>
+
+      <Card>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle className="text-nameplate text-sm">
+              {t("supplierDetail.addInventory")}
+            </CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t("supplierDetail.addInventoryDesc")}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setShowPurchaseForm((v) => !v);
+              setShowPendingForm(false);
+              setShowPay(false);
+            }}
+          >
+            {showPurchaseForm ? t("common.cancel") : t("supplierDetail.addInventory")}
+          </Button>
+        </CardHeader>
+        {showPurchaseForm ? (
+          <CardContent className="pt-0">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("purchases.material")}</Label>
+                <select
+                  className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                  value={purchaseMaterial}
+                  onChange={(e) =>
+                    setPurchaseMaterial(e.target.value as "scrap" | "daig")
+                  }
+                >
+                  <option value="scrap">{t("prod.scrap")}</option>
+                  <option value="daig">{t("prod.daig")}</option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("purchases.quantityKg")}</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={purchaseQty}
+                  onChange={(e) => setPurchaseQty(e.target.value)}
+                  placeholder="0"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("purchases.ratePerKg")}</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={purchaseRate}
+                  onChange={(e) => setPurchaseRate(e.target.value)}
+                  placeholder="0"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("common.date")}</Label>
+                <Input
+                  type="date"
+                  value={purchaseDate}
+                  onChange={(e) => setPurchaseDate(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("purchases.totalAmount")}</Label>
+                <div className="font-data flex h-9 items-center rounded-md border bg-muted/30 px-3 text-sm font-semibold">
+                  {purchaseTotal > 0 ? formatMoney(purchaseTotal) : "—"}
+                </div>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("common.notes")}</Label>
+                <Input
+                  value={purchaseNotes}
+                  onChange={(e) => setPurchaseNotes(e.target.value)}
+                />
+              </div>
+            </div>
+            <Button
+              type="button"
+              className="mt-3 gap-2"
+              disabled={savingPurchase}
+              onClick={() => void onAddPurchase()}
+            >
+              {savingPurchase ? <Loader2 className="size-4 animate-spin" /> : null}
+              {t("common.save")}
+            </Button>
+          </CardContent>
+        ) : null}
+      </Card>
 
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -234,6 +402,7 @@ export default function SupplierDetailPage() {
             size="sm"
             onClick={() => {
               setShowPendingForm((v) => !v);
+              setShowPurchaseForm(false);
               setShowPay(false);
             }}
           >
@@ -297,10 +466,10 @@ export default function SupplierDetailPage() {
             type="button"
             variant="outline"
             size="sm"
-            disabled={balance <= 0 && !showPay}
             onClick={() => {
               setShowPay((v) => !v);
               setShowPendingForm(false);
+              setShowPurchaseForm(false);
               if (!showPay) setPayAmount(balance > 0 ? String(balance) : "");
             }}
           >
@@ -347,26 +516,8 @@ export default function SupplierDetailPage() {
       </Card>
 
       <div>
-        <div className="mb-4 flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant={historyKind === "purchase" ? "default" : "outline"}
-            onClick={() => setHistoryKind("purchase")}
-          >
-            {t("supplierDetail.purchaseHistory")}
-          </Button>
-          <Button
-            type="button"
-            variant={historyKind === "payment" ? "default" : "outline"}
-            onClick={() => setHistoryKind("payment")}
-          >
-            {t("supplierDetail.paymentHistory")}
-          </Button>
-        </div>
-
         <SupplierHistoryCalendar
           supplierId={id}
-          kind={historyKind}
           entries={entries}
           onChanged={() => load({ silent: true })}
         />

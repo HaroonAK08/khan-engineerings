@@ -108,15 +108,10 @@ async function getBalance(supplierId) {
 }
 
 async function recordPayment(supplierId, data = {}) {
-  const { amount, entryDate, notes, purchaseId } = data;
+  const { amount, entryDate, notes, purchaseId, appliesTo } = data;
   const supplier = await supplierService.getById(supplierId);
   const n = roundMoney(Number(amount));
   if (!Number.isFinite(n) || n <= 0) throw httpError("Payment amount must be greater than 0", 400);
-
-  const owed = await getBalance(supplierId);
-  if (n > owed + 0.001) {
-    throw httpError(`Payment cannot exceed what you owe (${owed})`, 400);
-  }
 
   let purchase = null;
   if (purchaseId) {
@@ -125,6 +120,16 @@ async function recordPayment(supplierId, data = {}) {
     if (String(purchase.supplier) !== String(supplierId)) {
       throw httpError("Purchase does not belong to this supplier", 400);
     }
+  }
+
+  let appliesToId = null;
+  if (appliesTo) {
+    const target = await LedgerEntry.findOne({ _id: appliesTo, supplier: supplierId });
+    if (!target) throw httpError("Target ledger entry not found", 404);
+    if (target.type === "payment") {
+      throw httpError("Payment cannot apply to another payment", 400);
+    }
+    appliesToId = target._id;
   }
 
   const date = parseDate(entryDate || new Date(), "Entry date");
@@ -154,8 +159,11 @@ async function recordPayment(supplierId, data = {}) {
     type: "payment",
     amount: n,
     purchase: purchase ? purchase._id : null,
+    appliesTo: appliesToId,
     entryDate: date,
-    notes: notes?.trim() || (purchase ? "Payment on purchase" : "Supplier payment"),
+    notes:
+      notes?.trim() ||
+      (purchase ? "Payment on purchase" : appliesToId ? "Payment on entry" : "Supplier payment"),
   });
 
   await syncSupplierPurchaseBalances(supplierId);
@@ -196,11 +204,6 @@ async function updateEntry(supplierId, entryId, data) {
     const n = Number(data.amount);
     if (entry.type === "payment") {
       if (!Number.isFinite(n) || n <= 0) throw httpError("Payment amount must be greater than 0", 400);
-      const owed = await getBalance(supplierId);
-      const maxAllowed = roundMoney(owed + (entry.amount || 0));
-      if (n > maxAllowed + 0.001) {
-        throw httpError(`Payment cannot exceed what you owe (${maxAllowed})`, 400);
-      }
       entry.amount = roundMoney(n);
       entry.signedAmount = null;
     } else {

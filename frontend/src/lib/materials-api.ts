@@ -171,6 +171,7 @@ export async function recordPayment(
     entryDate?: string;
     notes?: string;
     purchaseId?: string;
+    appliesTo?: string;
     confirmDuplicate?: boolean;
   }
 ) {

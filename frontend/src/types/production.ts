@@ -96,6 +96,7 @@ export type ProductionReport = {
   byProduct?: Array<{
     productId: string;
     name: string;
+    family?: ProductFamily | string;
     batchCount: number;
     goodUnits: number;
     rejectedUnits: number;
