@@ -306,13 +306,41 @@ export function SupplierHistoryCalendar({
       .filter((row): row is PurchaseRowView => Boolean(row));
   }, [filtered, purchaseRowsById]);
 
-  const total = useMemo(
-    () =>
+  const totals = useMemo(() => {
+    const supplierIds = new Set(purchaseViews.map((row) => supplierIdOf(row.entry)));
+
+    const totalAmount = roundMoney(
       purchaseViews
         .filter((row) => row.entry.type === "purchase")
-        .reduce((s, row) => s + row.amount, 0),
-    [purchaseViews]
-  );
+        .reduce((s, row) => s + row.amount, 0)
+    );
+
+    const totalPrevious = roundMoney(
+      entries
+        .filter(
+          (e) =>
+            e.type === "adjustment" &&
+            (e.signedAmount ?? 0) > 0 &&
+            (supplierIds.size === 0 || supplierIds.has(supplierIdOf(e)))
+        )
+        .reduce((s, e) => s + (e.signedAmount ?? e.amount ?? 0), 0)
+    );
+
+    const totalPaid = roundMoney(
+      entries
+        .filter(
+          (e) =>
+            e.type === "payment" &&
+            (supplierIds.size === 0 || supplierIds.has(supplierIdOf(e)))
+        )
+        .reduce((s, e) => s + (e.amount || 0), 0)
+    );
+
+    const previousPlusAmount = roundMoney(totalPrevious + totalAmount);
+    const totalBalance = roundMoney(previousPlusAmount - totalPaid);
+
+    return { totalAmount, totalPrevious, previousPlusAmount, totalPaid, totalBalance };
+  }, [purchaseViews, entries]);
 
   const formTotal = useMemo(() => {
     const qty = Number(formQty);
@@ -677,10 +705,12 @@ export function SupplierHistoryCalendar({
               />
             </div>
             <div className="grid gap-1.5">
-              <Label>{t("exp.totalSpent")}</Label>
+              <Label>{t("common.balance")}</Label>
               <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3">
-                <span className="font-data text-base font-semibold">
-                  {formatMoney(total)}
+                <span
+                  className={`font-data text-base font-semibold ${balanceToneClass(totals.totalBalance) || ""}`}
+                >
+                  {formatBalanceDisplay(totals.totalBalance)}
                 </span>
               </div>
             </div>
@@ -825,12 +855,23 @@ export function SupplierHistoryCalendar({
                     colSpan={showSupplierNames ? 3 : 2}
                     className="font-semibold"
                   >
-                    {t("exp.totalSpent")}
+                    {t("supplierDetail.totals")}
                   </TableCell>
                   <TableCell className="font-data text-end text-base font-semibold whitespace-nowrap">
-                    {formatMoney(total)}
+                    {formatMoney(totals.totalAmount)}
                   </TableCell>
-                  <TableCell colSpan={4} />
+                  <TableCell className="font-data text-end text-base font-semibold whitespace-nowrap">
+                    {formatMoney(totals.previousPlusAmount)}
+                  </TableCell>
+                  <TableCell className="font-data text-end text-base font-semibold whitespace-nowrap">
+                    {formatMoney(totals.totalPaid)}
+                  </TableCell>
+                  <TableCell
+                    className={`font-data text-end text-base font-semibold whitespace-nowrap ${balanceToneClass(totals.totalBalance) || ""}`}
+                  >
+                    {formatBalanceDisplay(totals.totalBalance)}
+                  </TableCell>
+                  <TableCell />
                 </TableRow>
               </TableFooter>
             </Table>
