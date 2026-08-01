@@ -203,6 +203,7 @@ function toRow(builty) {
 async function listBuilties({ q, customer, paymentStatus, dateFrom, dateTo } = {}) {
   const filter = {};
   if (customer) filter.customer = customer;
+  if (paymentStatus) filter.paymentStatus = paymentStatus;
   if (dateFrom || dateTo) {
     filter.builtyDate = {};
     if (dateFrom) filter.builtyDate.$gte = parseDate(dateFrom, "dateFrom");
@@ -217,20 +218,11 @@ async function listBuilties({ q, customer, paymentStatus, dateFrom, dateTo } = {
     filter.$or = [{ builtyNo: new RegExp(term, "i") }, { billNo: new RegExp(term, "i") }];
   }
 
-  const customerIds = customer
-    ? [customer]
-    : await Builty.distinct("customer", filter);
-
-  for (const id of customerIds) {
-    await syncCustomerBuiltyPaymentStatuses(id);
-  }
-
-  if (paymentStatus) filter.paymentStatus = paymentStatus;
-
   const builties = await Builty.find(filter)
     .populate("customer", "name phone")
     .populate({ path: "items.product", select: "name sku" })
-    .sort({ builtyDate: -1, createdAt: -1 });
+    .sort({ builtyDate: -1, createdAt: -1 })
+    .lean();
 
   return builties.map(toRow);
 }
