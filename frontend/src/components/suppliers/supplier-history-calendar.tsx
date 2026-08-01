@@ -281,7 +281,10 @@ export function SupplierHistoryCalendar({
     let list = entries.filter((e) => {
       if (e.type === "purchase") return true;
       if (e.type === "adjustment" && (e.signedAmount ?? 0) > 0) {
-        return showPreviousPending;
+        if (showPreviousPending) return true;
+        // Always show previous pending that already has payments applied.
+        const row = purchaseRowsById.get(e._id);
+        return Boolean(row && row.paidTotal > 0.001);
       }
       return false;
     });
@@ -298,7 +301,7 @@ export function SupplierHistoryCalendar({
       .sort(
         (a, b) => new Date(b.entryDate).getTime() - new Date(a.entryDate).getTime()
       );
-  }, [entries, dateFrom, dateTo, showPreviousPending]);
+  }, [entries, dateFrom, dateTo, showPreviousPending, purchaseRowsById]);
 
   const purchaseViews = useMemo(() => {
     return filtered
