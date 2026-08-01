@@ -2553,7 +2553,6 @@ const ur: Record<MessageKey, string> = {
   "supplierDetail.noPurchaseOnDay": "اس تاریخ پر کوئی خریداری نہیں",
   "supplierDetail.noPaymentOnDay": "اس تاریخ پر کوئی ادائیگی نہیں",
   "supplierDetail.tapDayHint": "اس دن کے اندراجات دیکھنے کے لیے تاریخ دبائیں",
-  "supplierDetail.totals": "کل",
   "supplierDetail.showPreviousPending": "پچھلا بقایا دکھائیں",
   "supplierDetail.hidePreviousPending": "پچھلا بقایا چھپائیں",
   "supplierDetail.paymentsOnRecord": "اس اندراج کی ادائیگیاں",
