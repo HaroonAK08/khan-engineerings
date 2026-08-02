@@ -351,9 +351,15 @@ async function supplierStatement(supplierId, { dateFrom, dateTo } = {}) {
 
 async function exportSales(query, format, res) {
   const report = await builtyService.getSalesReport(query);
+  const drilledParty = Boolean(query.customerId || report.party);
   const view = ["whole", "party", "group"].includes(query.view) ? query.view : "party";
-  const viewLabel =
-    view === "whole" ? "Overall" : view === "group" ? "Group wise" : "Party wise";
+  const viewLabel = drilledParty
+    ? `Party — ${report.party?.name || "detail"}`
+    : view === "whole"
+      ? "Overall"
+      : view === "group"
+        ? "Group wise"
+        : "Party wise";
   const meta = {
     "Builty count": report.totals.orderCount,
     "Total sales": money(report.totals.totalSales),
@@ -362,10 +368,13 @@ async function exportSales(query, format, res) {
     Period: periodLabel(query.dateFrom, query.dateTo),
     View: viewLabel,
     Group: report.group?.name || "All groups",
+    Party: report.party?.name || "",
   };
-  const title = report.group
-    ? `Sales report — ${report.group.name}`
-    : "Sales & receivables report";
+  const title = report.party
+    ? `Sales report — ${report.party.name}`
+    : report.group
+      ? `Sales report — ${report.group.name}`
+      : "Sales report";
 
   const partyColumns = ["Party", "Orders", "Sales", "Paid", "Outstanding"];
   const partyRows = (report.topCustomers || []).map((p) => [
@@ -387,7 +396,8 @@ async function exportSales(query, format, res) {
   ]);
 
   const recordColumns = ["Builty", "Bill", "Party", "Date", "Total", "Paid", "Balance", "Status"];
-  const recordRows = (report.outstanding || []).map((o) => [
+  const recordSource = report.records?.length ? report.records : report.outstanding || [];
+  const recordRows = recordSource.map((o) => [
     o.orderNo,
     o.invoiceNo,
     o.customer,
@@ -400,18 +410,19 @@ async function exportSales(query, format, res) {
 
   if (format === "pdf") {
     const sections = [];
-    if (view === "group") {
-      sections.push({ heading: "Sales by group", columns: groupColumns, rows: groupRows });
-    } else if (view === "party") {
-      sections.push({ heading: "Sales by party", columns: partyColumns, rows: partyRows });
+    if (drilledParty) {
       sections.push({
-        heading: "Outstanding invoices",
+        heading: `All builties — ${report.party?.name || "Party"}`,
         columns: recordColumns,
         rows: recordRows,
       });
+    } else if (view === "group") {
+      sections.push({ heading: "Sales by group", columns: groupColumns, rows: groupRows });
+    } else if (view === "party") {
+      sections.push({ heading: "Sales by party", columns: partyColumns, rows: partyRows });
     } else {
       sections.push({
-        heading: "Overall sales",
+        heading: "Overall totals",
         columns: ["Metric", "Value"],
         rows: [
           ["Builty count", report.totals.orderCount],
@@ -420,82 +431,145 @@ async function exportSales(query, format, res) {
           ["Outstanding", money(report.totals.outstanding)],
         ],
       });
+      sections.push({
+        heading: "All builties",
+        columns: recordColumns,
+        rows: recordRows,
+      });
     }
     const buf = await buildPdf({
       title,
       subtitle: "Khan Engineerings",
-      metaLines: Object.entries(meta).map(([k, v]) => `${k}: ${v}`),
+      metaLines: Object.entries(meta)
+        .filter(([, v]) => v !== "" && v != null)
+        .map(([k, v]) => `${k}: ${v}`),
       sections,
     });
-    return sendPdf(res, buf, `sales-report.pdf`);
+    return sendPdf(res, buf, drilledParty ? "sales-party-report.pdf" : "sales-report.pdf");
   }
   const buf = await buildExcel({
     title,
     sheetName: "Sales",
-    columns:
-      view === "group" ? groupColumns : view === "whole" ? ["Metric", "Value"] : recordColumns,
-    rows:
-      view === "group"
+    columns: drilledParty
+      ? recordColumns
+      : view === "group"
+        ? groupColumns
+        : view === "whole"
+          ? recordColumns
+          : partyColumns,
+    rows: drilledParty
+      ? recordRows
+      : view === "group"
         ? groupRows
         : view === "whole"
-          ? [
-              ["Builty count", report.totals.orderCount],
-              ["Total sales", money(report.totals.totalSales)],
-              ["Total paid", money(report.totals.totalPaid)],
-              ["Outstanding", money(report.totals.outstanding)],
-            ]
-          : recordRows,
+          ? recordRows
+          : partyRows,
     meta,
   });
-  return sendExcel(res, buf, `sales-report.xlsx`);
+  return sendExcel(res, buf, drilledParty ? "sales-party-report.xlsx" : "sales-report.xlsx");
 }
 
 async function exportPurchases(query, format, res) {
   const report = await purchaseService.getReport(query);
+  const drilledParty = Boolean(query.supplier || report.party);
   const view = ["whole", "party"].includes(query.view) ? query.view : "party";
-  const viewLabel = view === "whole" ? "Overall" : "Party wise";
-  const columns = ["Supplier", "Purchases", "Kg", "Spend", "Avg rate"];
-  const rows = (report.bySupplier || []).map((s) => [
+  const viewLabel = drilledParty
+    ? `Supplier — ${report.party?.name || "detail"}`
+    : view === "whole"
+      ? "Overall"
+      : "Party wise";
+
+  const partyColumns = ["Supplier", "Purchases", "Kg", "Spend", "Avg rate"];
+  const partyRows = (report.byParty || report.bySupplier || []).map((s) => [
     s.name || s.supplierName || "Unknown",
     s.purchaseCount || s.count || 0,
     s.totalKg || s.kg || 0,
     money(s.totalSpend || s.spend || 0),
     money(s.avgRate || 0),
   ]);
+
+  const recordColumns = [
+    "Date",
+    "Supplier",
+    "Material",
+    "Kg",
+    "Rate",
+    "Spend",
+  ];
+  const recordRows = (report.records || []).map((r) => [
+    fmtDate(r.date),
+    r.supplierName,
+    r.materialType,
+    r.quantityKg,
+    money(r.ratePerKg),
+    money(r.spend),
+  ]);
+
   const meta = {
     Period: periodLabel(query.dateFrom, query.dateTo),
     View: viewLabel,
+    Supplier: report.party?.name || "",
     "Total kg": report.totals?.totalKg ?? "",
     "Total spend": money(report.totals?.totalSpend),
     Purchases: report.totals?.purchaseCount ?? "",
   };
-  const title = "Purchase report";
+  const title = report.party
+    ? `Purchase report — ${report.party.name}`
+    : "Purchase report";
+
   if (format === "pdf") {
-    const sections =
-      view === "whole"
-        ? [
-            {
-              heading: "Overall purchases",
-              columns: ["Metric", "Value"],
-              rows: [
-                ["Purchases", report.totals?.purchaseCount ?? 0],
-                ["Total kg", report.totals?.totalKg ?? 0],
-                ["Total spend", money(report.totals?.totalSpend)],
-                ["Avg rate", money(report.totals?.avgRate)],
-              ],
-            },
-          ]
-        : [{ heading: "Purchases by supplier", columns, rows }];
+    const sections = [];
+    if (drilledParty) {
+      sections.push({
+        heading: `All purchases — ${report.party?.name || "Supplier"}`,
+        columns: recordColumns,
+        rows: recordRows,
+      });
+    } else if (view === "whole") {
+      sections.push({
+        heading: "Overall totals",
+        columns: ["Metric", "Value"],
+        rows: [
+          ["Purchases", report.totals?.purchaseCount ?? 0],
+          ["Total kg", report.totals?.totalKg ?? 0],
+          ["Total spend", money(report.totals?.totalSpend)],
+          ["Avg rate", money(report.totals?.avgRate)],
+        ],
+      });
+      sections.push({
+        heading: "All purchases",
+        columns: recordColumns,
+        rows: recordRows,
+      });
+    } else {
+      sections.push({ heading: "Purchases by supplier", columns: partyColumns, rows: partyRows });
+    }
     const buf = await buildPdf({
       title,
       subtitle: "Khan Engineerings",
-      metaLines: Object.entries(meta).map(([k, v]) => `${k}: ${v}`),
+      metaLines: Object.entries(meta)
+        .filter(([, v]) => v !== "" && v != null)
+        .map(([k, v]) => `${k}: ${v}`),
       sections,
     });
-    return sendPdf(res, buf, "purchases-report.pdf");
+    return sendPdf(
+      res,
+      buf,
+      drilledParty ? "purchases-supplier-report.pdf" : "purchases-report.pdf"
+    );
   }
-  const buf = await buildExcel({ title, sheetName: "Purchases", columns, rows, meta });
-  return sendExcel(res, buf, "purchases-report.xlsx");
+  const buf = await buildExcel({
+    title,
+    sheetName: "Purchases",
+    columns: drilledParty || view === "whole" ? recordColumns : partyColumns,
+    rows: drilledParty || view === "whole" ? recordRows : partyRows,
+    meta,
+  });
+  return sendExcel(
+    res,
+    buf,
+    drilledParty ? "purchases-supplier-report.xlsx" : "purchases-report.xlsx"
+  );
 }
 
 async function exportProduction(query, format, res) {
@@ -1410,11 +1484,12 @@ const COMBINED_MODULES = [
 async function collectModuleSection(kind, query) {
   if (kind === "sales") {
     const report = await builtyService.getSalesReport(query);
+    const t = report.totals || {};
     return {
       id: "sales",
       sheetName: "Sales",
-      title: "Sales & receivables",
-      heading: "Sales & receivables",
+      title: "Sales",
+      heading: "Sales",
       columns: ["Builty", "Bill", "Party", "Date", "Total", "Paid", "Balance", "Status"],
       rows: (report.outstanding || []).map((o) => [
         o.orderNo,
@@ -1427,15 +1502,44 @@ async function collectModuleSection(kind, query) {
         o.paymentStatus,
       ]),
       meta: {
-        "Builty count": report.totals.orderCount,
-        "Total sales": money(report.totals.totalSales),
-        Outstanding: money(report.totals.outstanding),
+        "Builty count": t.orderCount || 0,
+        "Total sales (billed)": money(t.totalSales),
+        "Total paid (collected)": money(t.totalPaid),
+        "Outstanding (still unpaid)": money(t.outstanding),
       },
+      conclusion: [
+        ["Builty count", t.orderCount || 0],
+        ["Total sales (billed)", money(t.totalSales)],
+        ["Total paid (collected)", money(t.totalPaid)],
+        ["Outstanding (still unpaid)", money(t.outstanding)],
+      ],
     };
   }
 
   if (kind === "purchases") {
     const report = await purchaseService.getReport(query);
+    const t = report.totals || {};
+    const byMat = report.byMaterialType || [];
+    const scrap = byMat.find((m) => (m.materialType || "scrap") === "scrap");
+    const daig = byMat.find((m) => m.materialType === "daig");
+    const conclusion = [
+      ["Purchase count", t.purchaseCount || 0],
+      ["Total kg", t.totalKg ?? 0],
+      ["Total spend", money(t.totalSpend)],
+      ["Average rate / kg", money(t.avgRate)],
+    ];
+    if (scrap) {
+      conclusion.push(
+        ["Scrap kg", scrap.totalKg ?? 0],
+        ["Scrap spend", money(scrap.totalSpend)]
+      );
+    }
+    if (daig) {
+      conclusion.push(
+        ["Daig kg", daig.totalKg ?? 0],
+        ["Daig spend", money(daig.totalSpend)]
+      );
+    }
     return {
       id: "purchases",
       sheetName: "Purchases",
@@ -1450,14 +1554,18 @@ async function collectModuleSection(kind, query) {
         money(s.avgRate || 0),
       ]),
       meta: {
-        "Total kg": report.totals?.totalKg ?? "",
-        "Total spend": money(report.totals?.totalSpend),
+        "Purchase count": t.purchaseCount || 0,
+        "Total kg": t.totalKg ?? 0,
+        "Total spend": money(t.totalSpend),
+        "Average rate / kg": money(t.avgRate),
       },
+      conclusion,
     };
   }
 
   if (kind === "production") {
     const report = await productionService.getReport(query);
+    const t = report.totals || {};
     const columns = ["Product", "Batches", "Good", "Rejected", "Net kg"];
     const toRow = (p) => [
       p.name,
@@ -1492,21 +1600,48 @@ async function collectModuleSection(kind, query) {
         },
       ],
       meta: {
-        Batches: report.totals.batchCount,
-        Hub: report.totals.byFamily?.hub ?? 0,
-        Drum: report.totals.byFamily?.drum ?? 0,
-        "Good units": report.totals.goodUnits,
+        Batches: t.batchCount || 0,
+        "Scrap used (kg)": t.totalInputKg ?? t.netConsumedKg ?? 0,
+        "Waste (kg)": t.wasteKg ?? 0,
+        "Good units": t.goodUnits || 0,
+        "Rejected units": t.rejectedUnits || t.brokenUnits || 0,
       },
+      conclusion: [
+        ["Batches", t.batchCount || 0],
+        ["Hub batches", t.byFamily?.hub ?? 0],
+        ["Drum batches", t.byFamily?.drum ?? 0],
+        ["Scrap used (kg)", t.totalInputKg ?? t.netConsumedKg ?? 0],
+        ["Waste (kg)", t.wasteKg ?? 0],
+        ["Good units", t.goodUnits || 0],
+        ["Rejected units", t.rejectedUnits || t.brokenUnits || 0],
+        ["Reject rate %", t.rejectRate ?? 0],
+        ["Loss rate %", t.lossRate ?? 0],
+      ],
     };
   }
 
   if (kind === "expenses") {
     const report = await expenseService.getCostReport(query);
+    const t = report.totals || {};
+    const topCats = (report.byCategory || [])
+      .slice()
+      .sort((a, b) => (b.amount || 0) - (a.amount || 0))
+      .slice(0, 5);
+    const conclusion = [
+      ["Expense entries", t.expenseCount || 0],
+      ["Total operating cost", money(t.totalOperatingCost || 0)],
+    ];
+    for (const c of topCats) {
+      conclusion.push([
+        `Category — ${c.label || c.category || "—"}`,
+        money(c.amount || 0),
+      ]);
+    }
     return {
       id: "expenses",
       sheetName: "Expenses",
       title: "Expenses / costs",
-      heading: "Expenses / costs",
+      heading: "Expenses",
       columns: ["Category", "Amount", "Count"],
       rows: (report.byCategory || []).map((c) => [
         c.label || c.category || "—",
@@ -1514,14 +1649,17 @@ async function collectModuleSection(kind, query) {
         c.count || 0,
       ]),
       meta: {
-        "Total operating": money(report.totals?.totalOperatingCost || 0),
-        Expenses: report.totals?.expenseCount || 0,
+        "Expense entries": t.expenseCount || 0,
+        "Total operating cost": money(t.totalOperatingCost || 0),
       },
+      conclusion,
     };
   }
 
   if (kind === "inventory") {
     const report = await inventoryService.getInventoryReport(query);
+    const produced = report.producedThisPeriod?.totals || {};
+    const rawKg = report.raw?.availableKg ?? report.raw?.totalKg ?? 0;
     return {
       id: "inventory",
       sheetName: "Inventory",
@@ -1536,36 +1674,54 @@ async function collectModuleSection(kind, query) {
         i.lowStockThreshold || 0,
       ]),
       meta: {
-        "Raw scrap kg": report.raw?.availableKg ?? report.raw?.totalKg ?? 0,
-        "Finished units": report.finishedStock?.totalUnits ?? 0,
+        "Raw scrap available (kg)": rawKg,
+        "Finished units in stock": report.finishedStock?.totalUnits ?? 0,
       },
+      conclusion: [
+        ["Raw scrap available (kg)", rawKg],
+        ["Finished units in stock", report.finishedStock?.totalUnits ?? 0],
+        ["Finished SKUs", report.finishedStock?.skuCount ?? 0],
+        ["Produced this period (good)", produced.goodUnits || 0],
+        ["Produced this period (rejected)", produced.rejectedUnits || 0],
+        ["Low-stock alerts", (report.lowStock || []).length],
+      ],
     };
   }
 
   if (kind === "finance") {
     const overview = await financeService.getOverview(query);
+    const pnl = overview.profitAndLoss || {};
+    const cash = overview.cashFlow || {};
+    const conclusion = [
+      ["Revenue", money(pnl.revenue)],
+      ["COGS", money(pnl.cogs)],
+      ["Gross profit", money(pnl.grossProfit)],
+      ["Other expenses", money(pnl.otherExpenses)],
+      ["Net profit", money(pnl.netProfit)],
+      ["Profit margin %", pnl.marginPct == null ? "—" : pnl.marginPct],
+      ["Cash in", money(cash.cashIn)],
+      ["Cash out", money(cash.cashOut)],
+      ["Net cash", money(cash.net)],
+    ];
     return {
       id: "finance",
       sheetName: "Finance",
       title: "Finance P&L",
-      heading: "Finance P&L",
+      heading: "Finance",
       columns: ["Line", "Amount"],
-      rows: [
-        ["Revenue", money(overview.profitAndLoss.revenue)],
-        ["COGS", money(overview.profitAndLoss.cogs)],
-        ["Gross profit", money(overview.profitAndLoss.grossProfit)],
-        ["Other expenses", money(overview.profitAndLoss.otherExpenses)],
-        ["Net profit", money(overview.profitAndLoss.netProfit)],
-        ["Cash in", money(overview.cashFlow.cashIn)],
-        ["Cash out", money(overview.cashFlow.cashOut)],
-        ["Net cash", money(overview.cashFlow.net)],
-      ],
-      meta: {},
+      rows: conclusion,
+      meta: {
+        Revenue: money(pnl.revenue),
+        "Net profit": money(pnl.netProfit),
+        "Net cash": money(cash.net),
+      },
+      conclusion,
     };
   }
 
   if (kind === "receivables") {
     const report = await getReceivablesReport(query);
+    const t = report.totals || {};
     return {
       id: "receivables",
       sheetName: "Receivables",
@@ -1579,14 +1735,22 @@ async function collectModuleSection(kind, query) {
         money(p.balance),
       ]),
       meta: {
-        "Total receivable": money(report.totals.totalReceivable),
-        Parties: report.totals.partyCount,
+        "Total receivable (parties still owe)": money(t.totalReceivable),
+        "Parties with balance": t.partyCount || 0,
+        Records: t.recordCount || 0,
       },
+      conclusion: [
+        ["Total receivable (parties still owe)", money(t.totalReceivable)],
+        ["Parties with balance", t.partyCount || 0],
+        ["Open records", t.recordCount || 0],
+        ["Groups with balance", t.groupCount || 0],
+      ],
     };
   }
 
   if (kind === "payables") {
     const report = await getPayablesReport(query);
+    const t = report.totals || {};
     return {
       id: "payables",
       sheetName: "Payables",
@@ -1600,9 +1764,15 @@ async function collectModuleSection(kind, query) {
         money(p.balance),
       ]),
       meta: {
-        "Total payable": money(report.totals.totalPayable),
-        Suppliers: report.totals.supplierCount,
+        "Total payable (you still owe)": money(t.totalPayable),
+        "Suppliers with balance": t.supplierCount || 0,
+        Records: t.recordCount || 0,
       },
+      conclusion: [
+        ["Total payable (you still owe)", money(t.totalPayable)],
+        ["Suppliers with balance", t.supplierCount || 0],
+        ["Open purchase records", t.recordCount || 0],
+      ],
     };
   }
 
@@ -1624,22 +1794,96 @@ function parseModules(raw) {
   return unique;
 }
 
-async function exportCombined(modules, query, format, res, filenameBase) {
+function wantsSummaryOnly(query) {
+  const v = String(query?.summaryOnly ?? query?.conclusion ?? "").toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "summary" || v === "conclusion";
+}
+
+/** Collapse a module section to totals / conclusion rows only. */
+function toSummarySection(section) {
+  const rows = [];
+  if (Array.isArray(section.conclusion) && section.conclusion.length > 0) {
+    for (const row of section.conclusion) {
+      if (Array.isArray(row) && row.length >= 2) {
+        rows.push([row[0], row[1] == null || row[1] === "" ? "—" : row[1]]);
+      }
+    }
+  } else {
+    const meta = section.meta || {};
+    for (const [k, v] of Object.entries(meta)) {
+      rows.push([k, v == null || v === "" ? "—" : v]);
+    }
+    if (rows.length === 0 && Array.isArray(section.rows) && section.rows.length > 0) {
+      for (const row of section.rows) {
+        if (Array.isArray(row) && row.length >= 2) rows.push([row[0], row[1]]);
+      }
+    }
+  }
+  if (rows.length === 0) {
+    rows.push(["Records", Array.isArray(section.rows) ? section.rows.length : 0]);
+  }
+  return {
+    ...section,
+    title: `${section.title} — totals`,
+    heading: `${section.heading} — totals`,
+    sheetName: String(`${section.sheetName}-totals`).slice(0, 31),
+    columns: ["Item", "Value"],
+    rows,
+    subsections: null,
+    meta: {},
+  };
+}
+
+function buildConclusionSection(sections) {
+  const rows = [];
+  for (const s of sections) {
+    const summary = toSummarySection(s);
+    for (const [item, value] of summary.rows) {
+      rows.push([s.heading || s.title, item, value]);
+    }
+  }
+  return {
+    id: "conclusion",
+    sheetName: "Conclusion",
+    title: "Conclusion — totals",
+    heading: "Conclusion — totals",
+    columns: ["Module", "Item", "Value"],
+    rows,
+    subsections: null,
+    meta: {},
+  };
+}
+
+async function collectSections(modules, query) {
   const sections = [];
   for (const kind of modules) {
     sections.push(await collectModuleSection(kind, query));
   }
+  if (wantsSummaryOnly(query)) {
+    return [buildConclusionSection(sections)];
+  }
+  return sections;
+}
+
+async function exportCombined(modules, query, format, res, filenameBase) {
+  const sections = await collectSections(modules, query);
+  const summaryOnly = wantsSummaryOnly(query);
 
   const period = periodLabel(query.dateFrom, query.dateTo);
-  const title =
-    modules.length === COMBINED_MODULES.length
+  const title = summaryOnly
+    ? modules.length === COMBINED_MODULES.length
+      ? "Full company report — totals"
+      : "Custom report — totals"
+    : modules.length === COMBINED_MODULES.length
       ? "Full company report"
       : "Custom report";
   const metaLines = [
     `Period: ${period}`,
     `Modules: ${modules.join(", ")}`,
+    summaryOnly ? "Content: totals / conclusion only" : "Content: full detail",
     `Generated: ${new Date().toISOString().slice(0, 19)}`,
   ];
+  const fileBase = summaryOnly ? `${filenameBase}-totals` : filenameBase;
 
   if (format === "pdf") {
     const buf = await buildPdf({
@@ -1668,7 +1912,7 @@ async function exportCombined(modules, query, format, res, filenameBase) {
         ];
       }),
     });
-    return sendPdf(res, buf, `${filenameBase}.pdf`);
+    return sendPdf(res, buf, `${fileBase}.pdf`);
   }
 
   const buf = await buildExcelMulti({
@@ -1695,7 +1939,7 @@ async function exportCombined(modules, query, format, res, filenameBase) {
       ];
     }),
   });
-  return sendExcel(res, buf, `${filenameBase}.xlsx`);
+  return sendExcel(res, buf, `${fileBase}.xlsx`);
 }
 
 async function exportFull(query, format, res) {
@@ -1711,17 +1955,19 @@ async function getCombinedPreview(query) {
   const modules = query.modules
     ? parseModules(query.modules)
     : COMBINED_MODULES;
-  const sections = [];
-  for (const kind of modules) {
-    sections.push(await collectModuleSection(kind, query));
-  }
+  const summaryOnly = wantsSummaryOnly(query);
+  const sections = await collectSections(modules, query);
   return {
-    title:
-      modules.length === COMBINED_MODULES.length
+    title: summaryOnly
+      ? modules.length === COMBINED_MODULES.length
+        ? "Full company report — totals"
+        : "Custom report — totals"
+      : modules.length === COMBINED_MODULES.length
         ? "Full company report"
         : "Custom report",
     period: periodLabel(query.dateFrom, query.dateTo),
     modules,
+    summaryOnly,
     sections: sections.map((s) => ({
       id: s.id,
       title: s.title,

@@ -131,6 +131,7 @@ export type CustomerLedgerEntry = {
 export type SalesReport = {
   period?: { from: string | null; to: string | null };
   group?: { id: string; name: string } | null;
+  party?: { id: string; name: string; phone?: string } | null;
   totals: {
     orderCount: number;
     totalSales: number;
@@ -139,6 +140,21 @@ export type SalesReport = {
     partyCount?: number;
     groupCount?: number;
   };
+  records?: Array<{
+    orderId: string;
+    orderNo: string;
+    invoiceNo: string;
+    customer: string;
+    customerId?: string;
+    groupId?: string;
+    orderDate: string;
+    dueDate?: string | null;
+    totalAmount: number;
+    amountPaid: number;
+    balance: number;
+    paymentStatus: string;
+    href?: string;
+  }>;
   outstanding: Array<{
     orderId: string;
     orderNo: string;
@@ -152,6 +168,7 @@ export type SalesReport = {
     amountPaid: number;
     balance: number;
     paymentStatus: string;
+    href?: string;
   }>;
   topCustomers: Array<{
     customerId: string;
@@ -467,6 +484,7 @@ export async function getSalesReport(params?: {
   dateFrom?: string;
   dateTo?: string;
   groupId?: string;
+  customerId?: string;
 }) {
   const { data } = await api.get<{ report: SalesReport }>("/builty/reports", { params });
   return data.report;

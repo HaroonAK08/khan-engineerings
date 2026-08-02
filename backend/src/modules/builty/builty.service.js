@@ -637,15 +637,26 @@ async function listLedger(customerId) {
   return { entries, balance };
 }
 
-async function getSalesReport({ dateFrom, dateTo, groupId } = {}) {
+async function getSalesReport({ dateFrom, dateTo, groupId, customerId } = {}) {
   const mongoose = require("mongoose");
   const Customer = require("../customers/customer.model");
   const PartyGroup = require("../party-groups/party-group.model");
 
   const match = {};
   let groupMeta = null;
+  let partyMeta = null;
 
-  if (groupId === "__ungrouped__" || groupId === "ungrouped") {
+  if (customerId) {
+    if (!mongoose.isValidObjectId(customerId)) throw httpError("Invalid party", 400);
+    const customer = await Customer.findById(customerId).select("name phone group").lean();
+    if (!customer) throw httpError("Party not found", 404);
+    partyMeta = {
+      id: String(customer._id),
+      name: customer.name,
+      phone: customer.phone || "",
+    };
+    match.customer = customer._id;
+  } else if (groupId === "__ungrouped__" || groupId === "ungrouped") {
     groupMeta = { id: "", name: "Ungrouped" };
     const members = await Customer.find({
       $or: [{ group: null }, { group: { $exists: false } }],
@@ -654,15 +665,7 @@ async function getSalesReport({ dateFrom, dateTo, groupId } = {}) {
       .lean();
     const ids = members.map((m) => m._id);
     if (ids.length === 0) {
-      return {
-        period: { from: dateFrom || null, to: dateTo || null },
-        group: groupMeta,
-        totals: { orderCount: 0, totalSales: 0, totalPaid: 0, outstanding: 0 },
-        outstanding: [],
-        topCustomers: [],
-        byGroup: [],
-        whoOwes: [],
-      };
+      return emptySalesReport(dateFrom, dateTo, groupMeta, null);
     }
     match.customer = { $in: ids };
   } else if (groupId) {
@@ -673,15 +676,7 @@ async function getSalesReport({ dateFrom, dateTo, groupId } = {}) {
     const members = await Customer.find({ group: group._id }).select("_id").lean();
     const ids = members.map((m) => m._id);
     if (ids.length === 0) {
-      return {
-        period: { from: dateFrom || null, to: dateTo || null },
-        group: groupMeta,
-        totals: { orderCount: 0, totalSales: 0, totalPaid: 0, outstanding: 0 },
-        outstanding: [],
-        topCustomers: [],
-        byGroup: [],
-        whoOwes: [],
-      };
+      return emptySalesReport(dateFrom, dateTo, groupMeta, null);
     }
     match.customer = { $in: ids };
   }
@@ -696,68 +691,75 @@ async function getSalesReport({ dateFrom, dateTo, groupId } = {}) {
     }
   }
 
-  const outstandingMatch = { balance: { $gt: 0 } };
-  if (match.customer) outstandingMatch.customer = match.customer;
+  const outstandingMatch = { ...match, balance: { $gt: 0 } };
 
-  const outstanding = await Builty.find(outstandingMatch)
-    .populate("customer", "name phone group")
-    .sort({ balance: -1 });
-
-  const byCustomer = await Builty.aggregate([
-    { $match: match },
-    {
-      $group: {
-        _id: "$customer",
-        orderCount: { $sum: 1 },
-        totalSales: { $sum: "$totalAmount" },
-        totalPaid: { $sum: "$amountPaid" },
-        outstanding: { $sum: "$balance" },
+  const [allBuilties, outstanding, byCustomer, totals] = await Promise.all([
+    Builty.find(match)
+      .populate("customer", "name phone group")
+      .sort({ builtyDate: -1, createdAt: -1 }),
+    Builty.find(outstandingMatch)
+      .populate("customer", "name phone group")
+      .sort({ balance: -1 }),
+    Builty.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: "$customer",
+          orderCount: { $sum: 1 },
+          totalSales: { $sum: "$totalAmount" },
+          totalPaid: { $sum: "$amountPaid" },
+          outstanding: { $sum: "$balance" },
+        },
       },
-    },
-    {
-      $lookup: {
-        from: "customers",
-        localField: "_id",
-        foreignField: "_id",
-        as: "customer",
+      {
+        $lookup: {
+          from: "customers",
+          localField: "_id",
+          foreignField: "_id",
+          as: "customer",
+        },
       },
-    },
-    { $unwind: { path: "$customer", preserveNullAndEmptyArrays: true } },
-    { $sort: { totalSales: -1 } },
+      { $unwind: { path: "$customer", preserveNullAndEmptyArrays: true } },
+      { $sort: { totalSales: -1 } },
+    ]),
+    Builty.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: null,
+          orderCount: { $sum: 1 },
+          totalSales: { $sum: "$totalAmount" },
+          totalPaid: { $sum: "$amountPaid" },
+          outstanding: { $sum: "$balance" },
+        },
+      },
+    ]),
   ]);
 
-  const totals = await Builty.aggregate([
-    { $match: match },
-    {
-      $group: {
-        _id: null,
-        orderCount: { $sum: 1 },
-        totalSales: { $sum: "$totalAmount" },
-        totalPaid: { $sum: "$amountPaid" },
-        outstanding: { $sum: "$balance" },
-      },
-    },
-  ]);
+  function mapBuiltyRow(b) {
+    return {
+      orderId: b._id,
+      orderNo: b.builtyNo,
+      invoiceNo: b.billNo || b.builtyNo,
+      customer: b.customer?.name || "Unknown",
+      customerId: b.customer?._id ? String(b.customer._id) : "",
+      groupId: b.customer?.group ? String(b.customer.group) : "",
+      orderDate: b.builtyDate,
+      dueDate: null,
+      totalAmount: roundMoney(b.totalAmount || 0),
+      amountPaid: roundMoney(b.amountPaid || 0),
+      balance: roundMoney(b.balance || 0),
+      paymentStatus: b.paymentStatus,
+      href: `/dashboard/builty/${b._id}`,
+    };
+  }
 
-  const unpaidInvoices = outstanding.map((b) => ({
-    orderId: b._id,
-    orderNo: b.builtyNo,
-    invoiceNo: b.billNo || b.builtyNo,
-    customer: b.customer?.name || "Unknown",
-    customerId: b.customer?._id,
-    groupId: b.customer?.group ? String(b.customer.group) : "",
-    orderDate: b.builtyDate,
-    dueDate: null,
-    totalAmount: b.totalAmount,
-    amountPaid: b.amountPaid,
-    balance: b.balance,
-    paymentStatus: b.paymentStatus,
-  }));
-
+  const records = allBuilties.map(mapBuiltyRow);
+  const unpaidInvoices = outstanding.map(mapBuiltyRow);
   const t = totals[0] || { orderCount: 0, totalSales: 0, totalPaid: 0, outstanding: 0 };
 
   const topCustomers = byCustomer.map((row) => ({
-    customerId: row._id,
+    customerId: row._id ? String(row._id) : "",
     name: row.customer?.name || "Unknown",
     groupId: row.customer?.group ? String(row.customer.group) : "",
     orderCount: row.orderCount,
@@ -790,11 +792,14 @@ async function getSalesReport({ dateFrom, dateTo, groupId } = {}) {
       });
     }
   }
-  const byGroup = [...byGroupMap.values()].sort((a, b) => b.totalSales - a.totalSales);
+  const byGroup = [...byGroupMap.values()]
+    .filter((g) => Boolean(g.groupId))
+    .sort((a, b) => b.totalSales - a.totalSales);
 
   return {
     period: { from: dateFrom || null, to: dateTo || null },
     group: groupMeta,
+    party: partyMeta,
     totals: {
       orderCount: t.orderCount,
       totalSales: roundMoney(t.totalSales || 0),
@@ -803,6 +808,7 @@ async function getSalesReport({ dateFrom, dateTo, groupId } = {}) {
       partyCount: topCustomers.length,
       groupCount: byGroup.length,
     },
+    records,
     outstanding: unpaidInvoices,
     topCustomers,
     byGroup,
@@ -814,11 +820,37 @@ async function getSalesReport({ dateFrom, dateTo, groupId } = {}) {
           existing.balance = roundMoney(existing.balance + inv.balance);
           existing.invoices += 1;
         } else {
-          acc.push({ customerId: key, name: inv.customer, balance: inv.balance, invoices: 1 });
+          acc.push({
+            customerId: key,
+            name: inv.customer,
+            balance: inv.balance,
+            invoices: 1,
+          });
         }
         return acc;
       }, [])
       .sort((a, b) => b.balance - a.balance),
+  };
+}
+
+function emptySalesReport(dateFrom, dateTo, groupMeta, partyMeta) {
+  return {
+    period: { from: dateFrom || null, to: dateTo || null },
+    group: groupMeta,
+    party: partyMeta,
+    totals: {
+      orderCount: 0,
+      totalSales: 0,
+      totalPaid: 0,
+      outstanding: 0,
+      partyCount: 0,
+      groupCount: 0,
+    },
+    records: [],
+    outstanding: [],
+    topCustomers: [],
+    byGroup: [],
+    whoOwes: [],
   };
 }
 

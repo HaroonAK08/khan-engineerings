@@ -39,6 +39,7 @@ export default function ReportsHubPage() {
   const [dateFrom, setDateFrom] = useState(month.from);
   const [dateTo, setDateTo] = useState(month.to);
   const [format, setFormat] = useState<"pdf" | "xlsx">("pdf");
+  const [summaryOnly, setSummaryOnly] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [customModules, setCustomModules] = useState<ExportKind[]>(
     COMBINED_REPORT_MODULES.map((m) => m.id)
@@ -59,6 +60,7 @@ export default function ReportsHubPage() {
         modules: mode === "full" ? undefined : customModules,
         dateFrom: dateFrom || undefined,
         dateTo: dateTo || undefined,
+        summaryOnly,
       });
       setPreview(report);
     } catch (err) {
@@ -67,7 +69,7 @@ export default function ReportsHubPage() {
     } finally {
       setLoadingPreview(false);
     }
-  }, [mode, customModules, dateFrom, dateTo]);
+  }, [mode, customModules, dateFrom, dateTo, summaryOnly]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -95,16 +97,18 @@ export default function ReportsHubPage() {
           format,
           dateFrom: dateFrom || undefined,
           dateTo: dateTo || undefined,
+          summaryOnly,
         });
-        toast.success("Full report downloaded");
+        toast.success(summaryOnly ? "Totals report downloaded" : "Full report downloaded");
       } else {
         await downloadCustomReport({
           format,
           modules: customModules,
           dateFrom: dateFrom || undefined,
           dateTo: dateTo || undefined,
+          summaryOnly,
         });
-        toast.success("Custom report downloaded");
+        toast.success(summaryOnly ? "Totals report downloaded" : "Custom report downloaded");
       }
     } catch (err) {
       toast.error(
@@ -181,7 +185,8 @@ export default function ReportsHubPage() {
           <CardDescription>
             {mode === "full"
               ? "Includes every main report section for the selected date range."
-              : "Select modules, date range, and file format."}
+              : "Select modules, date range, and file format."}{" "}
+            Choose full detail or totals / conclusion only.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -193,6 +198,42 @@ export default function ReportsHubPage() {
             <div className="flex flex-col gap-1.5">
               <Label>{t("common.to")}</Label>
               <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+            </div>
+          </div>
+
+          <div>
+            <Label className="mb-2 block">Report content</Label>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setSummaryOnly(false)}
+                className={cn(
+                  "rounded-lg border px-3 py-2.5 text-left transition-colors",
+                  !summaryOnly
+                    ? "border-primary bg-primary/10 ring-1 ring-primary/30"
+                    : "border-border hover:bg-muted/40"
+                )}
+              >
+                <p className="text-sm font-medium">Full detail</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  All rows for each selected module.
+                </p>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSummaryOnly(true)}
+                className={cn(
+                  "rounded-lg border px-3 py-2.5 text-left transition-colors",
+                  summaryOnly
+                    ? "border-primary bg-primary/10 ring-1 ring-primary/30"
+                    : "border-border hover:bg-muted/40"
+                )}
+              >
+                <p className="text-sm font-medium">Totals only</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Conclusion of selected modules — totals like sales, spend, receivable.
+                </p>
+              </button>
             </div>
           </div>
 
@@ -270,7 +311,11 @@ export default function ReportsHubPage() {
             onClick={() => void onDownload()}
           >
             {exporting ? <Loader2 className="size-4 animate-spin" /> : <FileDown className="size-4" />}
-            {mode === "full" ? "Download full report" : "Download custom report"}
+            {summaryOnly
+              ? "Download totals report"
+              : mode === "full"
+                ? "Download full report"
+                : "Download custom report"}
           </Button>
         </CardContent>
       </Card>
@@ -283,7 +328,11 @@ export default function ReportsHubPage() {
           <CardDescription>
             Same data that will be downloaded
             {preview?.period ? ` · ${preview.period}` : ""}
-            {previewModules.length ? ` · ${previewModules.length} sections` : ""}
+            {summaryOnly
+              ? " · totals / conclusion only"
+              : previewModules.length
+                ? ` · ${previewModules.length} sections`
+                : ""}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-6">

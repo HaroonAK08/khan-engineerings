@@ -231,17 +231,20 @@ export async function downloadFullReport(params: {
   format: "pdf" | "xlsx";
   dateFrom?: string;
   dateTo?: string;
+  summaryOnly?: boolean;
 }) {
   const query: Record<string, string> = { format: params.format };
   if (params.dateFrom) query.dateFrom = params.dateFrom;
   if (params.dateTo) query.dateTo = params.dateTo;
+  if (params.summaryOnly) query.summaryOnly = "1";
   const { data } = await api.get("/reports/export/full", {
     params: query,
     responseType: "blob",
     timeout: 90_000,
   });
   const ext = params.format === "xlsx" ? "xlsx" : "pdf";
-  triggerDownload(data as Blob, `full-report.${ext}`);
+  const base = params.summaryOnly ? "full-report-totals" : "full-report";
+  triggerDownload(data as Blob, `${base}.${ext}`);
 }
 
 export async function downloadCustomReport(params: {
@@ -249,6 +252,7 @@ export async function downloadCustomReport(params: {
   modules: ExportKind[];
   dateFrom?: string;
   dateTo?: string;
+  summaryOnly?: boolean;
 }) {
   const query: Record<string, string> = {
     format: params.format,
@@ -256,13 +260,15 @@ export async function downloadCustomReport(params: {
   };
   if (params.dateFrom) query.dateFrom = params.dateFrom;
   if (params.dateTo) query.dateTo = params.dateTo;
+  if (params.summaryOnly) query.summaryOnly = "1";
   const { data } = await api.get("/reports/export/custom", {
     params: query,
     responseType: "blob",
     timeout: 90_000,
   });
   const ext = params.format === "xlsx" ? "xlsx" : "pdf";
-  triggerDownload(data as Blob, `custom-report.${ext}`);
+  const base = params.summaryOnly ? "custom-report-totals" : "custom-report";
+  triggerDownload(data as Blob, `${base}.${ext}`);
 }
 
 export type CombinedReportSection = {
@@ -283,6 +289,7 @@ export type CombinedReportPreview = {
   title: string;
   period: string;
   modules: string[];
+  summaryOnly?: boolean;
   sections: CombinedReportSection[];
 };
 
@@ -290,11 +297,13 @@ export async function getCombinedReportPreview(params: {
   modules?: ExportKind[];
   dateFrom?: string;
   dateTo?: string;
+  summaryOnly?: boolean;
 }) {
   const query: Record<string, string> = {};
   if (params.modules?.length) query.modules = params.modules.join(",");
   if (params.dateFrom) query.dateFrom = params.dateFrom;
   if (params.dateTo) query.dateTo = params.dateTo;
+  if (params.summaryOnly) query.summaryOnly = "1";
   const { data } = await api.get<{ report: CombinedReportPreview }>("/reports/preview", {
     params: query,
     timeout: 90_000,

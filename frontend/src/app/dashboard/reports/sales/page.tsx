@@ -11,7 +11,13 @@ import {
   type ReportViewMode,
 } from "@/components/reports/report-view-toggle";
 import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
-import { getSalesReport, listPartyGroups, type PartyGroup, type SalesReport } from "@/lib/sales-api";
+import {
+  getSalesReport,
+  listPartyGroups,
+  paymentStatusLabel,
+  type PartyGroup,
+  type SalesReport,
+} from "@/lib/sales-api";
 import { downloadReportExport } from "@/lib/reports-api";
 import { currentMonthRange } from "@/lib/date-range";
 import { Button } from "@/components/ui/button";
@@ -42,7 +48,8 @@ export default function SalesReportsHubPage() {
   const [dateFrom, setDateFrom] = useState(defaults.from);
   const [dateTo, setDateTo] = useState(defaults.to);
   const [groupId, setGroupId] = useState("");
-  const [view, setView] = useState<ReportViewMode>("party");
+  const [partyId, setPartyId] = useState("");
+  const [view, setView] = useState<ReportViewMode>("whole");
   const [groups, setGroups] = useState<PartyGroup[]>([]);
   const [report, setReport] = useState<SalesReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -71,6 +78,7 @@ export default function SalesReportsHubPage() {
           dateFrom,
           dateTo,
           groupId: groupId || undefined,
+          customerId: partyId || undefined,
         })
       );
     } catch (err) {
@@ -78,7 +86,7 @@ export default function SalesReportsHubPage() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, groupId, t]);
+  }, [dateFrom, dateTo, groupId, partyId, t]);
 
   useEffect(() => {
     const timer = setTimeout(load, 200);
@@ -93,7 +101,8 @@ export default function SalesReportsHubPage() {
         dateFrom,
         dateTo,
         groupId: groupId || undefined,
-        view,
+        customerId: partyId || undefined,
+        view: partyId ? "party" : view,
       });
       toast.success(t("common.downloaded", { format: format.toUpperCase() }));
     } catch (err) {
@@ -104,17 +113,32 @@ export default function SalesReportsHubPage() {
   }
 
   function openGroup(g: { groupId: string; name: string }) {
+    setPartyId("");
     setGroupId(g.groupId || "__ungrouped__");
     setView("party");
   }
 
+  function openParty(p: { customerId: string; name: string }) {
+    if (!p.customerId) return;
+    setPartyId(p.customerId);
+    setView("party");
+  }
+
   function backToGroups() {
+    setPartyId("");
     setGroupId("");
     setView("group");
   }
 
+  function backToParties() {
+    setPartyId("");
+    setView("party");
+  }
+
   const byGroup = report?.byGroup || [];
-  const drilledGroup = Boolean(groupId);
+  const records = report?.records || [];
+  const drilledGroup = Boolean(groupId) && !partyId;
+  const drilledParty = Boolean(partyId);
 
   return (
     <div className="flex flex-col gap-6">
@@ -134,7 +158,10 @@ export default function SalesReportsHubPage() {
           <Label className="sr-only">{t("recvReports.group")}</Label>
           <Select
             value={groupId || "__all__"}
-            onValueChange={(v) => setGroupId(!v || v === "__all__" ? "" : v)}
+            onValueChange={(v) => {
+              setPartyId("");
+              setGroupId(!v || v === "__all__" ? "" : v);
+            }}
             items={groupSelectItems}
           >
             <SelectTrigger className="w-[180px]">
@@ -156,6 +183,7 @@ export default function SalesReportsHubPage() {
       <ReportViewToggle
         value={view}
         onChange={(next) => {
+          setPartyId("");
           if (next === "group") setGroupId("");
           setView(next);
         }}
@@ -173,6 +201,30 @@ export default function SalesReportsHubPage() {
                 : groupSelectItems[groupId]) ||
               t("recvReports.group")}
           </p>
+        </div>
+      ) : null}
+
+      {drilledParty ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" size="sm" variant="outline" onClick={backToParties}>
+            {t("recvReports.backToParties")}
+          </Button>
+          {groupId ? (
+            <Button type="button" size="sm" variant="ghost" onClick={backToGroups}>
+              {t("recvReports.backToGroups")}
+            </Button>
+          ) : null}
+          <p className="text-sm text-muted-foreground">
+            {report?.party?.name || t("recvReports.col.party")}
+          </p>
+          {report?.party?.id ? (
+            <Link
+              href={`/dashboard/party/customers/${report.party.id}`}
+              className="text-sm text-primary hover:underline"
+            >
+              {t("recvReports.openPartyPage")}
+            </Link>
+          ) : null}
         </div>
       ) : null}
 
@@ -200,7 +252,7 @@ export default function SalesReportsHubPage() {
             ))}
           </div>
 
-          {view === "group" ? (
+          {view === "group" && !drilledParty ? (
             <Card>
               <CardHeader>
                 <CardTitle className="text-nameplate text-sm">{t("salesReportsHub.byGroup")}</CardTitle>
@@ -262,125 +314,188 @@ export default function SalesReportsHubPage() {
             </Card>
           ) : null}
 
-          {view === "party" ? (
-            <>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-nameplate text-sm">
-                    {t("salesReportsHub.byParty")}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="px-0">
-                  <Table>
-                    <TableHeader>
+          {view === "party" && !drilledParty ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-nameplate text-sm">
+                  {t("salesReportsHub.byParty")}
+                </CardTitle>
+                <CardDescription>{t("salesReportsHub.clickParty")}</CardDescription>
+              </CardHeader>
+              <CardContent className="px-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t("common.customer")}</TableHead>
+                      <TableHead className="text-right">{t("customerDetail.orders")}</TableHead>
+                      <TableHead className="text-right">{t("salesReports.sales")}</TableHead>
+                      <TableHead className="text-right">{t("salesReports.collected")}</TableHead>
+                      <TableHead className="text-right">{t("dash.outstanding")}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {report.topCustomers.length === 0 ? (
                       <TableRow>
-                        <TableHead>{t("common.customer")}</TableHead>
-                        <TableHead className="text-right">{t("customerDetail.orders")}</TableHead>
-                        <TableHead className="text-right">{t("salesReports.sales")}</TableHead>
-                        <TableHead className="text-right">{t("dash.outstanding")}</TableHead>
+                        <TableCell colSpan={5} className="text-muted-foreground">
+                          {t("salesReportsHub.none")}
+                        </TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {report.topCustomers.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={4} className="text-muted-foreground">
-                            {t("salesReportsHub.none")}
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        report.topCustomers.map((p) => (
-                          <TableRow key={String(p.customerId)}>
-                            <TableCell>
-                              <Link
-                                href={`/dashboard/party/customers/${p.customerId}`}
-                                className="hover:underline"
-                              >
-                                {p.name}
-                              </Link>
-                            </TableCell>
-                            <TableCell className="font-data text-right text-xs">
-                              {p.orderCount}
-                            </TableCell>
-                            <TableCell className="font-data text-right text-xs">
-                              {formatMoney(p.totalSales)}
-                            </TableCell>
-                            <TableCell className="font-data text-right text-xs text-destructive">
-                              {formatMoney(p.outstanding)}
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                    {report.topCustomers.length > 0 ? (
-                      <TableFooter>
-                        <TableRow>
-                          <TableCell className="font-medium">{t("recvReports.grandTotal")}</TableCell>
-                          <TableCell className="font-data text-right text-xs">
-                            {report.totals.orderCount}
+                    ) : (
+                      report.topCustomers.map((p) => (
+                        <TableRow
+                          key={String(p.customerId)}
+                          tabIndex={0}
+                          className="cursor-pointer"
+                          onClick={() => openParty(p)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openParty(p);
+                            }
+                          }}
+                        >
+                          <TableCell className="font-medium text-primary underline-offset-2 hover:underline">
+                            {p.name}
                           </TableCell>
                           <TableCell className="font-data text-right text-xs">
-                            {formatMoney(report.totals.totalSales)}
+                            {p.orderCount}
                           </TableCell>
-                          <TableCell className="font-data text-right text-sm font-medium text-destructive">
-                            {formatMoney(report.totals.outstanding)}
+                          <TableCell className="font-data text-right text-xs">
+                            {formatMoney(p.totalSales)}
+                          </TableCell>
+                          <TableCell className="font-data text-right text-xs">
+                            {formatMoney(p.totalPaid)}
+                          </TableCell>
+                          <TableCell className="font-data text-right text-xs text-destructive">
+                            {formatMoney(p.outstanding)}
                           </TableCell>
                         </TableRow>
-                      </TableFooter>
-                    ) : null}
-                  </Table>
-                </CardContent>
-              </Card>
+                      ))
+                    )}
+                  </TableBody>
+                  {report.topCustomers.length > 0 ? (
+                    <TableFooter>
+                      <TableRow>
+                        <TableCell className="font-medium">{t("recvReports.grandTotal")}</TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {report.totals.orderCount}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {formatMoney(report.totals.totalSales)}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {formatMoney(report.totals.totalPaid)}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-sm font-medium text-destructive">
+                          {formatMoney(report.totals.outstanding)}
+                        </TableCell>
+                      </TableRow>
+                    </TableFooter>
+                  ) : null}
+                </Table>
+              </CardContent>
+            </Card>
+          ) : null}
 
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-nameplate text-sm">
-                    {t("salesReportsHub.outstandingInvoices")}
-                  </CardTitle>
-                  <CardDescription>{t("salesReportsHub.unpaidDesc")}</CardDescription>
-                </CardHeader>
-                <CardContent className="px-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>{t("common.invoice")}</TableHead>
+          {(view === "whole" || drilledParty) && !loading ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-nameplate text-sm">
+                  {drilledParty
+                    ? t("salesReportsHub.partyRecords", {
+                        name: report.party?.name || t("recvReports.col.party"),
+                      })
+                    : t("salesReportsHub.allRecords")}
+                </CardTitle>
+                <CardDescription>
+                  {drilledParty
+                    ? t("salesReportsHub.partyPdfHint")
+                    : t("salesReportsHub.allRecordsDesc")}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="px-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t("common.date")}</TableHead>
+                      <TableHead>{t("builty.col.no")}</TableHead>
+                      {!drilledParty ? (
                         <TableHead>{t("common.customer")}</TableHead>
-                        <TableHead>{t("common.date")}</TableHead>
-                        <TableHead className="text-right">{t("common.balance")}</TableHead>
+                      ) : null}
+                      <TableHead className="text-right">{t("orders.col.total")}</TableHead>
+                      <TableHead className="text-right">{t("salesReports.collected")}</TableHead>
+                      <TableHead className="text-right">{t("common.balance")}</TableHead>
+                      <TableHead>{t("orders.col.payment")}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {records.length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={drilledParty ? 6 : 7}
+                          className="text-muted-foreground"
+                        >
+                          {t("salesReportsHub.none")}
+                        </TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {report.outstanding.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={4} className="text-muted-foreground">
-                            {t("salesReportsHub.none")}
+                    ) : (
+                      records.map((r) => (
+                        <TableRow key={r.orderId}>
+                          <TableCell className="font-data text-xs whitespace-nowrap">
+                            {formatDate(r.orderDate)}
+                          </TableCell>
+                          <TableCell>
+                            <Link
+                              href={r.href || `/dashboard/builty/${r.orderId}`}
+                              className="font-data text-xs text-primary hover:underline"
+                            >
+                              {r.orderNo || r.invoiceNo}
+                            </Link>
+                          </TableCell>
+                          {!drilledParty ? (
+                            <TableCell className="text-sm">{r.customer}</TableCell>
+                          ) : null}
+                          <TableCell className="font-data text-right text-xs">
+                            {formatMoney(r.totalAmount)}
+                          </TableCell>
+                          <TableCell className="font-data text-right text-xs">
+                            {formatMoney(r.amountPaid)}
+                          </TableCell>
+                          <TableCell className="font-data text-right text-xs text-destructive">
+                            {formatMoney(r.balance)}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {paymentStatusLabel(r.paymentStatus, t)}
                           </TableCell>
                         </TableRow>
-                      ) : (
-                        report.outstanding.map((o) => (
-                          <TableRow key={o.orderId}>
-                            <TableCell>
-                              <Link
-                                href={`/dashboard/builty/${o.orderId}`}
-                                className="font-data text-xs hover:underline"
-                              >
-                                {o.invoiceNo}
-                              </Link>
-                            </TableCell>
-                            <TableCell>{o.customer}</TableCell>
-                            <TableCell className="font-data text-xs">
-                              {formatDate(o.orderDate)}
-                            </TableCell>
-                            <TableCell className="font-data text-right text-xs">
-                              {formatMoney(o.balance)}
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            </>
+                      ))
+                    )}
+                  </TableBody>
+                  {records.length > 0 ? (
+                    <TableFooter>
+                      <TableRow>
+                        <TableCell
+                          colSpan={drilledParty ? 3 : 4}
+                          className="font-medium"
+                        >
+                          {t("recvReports.grandTotal")}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {formatMoney(report.totals.totalSales)}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {formatMoney(report.totals.totalPaid)}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-sm font-medium text-destructive">
+                          {formatMoney(report.totals.outstanding)}
+                        </TableCell>
+                        <TableCell />
+                      </TableRow>
+                    </TableFooter>
+                  ) : null}
+                </Table>
+              </CardContent>
+            </Card>
           ) : null}
         </>
       )}

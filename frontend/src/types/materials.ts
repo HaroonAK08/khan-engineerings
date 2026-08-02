@@ -81,12 +81,39 @@ export type StockSummary = MaterialStockSummary & {
 };
 
 export type PurchaseReport = {
+  period?: { from: string | null; to: string | null };
+  party?: { id: string; name: string; phone?: string } | null;
   totals: {
     totalKg: number;
     totalSpend: number;
     purchaseCount: number;
     avgRate: number;
+    supplierCount?: number;
   };
+  records?: Array<{
+    id: string;
+    date: string;
+    invoiceNo: string;
+    supplierId: string;
+    supplierName: string;
+    materialType: MaterialType | string;
+    quantityKg: number;
+    ratePerKg: number;
+    totalAmount: number;
+    freightAmount: number;
+    spend: number;
+    amountPaid: number;
+    balance: number;
+    href?: string;
+  }>;
+  byParty?: Array<{
+    supplierId: string;
+    name: string;
+    totalKg: number;
+    totalSpend: number;
+    purchaseCount: number;
+    avgRate: number;
+  }>;
   bySupplier: Array<{
     supplierId: string;
     materialType?: MaterialType;

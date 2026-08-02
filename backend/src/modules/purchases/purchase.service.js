@@ -351,10 +351,19 @@ async function getStock({ materialType } = {}) {
 
 async function getReport({ dateFrom, dateTo, supplier, materialType } = {}) {
   const mongoose = require("mongoose");
+  const Supplier = require("../suppliers/supplier.model");
   const match = {};
+  let partyMeta = null;
 
   if (supplier) {
     if (!mongoose.isValidObjectId(supplier)) throw httpError("Invalid supplier id", 400);
+    const supplierDoc = await Supplier.findById(supplier).select("name nameUr phone").lean();
+    if (!supplierDoc) throw httpError("Supplier not found", 404);
+    partyMeta = {
+      id: String(supplierDoc._id),
+      name: supplierDoc.name,
+      phone: supplierDoc.phone || "",
+    };
     match.supplier = new mongoose.Types.ObjectId(supplier);
   }
   if (materialType && MATERIAL_TYPE_IDS.includes(materialType)) {
@@ -370,59 +379,109 @@ async function getReport({ dateFrom, dateTo, supplier, materialType } = {}) {
     }
   }
 
-  const bySupplier = await Purchase.aggregate([
-    { $match: match },
-    {
-      $group: {
-        _id: { supplier: "$supplier", materialType: "$materialType" },
-        totalKg: { $sum: "$quantityKg" },
-        totalSpend: { $sum: { $add: ["$totalAmount", { $ifNull: ["$freightAmount", 0] }] } },
-        purchaseCount: { $sum: 1 },
-        avgRate: { $avg: "$ratePerKg" },
-        minRate: { $min: "$ratePerKg" },
-        maxRate: { $max: "$ratePerKg" },
+  const [purchases, bySupplier, byPartyAgg, summary, byMaterialType] = await Promise.all([
+    Purchase.find(match)
+      .populate("supplier", "name nameUr phone")
+      .sort({ purchaseDate: -1, createdAt: -1 })
+      .lean(),
+    Purchase.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: { supplier: "$supplier", materialType: "$materialType" },
+          totalKg: { $sum: "$quantityKg" },
+          totalSpend: { $sum: { $add: ["$totalAmount", { $ifNull: ["$freightAmount", 0] }] } },
+          purchaseCount: { $sum: 1 },
+          avgRate: { $avg: "$ratePerKg" },
+          minRate: { $min: "$ratePerKg" },
+          maxRate: { $max: "$ratePerKg" },
+        },
       },
-    },
-    {
-      $lookup: {
-        from: "suppliers",
-        localField: "_id.supplier",
-        foreignField: "_id",
-        as: "supplier",
+      {
+        $lookup: {
+          from: "suppliers",
+          localField: "_id.supplier",
+          foreignField: "_id",
+          as: "supplier",
+        },
       },
-    },
-    { $unwind: { path: "$supplier", preserveNullAndEmptyArrays: true } },
-    { $sort: { avgRate: 1 } },
+      { $unwind: { path: "$supplier", preserveNullAndEmptyArrays: true } },
+      { $sort: { "supplier.name": 1, "_id.materialType": 1 } },
+    ]),
+    Purchase.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: "$supplier",
+          totalKg: { $sum: "$quantityKg" },
+          totalSpend: { $sum: { $add: ["$totalAmount", { $ifNull: ["$freightAmount", 0] }] } },
+          purchaseCount: { $sum: 1 },
+          avgRate: { $avg: "$ratePerKg" },
+        },
+      },
+      {
+        $lookup: {
+          from: "suppliers",
+          localField: "_id",
+          foreignField: "_id",
+          as: "supplier",
+        },
+      },
+      { $unwind: { path: "$supplier", preserveNullAndEmptyArrays: true } },
+      { $sort: { totalSpend: -1 } },
+    ]),
+    Purchase.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: null,
+          totalKg: { $sum: "$quantityKg" },
+          totalSpend: { $sum: { $add: ["$totalAmount", { $ifNull: ["$freightAmount", 0] }] } },
+          purchaseCount: { $sum: 1 },
+          avgRate: { $avg: "$ratePerKg" },
+        },
+      },
+    ]),
+    Purchase.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: "$materialType",
+          totalKg: { $sum: "$quantityKg" },
+          totalSpend: { $sum: { $add: ["$totalAmount", { $ifNull: ["$freightAmount", 0] }] } },
+          purchaseCount: { $sum: 1 },
+          avgRate: { $avg: "$ratePerKg" },
+        },
+      },
+    ]),
   ]);
 
-  const summary = await Purchase.aggregate([
-    { $match: match },
-    {
-      $group: {
-        _id: null,
-        totalKg: { $sum: "$quantityKg" },
-        totalSpend: { $sum: { $add: ["$totalAmount", { $ifNull: ["$freightAmount", 0] }] } },
-        purchaseCount: { $sum: 1 },
-        avgRate: { $avg: "$ratePerKg" },
-      },
-    },
-  ]);
-
-  const byMaterialType = await Purchase.aggregate([
-    { $match: match },
-    {
-      $group: {
-        _id: "$materialType",
-        totalKg: { $sum: "$quantityKg" },
-        totalSpend: { $sum: { $add: ["$totalAmount", { $ifNull: ["$freightAmount", 0] }] } },
-        purchaseCount: { $sum: 1 },
-        avgRate: { $avg: "$ratePerKg" },
-      },
-    },
-  ]);
+  const records = purchases.map((p) => {
+    const supplierObj =
+      p.supplier && typeof p.supplier === "object" ? p.supplier : null;
+    const spend = roundMoney((p.totalAmount || 0) + (p.freightAmount || 0));
+    return {
+      id: String(p._id),
+      date: p.purchaseDate,
+      invoiceNo: p.invoiceNo || "—",
+      supplierId: supplierObj?._id ? String(supplierObj._id) : String(p.supplier || ""),
+      supplierName: supplierObj?.name || "Unknown",
+      materialType: p.materialType || "scrap",
+      quantityKg: p.quantityKg || 0,
+      ratePerKg: roundMoney(p.ratePerKg || 0),
+      totalAmount: roundMoney(p.totalAmount || 0),
+      freightAmount: roundMoney(p.freightAmount || 0),
+      spend,
+      amountPaid: roundMoney(p.amountPaid || 0),
+      balance: roundMoney(p.balance || 0),
+      href: supplierObj?._id
+        ? `/dashboard/suppliers/${supplierObj._id}`
+        : "/dashboard/suppliers",
+    };
+  });
 
   const suppliers = bySupplier.map((row) => ({
-    supplierId: row._id.supplier,
+    supplierId: row._id.supplier ? String(row._id.supplier) : "",
     materialType: row._id.materialType || "scrap",
     name: row.supplier?.name || "Unknown",
     totalKg: Math.round(row.totalKg * 1000) / 1000,
@@ -433,16 +492,30 @@ async function getReport({ dateFrom, dateTo, supplier, materialType } = {}) {
     maxRate: roundMoney(row.maxRate),
   }));
 
+  const byParty = byPartyAgg.map((row) => ({
+    supplierId: row._id ? String(row._id) : "",
+    name: row.supplier?.name || "Unknown",
+    totalKg: Math.round(row.totalKg * 1000) / 1000,
+    totalSpend: roundMoney(row.totalSpend),
+    purchaseCount: row.purchaseCount,
+    avgRate: roundMoney(row.avgRate),
+  }));
+
   const totals = summary[0] || { totalKg: 0, totalSpend: 0, purchaseCount: 0, avgRate: 0 };
   const bestRateSupplier = suppliers.length > 0 ? suppliers[0] : null;
 
   return {
+    period: { from: dateFrom || null, to: dateTo || null },
+    party: partyMeta,
     totals: {
       totalKg: Math.round((totals.totalKg || 0) * 1000) / 1000,
       totalSpend: roundMoney(totals.totalSpend || 0),
       purchaseCount: totals.purchaseCount || 0,
       avgRate: roundMoney(totals.avgRate || 0),
+      supplierCount: byParty.length,
     },
+    records,
+    byParty,
     bySupplier: suppliers,
     byMaterialType: byMaterialType.map((row) => ({
       materialType: row._id || "scrap",
