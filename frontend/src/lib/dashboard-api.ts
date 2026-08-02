@@ -12,6 +12,8 @@ export type DashboardKpis = {
   outstandingPayments: number;
   rawMaterialKg: number;
   finishedGoodsUnits: number;
+  finishedHubUnits: number;
+  finishedDrumUnits: number;
   productionToday: number;
   productionTodayBatches: number;
   expensesToday: number;

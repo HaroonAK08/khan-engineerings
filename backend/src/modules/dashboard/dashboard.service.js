@@ -263,6 +263,8 @@ async function getDashboard() {
       outstandingPayments: salesReport.totals.outstanding,
       rawMaterialKg: inventoryOverview.raw?.availableKg ?? inventoryOverview.raw?.totalKg ?? 0,
       finishedGoodsUnits: inventoryOverview.finished?.totalUnits ?? 0,
+      finishedHubUnits: inventoryOverview.finished?.hubUnits ?? 0,
+      finishedDrumUnits: inventoryOverview.finished?.drumUnits ?? 0,
       productionToday: productionToday.totals?.goodUnits ?? 0,
       productionTodayBatches: productionToday.totals?.batchCount ?? 0,
       expensesToday,

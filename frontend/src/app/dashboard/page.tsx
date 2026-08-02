@@ -178,28 +178,40 @@ export default function DashboardPage() {
       accent: "bg-chart-1",
     },
     {
-      label: t("dash.finishedGoods"),
-      value: String(Math.round(kpis.finishedGoodsUnits)),
+      label: t("dash.finishedHub"),
+      value: String(Math.round(kpis.finishedHubUnits ?? 0)),
       hint: t("dash.unitsWarehouse"),
       accent: "bg-chart-2",
+    },
+    {
+      label: t("dash.finishedDrum"),
+      value: String(Math.round(kpis.finishedDrumUnits ?? 0)),
+      hint: t("dash.unitsWarehouse"),
+      accent: "bg-chart-3",
+    },
+    {
+      label: t("dash.finishedTotal"),
+      value: String(Math.round(kpis.finishedGoodsUnits)),
+      hint: t("dash.unitsWarehouse"),
+      accent: "bg-chart-4",
     },
     {
       label: t("dash.productionToday"),
       value: String(kpis.productionToday),
       hint: t("dash.batches", { count: kpis.productionTodayBatches }),
-      accent: "bg-chart-3",
+      accent: "bg-chart-5",
     },
     {
       label: t("dash.expensesToday"),
       value: formatMoney(kpis.expensesToday),
       hint: t("dash.opsManual"),
-      accent: "bg-chart-4",
+      accent: "bg-chart-1",
     },
     {
       label: t("dash.pendingOrders"),
       value: String(kpis.pendingOrders),
       hint: t("dash.awaitingDispatch"),
-      accent: "bg-chart-5",
+      accent: "bg-chart-2",
     },
   ];
 

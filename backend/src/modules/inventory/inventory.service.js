@@ -525,6 +525,8 @@ async function getOverview() {
     raw,
     finished: {
       totalUnits: finished.totalUnits,
+      hubUnits: finished.hubUnits ?? 0,
+      drumUnits: finished.drumUnits ?? 0,
       skuCount: finished.skuCount,
     },
     alerts: { count: alerts.count },

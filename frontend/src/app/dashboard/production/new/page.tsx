@@ -128,8 +128,10 @@ function NewProductionForm() {
   const totals = useMemo(() => {
     let scrap = 0;
     let daig = 0;
+    let quantity = 0;
 
     for (const line of lines) {
+      quantity += Number(line.quantity) || 0;
       const product = products.find((item) => item._id === line.productId) || null;
       const preview = linePreview(product, line.quantity, line.wastePercent);
       if (product?.family === "drum") daig += preview.chargedKg;
@@ -137,6 +139,7 @@ function NewProductionForm() {
     }
 
     return {
+      quantity,
       scrap: Math.round(scrap * 1000) / 1000,
       daig: Math.round(daig * 1000) / 1000,
     };
@@ -473,9 +476,13 @@ function NewProductionForm() {
         <Card>
           <CardHeader>
             <CardTitle className="text-nameplate text-sm">Material summary</CardTitle>
-            <CardDescription>Total material that will be deducted from this submission.</CardDescription>
+            <CardDescription>Total pieces and material that will be deducted from this submission.</CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-3 sm:grid-cols-2">
+          <CardContent className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-lg border border-border p-3">
+              <p className="text-xs text-muted-foreground">Total qty</p>
+              <p className="font-data mt-1 text-xl">{totals.quantity}</p>
+            </div>
             <div className="rounded-lg border border-border p-3">
               <p className="text-xs text-muted-foreground">{t("prod.scrap")}</p>
               <p className="font-data mt-1 text-xl">{formatKg(totals.scrap)} kg</p>
