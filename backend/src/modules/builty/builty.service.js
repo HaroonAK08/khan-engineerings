@@ -693,7 +693,7 @@ async function getSalesReport({ dateFrom, dateTo, groupId, customerId } = {}) {
 
   const outstandingMatch = { ...match, balance: { $gt: 0 } };
 
-  const [allBuilties, outstanding, byCustomer, totals] = await Promise.all([
+  const [allBuilties, outstanding, byCustomer, totals, unitTotals] = await Promise.all([
     Builty.find(match)
       .populate("customer", "name phone group")
       .sort({ builtyDate: -1, createdAt: -1 }),
@@ -734,6 +734,53 @@ async function getSalesReport({ dateFrom, dateTo, groupId, customerId } = {}) {
         },
       },
     ]),
+    Builty.aggregate([
+      { $match: match },
+      { $unwind: { path: "$items", preserveNullAndEmptyArrays: false } },
+      {
+        $lookup: {
+          from: "products",
+          localField: "items.product",
+          foreignField: "_id",
+          as: "productDoc",
+        },
+      },
+      { $unwind: { path: "$productDoc", preserveNullAndEmptyArrays: true } },
+      {
+        $group: {
+          _id: null,
+          hubUnits: {
+            $sum: {
+              $cond: [
+                { $ne: [{ $ifNull: ["$productDoc.family", "hub"] }, "drum"] },
+                "$items.quantity",
+                0,
+              ],
+            },
+          },
+          drumUnits: {
+            $sum: {
+              $cond: [{ $eq: ["$productDoc.family", "drum"] }, "$items.quantity", 0],
+            },
+          },
+          totalUnits: { $sum: "$items.quantity" },
+          hubSales: {
+            $sum: {
+              $cond: [
+                { $ne: [{ $ifNull: ["$productDoc.family", "hub"] }, "drum"] },
+                "$items.lineTotal",
+                0,
+              ],
+            },
+          },
+          drumSales: {
+            $sum: {
+              $cond: [{ $eq: ["$productDoc.family", "drum"] }, "$items.lineTotal", 0],
+            },
+          },
+        },
+      },
+    ]),
   ]);
 
   function mapBuiltyRow(b) {
@@ -757,6 +804,13 @@ async function getSalesReport({ dateFrom, dateTo, groupId, customerId } = {}) {
   const records = allBuilties.map(mapBuiltyRow);
   const unpaidInvoices = outstanding.map(mapBuiltyRow);
   const t = totals[0] || { orderCount: 0, totalSales: 0, totalPaid: 0, outstanding: 0 };
+  const units = unitTotals[0] || {
+    hubUnits: 0,
+    drumUnits: 0,
+    totalUnits: 0,
+    hubSales: 0,
+    drumSales: 0,
+  };
 
   const topCustomers = byCustomer.map((row) => ({
     customerId: row._id ? String(row._id) : "",
@@ -805,6 +859,11 @@ async function getSalesReport({ dateFrom, dateTo, groupId, customerId } = {}) {
       totalSales: roundMoney(t.totalSales || 0),
       totalPaid: roundMoney(t.totalPaid || 0),
       outstanding: roundMoney(t.outstanding || 0),
+      hubUnits: Number(units.hubUnits || 0),
+      drumUnits: Number(units.drumUnits || 0),
+      totalUnits: Number(units.totalUnits || 0),
+      hubSales: roundMoney(units.hubSales || 0),
+      drumSales: roundMoney(units.drumSales || 0),
       partyCount: topCustomers.length,
       groupCount: byGroup.length,
     },
@@ -843,6 +902,11 @@ function emptySalesReport(dateFrom, dateTo, groupMeta, partyMeta) {
       totalSales: 0,
       totalPaid: 0,
       outstanding: 0,
+      hubUnits: 0,
+      drumUnits: 0,
+      totalUnits: 0,
+      hubSales: 0,
+      drumSales: 0,
       partyCount: 0,
       groupCount: 0,
     },

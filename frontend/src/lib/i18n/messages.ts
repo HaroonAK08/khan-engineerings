@@ -802,7 +802,7 @@ const en = {
   "sm.updated": "Salesman updated",
   "sm.saveFailed": "Failed to save salesman",
 
-  "rep.nav.hub": "Hub",
+  "rep.nav.hub": "Full Report",
   "rep.nav.sales": "Sales",
   "rep.nav.purchases": "Purchases",
   "rep.nav.receivables": "Receivables",
@@ -1379,6 +1379,11 @@ const en = {
   "salesReportsHub.partyPdfHint": "Use PDF above to download this party’s sales.",
   "salesReportsHub.allRecords": "All builties",
   "salesReportsHub.allRecordsDesc": "Every builty in this date range.",
+  "salesReportsHub.hubUnits": "Hub units",
+  "salesReportsHub.drumUnits": "Drum units",
+  "salesReportsHub.totalUnits": "Total units",
+  "salesReportsHub.hubSales": "Hub sales",
+  "salesReportsHub.drumSales": "Drum sales",
 
   "statements.loadPartiesFailed": "Failed to load parties",
   "statements.loadFailed": "Failed to load statement",
@@ -2310,7 +2315,7 @@ const ur: Record<MessageKey, string> = {
   "sm.updated": "سیلز مین اپڈیٹ ہو گیا",
   "sm.saveFailed": "سیلز مین محفوظ کرنا ناکام",
 
-  "rep.nav.hub": "مرکز",
+  "rep.nav.hub": "مکمل رپورٹ",
   "rep.nav.sales": "فروخت",
   "rep.nav.purchases": "خریداری",
   "rep.nav.receivables": "وصولیاں",
@@ -2886,6 +2891,11 @@ const ur: Record<MessageKey, string> = {
   "salesReportsHub.partyPdfHint": "اوپر PDF سے اس پارٹی کی فروخت ڈاؤن لوڈ کریں۔",
   "salesReportsHub.allRecords": "تمام بلٹیاں",
   "salesReportsHub.allRecordsDesc": "اس تاریخ کی حد میں ہر بلٹی۔",
+  "salesReportsHub.hubUnits": "ہب یونٹس",
+  "salesReportsHub.drumUnits": "ڈرم یونٹس",
+  "salesReportsHub.totalUnits": "کل یونٹس",
+  "salesReportsHub.hubSales": "ہب سیلز",
+  "salesReportsHub.drumSales": "ڈرم سیلز",
 
   "statements.loadPartiesFailed": "فریقین لوڈ نہیں ہو سکے",
   "statements.loadFailed": "بیان لوڈ نہیں ہو سکا",

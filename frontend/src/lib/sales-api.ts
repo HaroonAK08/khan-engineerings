@@ -137,6 +137,11 @@ export type SalesReport = {
     totalSales: number;
     totalPaid: number;
     outstanding: number;
+    hubUnits?: number;
+    drumUnits?: number;
+    totalUnits?: number;
+    hubSales?: number;
+    drumSales?: number;
     partyCount?: number;
     groupCount?: number;
   };

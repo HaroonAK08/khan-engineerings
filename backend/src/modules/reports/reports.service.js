@@ -363,8 +363,13 @@ async function exportSales(query, format, res) {
   const meta = {
     "Builty count": report.totals.orderCount,
     "Total sales": money(report.totals.totalSales),
+    "Hub sales": money(report.totals.hubSales),
+    "Drum sales": money(report.totals.drumSales),
     "Total paid": money(report.totals.totalPaid),
     Outstanding: money(report.totals.outstanding),
+    "Hub units": report.totals.hubUnits ?? 0,
+    "Drum units": report.totals.drumUnits ?? 0,
+    "Total units": report.totals.totalUnits ?? 0,
     Period: periodLabel(query.dateFrom, query.dateTo),
     View: viewLabel,
     Group: report.group?.name || "All groups",
@@ -427,8 +432,13 @@ async function exportSales(query, format, res) {
         rows: [
           ["Builty count", report.totals.orderCount],
           ["Total sales", money(report.totals.totalSales)],
+          ["Hub sales", money(report.totals.hubSales)],
+          ["Drum sales", money(report.totals.drumSales)],
           ["Total paid", money(report.totals.totalPaid)],
           ["Outstanding", money(report.totals.outstanding)],
+          ["Hub units", report.totals.hubUnits ?? 0],
+          ["Drum units", report.totals.drumUnits ?? 0],
+          ["Total units", report.totals.totalUnits ?? 0],
         ],
       });
       sections.push({
@@ -1533,14 +1543,24 @@ async function collectModuleSection(kind, query) {
       meta: {
         "Builty count": t.orderCount || 0,
         "Total sales (billed)": money(t.totalSales),
+        "Hub sales": money(t.hubSales),
+        "Drum sales": money(t.drumSales),
         "Total paid (collected)": money(t.totalPaid),
         "Outstanding (still unpaid)": money(t.outstanding),
+        "Hub units": t.hubUnits ?? 0,
+        "Drum units": t.drumUnits ?? 0,
+        "Total units": t.totalUnits ?? 0,
       },
       conclusion: [
         ["Builty count", t.orderCount || 0],
         ["Total sales (billed)", money(t.totalSales)],
+        ["Hub sales", money(t.hubSales)],
+        ["Drum sales", money(t.drumSales)],
         ["Total paid (collected)", money(t.totalPaid)],
         ["Outstanding (still unpaid)", money(t.outstanding)],
+        ["Hub units", t.hubUnits ?? 0],
+        ["Drum units", t.drumUnits ?? 0],
+        ["Total units", t.totalUnits ?? 0],
       ],
     };
   }

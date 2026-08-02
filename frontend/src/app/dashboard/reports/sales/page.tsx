@@ -236,10 +236,29 @@ export default function SalesReportsHubPage() {
         <>
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             {[
-              { label: t("customerDetail.orders"), value: String(report.totals.orderCount) },
               { label: t("salesReports.sales"), value: formatMoney(report.totals.totalSales) },
+              {
+                label: t("salesReportsHub.hubSales"),
+                value: formatMoney(report.totals.hubSales ?? 0),
+              },
+              {
+                label: t("salesReportsHub.drumSales"),
+                value: formatMoney(report.totals.drumSales ?? 0),
+              },
               { label: t("salesReports.collected"), value: formatMoney(report.totals.totalPaid) },
               { label: t("dash.outstanding"), value: formatMoney(report.totals.outstanding) },
+              {
+                label: t("salesReportsHub.hubUnits"),
+                value: String(Math.round(report.totals.hubUnits ?? 0)),
+              },
+              {
+                label: t("salesReportsHub.drumUnits"),
+                value: String(Math.round(report.totals.drumUnits ?? 0)),
+              },
+              {
+                label: t("salesReportsHub.totalUnits"),
+                value: String(Math.round(report.totals.totalUnits ?? 0)),
+              },
             ].map((s) => (
               <Card key={s.label} className="py-0">
                 <CardContent className="p-4">
