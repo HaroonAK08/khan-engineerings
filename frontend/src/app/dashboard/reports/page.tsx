@@ -349,16 +349,29 @@ export default function ReportsHubPage() {
           ) : (
             preview.sections.map((section) => (
               <div key={section.id} className="flex flex-col gap-3">
-                <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-                  <h3 className="text-nameplate text-sm">{section.heading || section.title}</h3>
-                  {Object.keys(section.meta || {}).length > 0 && (
-                    <p className="font-data text-xs text-muted-foreground">
-                      {Object.entries(section.meta)
-                        .map(([k, v]) => `${k}: ${v}`)
-                        .join(" · ")}
-                    </p>
-                  )}
-                </div>
+                <h3 className="text-nameplate text-sm">{section.heading || section.title}</h3>
+                {Object.keys(section.meta || {}).length > 0 && (
+                  <div className="overflow-hidden rounded-lg border border-border/60">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Item</TableHead>
+                          <TableHead className="text-right">Value</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {Object.entries(section.meta).map(([k, v]) => (
+                          <TableRow key={`${section.id}-meta-${k}`}>
+                            <TableCell className="text-sm">{k}</TableCell>
+                            <TableCell className="font-data text-right text-xs">
+                              {v == null || v === "" ? "—" : String(v)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
                 {section.subsections && section.subsections.length > 0 ? (
                   section.subsections.map((sub) => (
                     <div key={`${section.id}-${sub.heading}`} className="flex flex-col gap-2">

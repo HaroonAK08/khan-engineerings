@@ -701,33 +701,62 @@ async function exportExpenses(query, format, res) {
   return sendExcel(res, buf, "expenses-report.xlsx");
 }
 
+function inventorySummaryRows(report) {
+  const scrapKg =
+    report.raw?.scrapKg ??
+    report.raw?.byMaterial?.scrap?.availableKg ??
+    report.raw?.availableKg ??
+    0;
+  const daigKg =
+    report.raw?.daigKg ?? report.raw?.byMaterial?.daig?.availableKg ?? 0;
+  const hubUnits = report.finishedStock?.hubUnits ?? 0;
+  const drumUnits = report.finishedStock?.drumUnits ?? 0;
+  const totalUnits = report.finishedStock?.totalUnits ?? 0;
+  return {
+    scrapKg,
+    daigKg,
+    hubUnits,
+    drumUnits,
+    totalUnits,
+    summaryRows: [
+      ["Raw scrap available (kg)", Number(scrapKg)],
+      ["Raw daig available (kg)", Number(daigKg)],
+      ["Finished hub units", Number(hubUnits)],
+      ["Finished drum units", Number(drumUnits)],
+      ["Finished total units", Number(totalUnits)],
+    ],
+    finishedRows: (report.finishedStock?.items || []).map((i) => [
+      i.name,
+      (i.family || "hub") === "drum" ? "Drum" : "Hub",
+      i.quantity,
+    ]),
+  };
+}
+
 async function exportInventory(query, format, res) {
   const report = await inventoryService.getInventoryReport(query);
-  const columns = ["Product", "SKU", "Warehouse", "Qty", "Low threshold"];
-  const rows = (report.finishedStock?.items || []).map((i) => [
-    i.name,
-    i.sku || "",
-    i.warehouseName || "",
-    i.quantity,
-    i.lowStockThreshold || 0,
-  ]);
-  const meta = {
-    Period: periodLabel(query.dateFrom, query.dateTo),
-    "Raw scrap kg": report.raw?.availableKg ?? report.raw?.totalKg ?? 0,
-    "Finished units": report.finishedStock?.totalUnits ?? 0,
-  };
+  const { summaryRows, finishedRows } = inventorySummaryRows(report);
+  const meta = { Period: periodLabel(query.dateFrom, query.dateTo) };
   const title = "Inventory report";
+  const sections = [
+    { heading: "Stock summary", columns: ["Item", "Value"], rows: summaryRows },
+    { heading: "Finished goods", columns: ["Product", "Type", "Qty"], rows: finishedRows },
+  ];
   if (format === "pdf") {
     const buf = await buildPdf({
       title,
       subtitle: "Khan Engineerings",
-      columns,
-      rows,
       metaLines: Object.entries(meta).map(([k, v]) => `${k}: ${v}`),
+      sections,
     });
     return sendPdf(res, buf, "inventory-report.pdf");
   }
-  const buf = await buildExcel({ title, sheetName: "Inventory", columns, rows, meta });
+  const buf = await buildExcel({
+    title,
+    sheetName: "Inventory",
+    meta,
+    sections,
+  });
   return sendExcel(res, buf, "inventory-report.xlsx");
 }
 
@@ -1659,28 +1688,34 @@ async function collectModuleSection(kind, query) {
   if (kind === "inventory") {
     const report = await inventoryService.getInventoryReport(query);
     const produced = report.producedThisPeriod?.totals || {};
-    const rawKg = report.raw?.availableKg ?? report.raw?.totalKg ?? 0;
+    const { scrapKg, daigKg, hubUnits, drumUnits, totalUnits, summaryRows, finishedRows } =
+      inventorySummaryRows(report);
     return {
       id: "inventory",
       sheetName: "Inventory",
       title: "Inventory",
       heading: "Inventory",
-      columns: ["Product", "SKU", "Warehouse", "Qty", "Low threshold"],
-      rows: (report.finishedStock?.items || []).map((i) => [
-        i.name,
-        i.sku || "",
-        i.warehouseName || "",
-        i.quantity,
-        i.lowStockThreshold || 0,
-      ]),
-      meta: {
-        "Raw scrap available (kg)": rawKg,
-        "Finished units in stock": report.finishedStock?.totalUnits ?? 0,
-      },
+      columns: ["Product", "Type", "Qty"],
+      rows: finishedRows,
+      meta: {},
+      subsections: [
+        {
+          heading: "Stock summary",
+          columns: ["Item", "Value"],
+          rows: summaryRows,
+        },
+        {
+          heading: "Finished goods",
+          columns: ["Product", "Type", "Qty"],
+          rows: finishedRows,
+        },
+      ],
       conclusion: [
-        ["Raw scrap available (kg)", rawKg],
-        ["Finished units in stock", report.finishedStock?.totalUnits ?? 0],
-        ["Finished SKUs", report.finishedStock?.skuCount ?? 0],
+        ["Raw scrap available (kg)", scrapKg],
+        ["Raw daig available (kg)", daigKg],
+        ["Finished hub units", hubUnits],
+        ["Finished drum units", drumUnits],
+        ["Finished total units", totalUnits],
         ["Produced this period (good)", produced.goodUnits || 0],
         ["Produced this period (rejected)", produced.rejectedUnits || 0],
         ["Low-stock alerts", (report.lowStock || []).length],
@@ -1891,25 +1926,30 @@ async function exportCombined(modules, query, format, res, filenameBase) {
       subtitle: "Khan Engineerings",
       metaLines,
       sections: sections.flatMap((s) => {
-        const metaSuffix = Object.keys(s.meta || {}).length
-          ? ` — ${Object.entries(s.meta)
-              .map(([k, v]) => `${k}: ${v}`)
-              .join(" · ")}`
-          : "";
-        if (Array.isArray(s.subsections) && s.subsections.length > 0) {
-          return s.subsections.map((sub) => ({
-            heading: `${s.heading} — ${sub.heading}${metaSuffix}`,
-            columns: sub.columns,
-            rows: sub.rows,
-          }));
+        const out = [];
+        if (Object.keys(s.meta || {}).length > 0) {
+          out.push({
+            heading: `${s.heading} — Summary`,
+            columns: ["Item", "Value"],
+            rows: Object.entries(s.meta).map(([k, v]) => [k, v]),
+          });
         }
-        return [
-          {
-            heading: `${s.heading}${metaSuffix}`,
-            columns: s.columns,
-            rows: s.rows,
-          },
-        ];
+        if (Array.isArray(s.subsections) && s.subsections.length > 0) {
+          s.subsections.forEach((sub) => {
+            out.push({
+              heading: `${s.heading} — ${sub.heading}`,
+              columns: sub.columns,
+              rows: sub.rows,
+            });
+          });
+          return out;
+        }
+        out.push({
+          heading: s.heading,
+          columns: s.columns,
+          rows: s.rows,
+        });
+        return out;
       }),
     });
     return sendPdf(res, buf, `${fileBase}.pdf`);
@@ -1925,7 +1965,7 @@ async function exportCombined(modules, query, format, res, filenameBase) {
           title: `${s.title} — ${sub.heading}`,
           columns: sub.columns,
           rows: sub.rows,
-          meta,
+          meta: { Period: period },
         }));
       }
       return [

@@ -587,9 +587,15 @@ async function getInventoryReport({ dateFrom, dateTo } = {}) {
 
   return {
     period: { from: monthStart, to: monthEnd },
-    raw,
+    raw: {
+      ...raw,
+      scrapKg: raw.byMaterial?.scrap?.availableKg ?? raw.availableKg ?? 0,
+      daigKg: raw.byMaterial?.daig?.availableKg ?? 0,
+    },
     finishedStock: {
       totalUnits: finished.totalUnits,
+      hubUnits: finished.hubUnits ?? 0,
+      drumUnits: finished.drumUnits ?? 0,
       skuCount: finished.skuCount,
       items: finished.items,
     },
@@ -601,6 +607,7 @@ async function getInventoryReport({ dateFrom, dateTo } = {}) {
       byProduct: produced.map((row) => ({
         productId: row._id,
         name: row.product?.name || "Unknown",
+        family: row.product?.family || "hub",
         batchCount: row.batchCount,
         goodUnits: row.goodUnits,
         rejectedUnits: row.rejectedUnits,

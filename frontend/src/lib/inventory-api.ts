@@ -55,9 +55,18 @@ export type CatalogItem = {
 
 export type InventoryReport = {
   period: { from: string; to: string };
-  raw: InventoryOverview["raw"];
+  raw: InventoryOverview["raw"] & {
+    scrapKg?: number;
+    daigKg?: number;
+    byMaterial?: {
+      scrap?: { availableKg?: number; totalKg?: number };
+      daig?: { availableKg?: number; totalKg?: number };
+    };
+  };
   finishedStock: {
     totalUnits: number;
+    hubUnits?: number;
+    drumUnits?: number;
     skuCount: number;
     items: FinishedStockItem[];
   };
@@ -71,6 +80,7 @@ export type InventoryReport = {
     byProduct: Array<{
       productId: string;
       name: string;
+      family?: string;
       batchCount: number;
       goodUnits: number;
       rejectedUnits: number;

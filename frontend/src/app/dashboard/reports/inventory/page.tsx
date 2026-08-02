@@ -21,6 +21,20 @@ import {
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
 
+function scrapKgOf(report: InventoryReport) {
+  return (
+    report.raw?.scrapKg ??
+    report.raw?.byMaterial?.scrap?.availableKg ??
+    report.raw?.availableKg ??
+    report.raw?.totalKg ??
+    0
+  );
+}
+
+function daigKgOf(report: InventoryReport) {
+  return report.raw?.daigKg ?? report.raw?.byMaterial?.daig?.availableKg ?? 0;
+}
+
 export default function InventoryReportsHubPage() {
   const { t } = useI18n();
   const d = currentMonthRange();
@@ -42,8 +56,8 @@ export default function InventoryReportsHubPage() {
   }, [dateFrom, dateTo, t]);
 
   useEffect(() => {
-    const t = setTimeout(load, 200);
-    return () => clearTimeout(t);
+    const timer = setTimeout(load, 200);
+    return () => clearTimeout(timer);
   }, [load]);
 
   async function onExport(format: "pdf") {
@@ -78,19 +92,27 @@ export default function InventoryReportsHubPage() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
             {[
               {
                 label: t("invReportsHub.rawScrap"),
-                value: `${formatKg(report.raw?.availableKg ?? report.raw?.totalKg ?? 0)} kg`,
+                value: `${formatKg(scrapKgOf(report))} kg`,
               },
               {
-                label: t("invReportsHub.finishedUnits"),
+                label: t("invReportsHub.rawDaig"),
+                value: `${formatKg(daigKgOf(report))} kg`,
+              },
+              {
+                label: t("invReportsHub.finishedHub"),
+                value: String(Math.round(report.finishedStock?.hubUnits ?? 0)),
+              },
+              {
+                label: t("invReportsHub.finishedDrum"),
+                value: String(Math.round(report.finishedStock?.drumUnits ?? 0)),
+              },
+              {
+                label: t("invReportsHub.finishedTotal"),
                 value: String(Math.round(report.finishedStock?.totalUnits ?? 0)),
-              },
-              {
-                label: t("invReportsHub.producedGood"),
-                value: String(report.producedThisPeriod?.totals?.goodUnits ?? 0),
               },
               {
                 label: t("invReportsHub.lowStockSkus"),
@@ -116,22 +138,18 @@ export default function InventoryReportsHubPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>{t("common.product")}</TableHead>
-                    <TableHead>{t("common.warehouse")}</TableHead>
+                    <TableHead>{t("invReportsHub.type")}</TableHead>
                     <TableHead className="text-right">{t("common.qty")}</TableHead>
-                    <TableHead className="text-right">{t("invReportsHub.threshold")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {(report.finishedStock?.items || []).map((i) => (
                     <TableRow key={`${i.productId}-${i.warehouseId}`}>
                       <TableCell>{i.name}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {i.warehouseName}
+                      <TableCell className="text-sm text-muted-foreground">
+                        {i.family === "drum" ? t("invReportsHub.drum") : t("invReportsHub.hub")}
                       </TableCell>
                       <TableCell className="font-data text-right text-xs">{i.quantity}</TableCell>
-                      <TableCell className="font-data text-right text-xs">
-                        {i.lowStockThreshold || "—"}
-                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
