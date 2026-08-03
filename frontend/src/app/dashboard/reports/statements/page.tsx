@@ -23,9 +23,8 @@ import {
   type GroupStatement,
   type Statement,
 } from "@/lib/reports-api";
-import { currentMonthRange } from "@/lib/date-range";
+import { DateRangeFilter } from "@/components/date-range-filter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -44,16 +43,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
+import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 
 export default function StatementsPage() {
   const { t } = useI18n();
-  const d = currentMonthRange();
+  const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
   const [partyType, setPartyType] = useState<"customer" | "supplier">("customer");
   const [view, setView] = useState<ReportViewMode>("party");
   const [partyId, setPartyId] = useState("");
   const [groupId, setGroupId] = useState("");
-  const [dateFrom, setDateFrom] = useState(d.from);
-  const [dateTo, setDateTo] = useState(d.to);
   const [customers, setCustomers] = useState<Array<{ _id: string; name: string }>>([]);
   const [suppliers, setSuppliers] = useState<Array<{ _id: string; name: string }>>([]);
   const [groups, setGroups] = useState<PartyGroup[]>([]);
@@ -84,6 +82,7 @@ export default function StatementsPage() {
   }, [partyType, view]);
 
   const load = useCallback(async () => {
+    if (!hydrated) return;
     const params = {
       dateFrom: dateFrom || undefined,
       dateTo: dateTo || undefined,
@@ -156,7 +155,7 @@ export default function StatementsPage() {
     } finally {
       setLoading(false);
     }
-  }, [partyId, groupId, partyType, view, dateFrom, dateTo, t]);
+  }, [partyId, groupId, partyType, view, dateFrom, dateTo, hydrated, t]);
 
   useEffect(() => {
     const timer = setTimeout(load, 200);
@@ -306,13 +305,8 @@ export default function StatementsPage() {
               </Select>
             </div>
           )}
-          <div className="grid gap-1.5">
-            <Label>{t("common.from")}</Label>
-            <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-          </div>
-          <div className="grid gap-1.5">
-            <Label>{t("common.to")}</Label>
-            <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          <div className="sm:col-span-2">
+            <DateRangeFilter />
           </div>
         </CardContent>
       </Card>

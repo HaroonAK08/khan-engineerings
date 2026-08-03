@@ -14,7 +14,8 @@ import {
   type Worker,
 } from "@/lib/workers-api";
 import type { BatchExpense } from "@/types/production";
-import { currentMonthRange, toDateInput, todayInput } from "@/lib/date-range";
+import { toDateInput, todayInput } from "@/lib/date-range";
+import { DateRangeFilter } from "@/components/date-range-filter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -38,6 +39,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
+import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 
 function displayWorkerName(
   w: { name: string; nameUr?: string } | null | undefined,
@@ -62,13 +64,11 @@ export default function WorkerSalaryLedgerPage() {
   const { t, isUrdu } = useI18n();
   const params = useParams();
   const id = String(params.id);
-  const month = currentMonthRange();
+  const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
 
   const [worker, setWorker] = useState<Worker | null>(null);
   const [payments, setPayments] = useState<BatchExpense[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dateFrom, setDateFrom] = useState(month.from);
-  const [dateTo, setDateTo] = useState(month.to);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<"add" | "edit">("add");
@@ -80,6 +80,7 @@ export default function WorkerSalaryLedgerPage() {
   const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
+    if (!hydrated) return;
     setLoading(true);
     try {
       const [w, list] = await Promise.all([
@@ -99,7 +100,7 @@ export default function WorkerSalaryLedgerPage() {
     } finally {
       setLoading(false);
     }
-  }, [id, t, dateFrom, dateTo]);
+  }, [id, t, dateFrom, dateTo, hydrated]);
 
   useEffect(() => {
     const timer = setTimeout(() => void load(), 200);
@@ -107,6 +108,7 @@ export default function WorkerSalaryLedgerPage() {
   }, [load]);
 
   const reloadPayments = useCallback(async () => {
+    if (!hydrated) return;
     try {
       setPayments(
         await listSalaryPayments({
@@ -118,7 +120,7 @@ export default function WorkerSalaryLedgerPage() {
     } catch (err) {
       toast.error(apiError(err, t("sal.historyLoadFailed")));
     }
-  }, [id, t, dateFrom, dateTo]);
+  }, [id, t, dateFrom, dateTo, hydrated]);
 
   function openAddPayment() {
     setDialogMode("add");
@@ -274,23 +276,8 @@ export default function WorkerSalaryLedgerPage() {
       </div>
 
       <Card>
-        <CardContent className="grid gap-3 p-4 sm:grid-cols-2">
-          <div className="grid gap-1.5">
-            <Label>{t("common.from")}</Label>
-            <Input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-            />
-          </div>
-          <div className="grid gap-1.5">
-            <Label>{t("common.to")}</Label>
-            <Input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-            />
-          </div>
+        <CardContent className="p-4">
+          <DateRangeFilter />
         </CardContent>
       </Card>
 

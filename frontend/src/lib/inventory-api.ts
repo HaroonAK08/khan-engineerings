@@ -54,6 +54,7 @@ export type CatalogItem = {
 };
 
 export type InventoryReport = {
+  asOf?: string;
   period: { from: string; to: string };
   raw: InventoryOverview["raw"] & {
     scrapKg?: number;
@@ -148,7 +149,11 @@ export async function createAdjustment(body: {
   return data.movement;
 }
 
-export async function getLiveInventoryReport(params?: { dateFrom?: string; dateTo?: string }) {
+export async function getLiveInventoryReport(params?: {
+  asOf?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}) {
   const { data } = await api.get<{ report: InventoryReport }>("/inventory/reports", { params });
   return data.report;
 }

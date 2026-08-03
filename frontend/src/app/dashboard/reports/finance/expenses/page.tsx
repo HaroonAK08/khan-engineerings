@@ -8,9 +8,8 @@ import { FinanceSubnav } from "@/components/layout/finance-subnav";
 import { ReportsSubnav } from "@/components/layout/reports-subnav";
 import { apiError, formatMoney } from "@/lib/materials-api";
 import { getExpenseBreakdown, getManufacturingFinance, getSupplierExpenses } from "@/lib/finance-api";
-import { currentMonthRange } from "@/lib/date-range";
+import { DateRangeFilter } from "@/components/date-range-filter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -20,12 +19,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
+import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 
 export default function FinanceExpensesPage() {
   const { t } = useI18n();
-  const defaults = currentMonthRange();
-  const [dateFrom, setDateFrom] = useState(defaults.from);
-  const [dateTo, setDateTo] = useState(defaults.to);
+  const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
   const [breakdown, setBreakdown] = useState<Awaited<ReturnType<typeof getExpenseBreakdown>> | null>(
     null
   );
@@ -43,6 +41,7 @@ export default function FinanceExpensesPage() {
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
+    if (!hydrated) return;
     setLoading(true);
     try {
       const params = { dateFrom, dateTo };
@@ -59,7 +58,7 @@ export default function FinanceExpensesPage() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, t]);
+  }, [dateFrom, dateTo, hydrated, t]);
 
   useEffect(() => {
     const t = setTimeout(load, 200);
@@ -79,10 +78,7 @@ export default function FinanceExpensesPage() {
           <h1 className="text-nameplate text-xl">{t("financeExpenses.title")}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{t("financeExpenses.subtitle")}</p>
         </div>
-        <div className="flex gap-2">
-          <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-          <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-        </div>
+        <DateRangeFilter />
       </div>
 
       {loading || !breakdown || !mfg ? (

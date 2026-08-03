@@ -309,13 +309,19 @@ async function removeWarehouse(id) {
   return { ok: true };
 }
 
-async function getFinishedStock({ warehouse, category, q } = {}) {
+async function getFinishedStock({ warehouse, category, q, asOf } = {}) {
   const mongoose = require("mongoose");
   const match = { itemType: "finished_good" };
 
   if (warehouse) {
     if (!mongoose.isValidObjectId(warehouse)) throw httpError("Invalid warehouse", 400);
     match.warehouse = new mongoose.Types.ObjectId(warehouse);
+  }
+
+  if (asOf) {
+    const end = parseDate(asOf, "asOf");
+    end.setHours(23, 59, 59, 999);
+    match.movementDate = { $lte: end };
   }
 
   const balances = await StockMovement.aggregate([
@@ -422,6 +428,58 @@ async function getFinishedStock({ warehouse, category, q } = {}) {
     hubUnits: roundQty(hubUnits),
     drumUnits: roundQty(drumUnits),
     skuCount: rows.length,
+  };
+}
+
+async function getRawStockAsOf(asOf) {
+  const end = parseDate(asOf, "asOf");
+  end.setHours(23, 59, 59, 999);
+
+  const rows = await StockMovement.aggregate([
+    {
+      $match: {
+        itemType: { $in: ["raw_scrap", "raw_daig"] },
+        movementDate: { $lte: end },
+      },
+    },
+    {
+      $group: {
+        _id: "$itemType",
+        qtyIn: {
+          $sum: { $cond: [{ $eq: ["$direction", "in"] }, "$quantity", 0] },
+        },
+        qtyOut: {
+          $sum: { $cond: [{ $eq: ["$direction", "out"] }, "$quantity", 0] },
+        },
+      },
+    },
+  ]);
+
+  const byType = { raw_scrap: 0, raw_daig: 0 };
+  for (const row of rows) {
+    byType[row._id] = roundQty((row.qtyIn || 0) - (row.qtyOut || 0));
+  }
+
+  const scrap = {
+    material: "scrap",
+    materialType: "scrap",
+    unit: "kg",
+    availableKg: byType.raw_scrap,
+    totalKg: byType.raw_scrap,
+  };
+  const daig = {
+    material: "daig",
+    materialType: "daig",
+    unit: "kg",
+    availableKg: byType.raw_daig,
+    totalKg: byType.raw_daig,
+  };
+
+  return {
+    ...scrap,
+    scrapKg: scrap.availableKg,
+    daigKg: daig.availableKg,
+    byMaterial: { scrap, daig },
   };
 }
 
@@ -534,19 +592,30 @@ async function getOverview() {
   };
 }
 
-async function getInventoryReport({ dateFrom, dateTo } = {}) {
+async function getInventoryReport({ asOf, dateFrom, dateTo } = {}) {
   const now = new Date();
+  const asOfValue =
+    asOf ||
+    `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const asOfEnd = parseDate(asOfValue, "asOf");
+  asOfEnd.setHours(23, 59, 59, 999);
+
   const monthStart = dateFrom
     ? parseDate(dateFrom, "dateFrom")
-    : new Date(now.getFullYear(), now.getMonth(), 1);
+    : new Date(asOfEnd.getFullYear(), asOfEnd.getMonth(), 1);
   const monthEnd = dateTo
-    ? parseDate(dateTo, "dateTo")
-    : new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    ? (() => {
+        const end = parseDate(dateTo, "dateTo");
+        end.setHours(23, 59, 59, 999);
+        return end;
+      })()
+    : asOfEnd;
 
   const produced = await ProductionBatch.aggregate([
     {
       $match: {
         productionDate: { $gte: monthStart, $lte: monthEnd },
+        status: { $ne: "cancelled" },
       },
     },
     {
@@ -570,29 +639,29 @@ async function getInventoryReport({ dateFrom, dateTo } = {}) {
     { $sort: { goodUnits: -1 } },
   ]);
 
-  const [raw, finished, alerts] = await Promise.all([
-    purchaseService.getStock(),
-    getFinishedStock(),
-    getAlerts(),
+  const [raw, finished] = await Promise.all([
+    getRawStockAsOf(asOfValue),
+    getFinishedStock({ asOf: asOfValue }),
   ]);
 
   const producedTotals = produced.reduce(
     (acc, row) => {
-      acc.goodUnits += row.goodUnits;
-      acc.rejectedUnits += row.rejectedUnits;
-      acc.batchCount += row.batchCount;
-      acc.netConsumedKg += row.netConsumedKg;
+      acc.goodUnits += row.goodUnits || 0;
+      acc.rejectedUnits += row.rejectedUnits || 0;
+      acc.batchCount += row.batchCount || 0;
+      acc.netConsumedKg += row.netConsumedKg || 0;
       return acc;
     },
     { goodUnits: 0, rejectedUnits: 0, batchCount: 0, netConsumedKg: 0 }
   );
 
   return {
+    asOf: asOfEnd,
     period: { from: monthStart, to: monthEnd },
     raw: {
       ...raw,
-      scrapKg: raw.byMaterial?.scrap?.availableKg ?? raw.availableKg ?? 0,
-      daigKg: raw.byMaterial?.daig?.availableKg ?? 0,
+      scrapKg: raw.scrapKg ?? raw.byMaterial?.scrap?.availableKg ?? raw.availableKg ?? 0,
+      daigKg: raw.daigKg ?? raw.byMaterial?.daig?.availableKg ?? 0,
     },
     finishedStock: {
       totalUnits: finished.totalUnits,
@@ -613,10 +682,10 @@ async function getInventoryReport({ dateFrom, dateTo } = {}) {
         batchCount: row.batchCount,
         goodUnits: row.goodUnits,
         rejectedUnits: row.rejectedUnits,
-        netConsumedKg: roundQty(row.netConsumedKg),
+        netConsumedKg: roundQty(row.netConsumedKg || 0),
       })),
     },
-    lowStock: alerts.finished,
+    lowStock: finished.items.filter((i) => i.isLow),
   };
 }
 

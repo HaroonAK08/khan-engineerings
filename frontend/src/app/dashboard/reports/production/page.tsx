@@ -5,15 +5,15 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
+import { DateRangeFilter } from "@/components/date-range-filter";
 import { ReportsSubnav } from "@/components/layout/reports-subnav";
 import { ExportButtons } from "@/components/reports/export-buttons";
+import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 import { apiError, formatKg } from "@/lib/materials-api";
 import { getProductionReport } from "@/lib/production-api";
 import type { ProductionReport } from "@/types/production";
 import { downloadReportExport } from "@/lib/reports-api";
-import { currentMonthRange } from "@/lib/date-range";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -27,14 +27,19 @@ import { useI18n } from "@/hooks/use-i18n";
 export default function ProductionReportsHubPage() {
   const { t } = useI18n();
   const searchParams = useSearchParams();
-  const d = currentMonthRange();
-  const [dateFrom, setDateFrom] = useState(searchParams.get("dateFrom") || d.from);
-  const [dateTo, setDateTo] = useState(searchParams.get("dateTo") || d.to);
+  const { dateFrom, dateTo, setRange, hydrated } = usePersistedDateRange();
   const [report, setReport] = useState<ProductionReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<"pdf" | null>(null);
 
+  useEffect(() => {
+    const from = searchParams.get("dateFrom");
+    const to = searchParams.get("dateTo");
+    if (from || to) setRange(from || "", to || "");
+  }, [searchParams, setRange]);
+
   const load = useCallback(async () => {
+    if (!hydrated) return;
     setLoading(true);
     try {
       setReport(await getProductionReport({ dateFrom, dateTo }));
@@ -43,7 +48,7 @@ export default function ProductionReportsHubPage() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, t]);
+  }, [dateFrom, dateTo, hydrated, t]);
 
   useEffect(() => {
     const t = setTimeout(load, 200);
@@ -98,7 +103,8 @@ export default function ProductionReportsHubPage() {
                   <TableHead>{t("common.product")}</TableHead>
                   <TableHead className="text-right">{t("prodReports.runs")}</TableHead>
                   <TableHead className="text-right">{t("prodReports.pieces")}</TableHead>
-                  <TableHead className="text-right">{t("prodReportsHub.usedKg")}</TableHead>
+                  <TableHead className="text-right">{t("prod.scrap")}</TableHead>
+                  <TableHead className="text-right">{t("prod.daig")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -126,7 +132,12 @@ export default function ProductionReportsHubPage() {
                       </TableCell>
                       <TableCell className="font-data text-right text-xs">
                         <Link href={href} className="block">
-                          {formatKg(p.netConsumedKg)}
+                          {formatKg(p.scrapKg ?? 0)}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="font-data text-right text-xs">
+                        <Link href={href} className="block">
+                          {formatKg(p.daigKg ?? 0)}
                         </Link>
                       </TableCell>
                     </TableRow>
@@ -150,10 +161,7 @@ export default function ProductionReportsHubPage() {
         </div>
         <ExportButtons exporting={exporting} onExport={onExport} />
       </div>
-      <div className="flex flex-wrap gap-2">
-        <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-        <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-      </div>
+      <DateRangeFilter />
       {loading || !report ? (
         <div className="flex justify-center py-16">
           <Loader2 className="size-6 animate-spin text-primary" />
@@ -210,6 +218,42 @@ export default function ProductionReportsHubPage() {
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {drumProducts.reduce((s, p) => s + p.goodUnits, 0)} {t("prodReports.pieces").toLowerCase()}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Card className="border-emerald-500/30 bg-emerald-500/5 py-0">
+              <CardContent className="p-4">
+                <p className="font-data text-[10px] tracking-wider text-muted-foreground uppercase">
+                  {t("prod.scrap")}
+                </p>
+                <p className="font-data mt-1 text-xl">
+                  {formatKg(
+                    report.totals.byMaterial?.scrap ??
+                      report.totals.scrapKg ??
+                      0
+                  )}{" "}
+                  kg
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t("prodReports.materialUsed").toLowerCase()}
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="border-violet-500/30 bg-violet-500/5 py-0">
+              <CardContent className="p-4">
+                <p className="font-data text-[10px] tracking-wider text-muted-foreground uppercase">
+                  {t("prod.daig")}
+                </p>
+                <p className="font-data mt-1 text-xl">
+                  {formatKg(
+                    report.totals.byMaterial?.daig ?? report.totals.daigKg ?? 0
+                  )}{" "}
+                  kg
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t("prodReports.materialUsed").toLowerCase()}
                 </p>
               </CardContent>
             </Card>

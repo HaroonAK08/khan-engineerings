@@ -19,10 +19,9 @@ import {
   type SalesReport,
 } from "@/lib/sales-api";
 import { downloadReportExport } from "@/lib/reports-api";
-import { currentMonthRange } from "@/lib/date-range";
+import { DateRangeFilter } from "@/components/date-range-filter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -41,12 +40,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
+import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 
 export default function SalesReportsHubPage() {
   const { t } = useI18n();
-  const defaults = currentMonthRange();
-  const [dateFrom, setDateFrom] = useState(defaults.from);
-  const [dateTo, setDateTo] = useState(defaults.to);
+  const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
   const [groupId, setGroupId] = useState("");
   const [partyId, setPartyId] = useState("");
   const [view, setView] = useState<ReportViewMode>("whole");
@@ -71,6 +69,7 @@ export default function SalesReportsHubPage() {
   }, [groups, t]);
 
   const load = useCallback(async () => {
+    if (!hydrated) return;
     setLoading(true);
     try {
       setReport(
@@ -86,7 +85,7 @@ export default function SalesReportsHubPage() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, groupId, partyId, t]);
+  }, [dateFrom, dateTo, hydrated, groupId, partyId, t]);
 
   useEffect(() => {
     const timer = setTimeout(load, 200);
@@ -152,8 +151,7 @@ export default function SalesReportsHubPage() {
       </div>
 
       <div className="flex flex-wrap items-end gap-2">
-        <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-        <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+        <DateRangeFilter />
         <div className="grid gap-1.5">
           <Label className="sr-only">{t("recvReports.group")}</Label>
           <Select

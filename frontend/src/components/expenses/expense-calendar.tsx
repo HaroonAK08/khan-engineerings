@@ -12,7 +12,7 @@ import {
 } from "@/lib/expenses-api";
 import { apiError, formatDate, formatMoney, withSameDayConfirm } from "@/lib/materials-api";
 import type { BatchExpense } from "@/types/production";
-import { thisMonthRange, toDateInput, todayInput } from "@/lib/date-range";
+import { toDateInput, todayInput } from "@/lib/date-range";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -36,6 +36,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useI18n, type MessageKey } from "@/hooks/use-i18n";
+import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 
 export type ExpenseCategoryOption = {
   id: string;
@@ -79,8 +80,19 @@ export function ExpenseCalendar({
 
   const [expenses, setExpenses] = useState<BatchExpense[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const {
+    dateFrom,
+    dateTo,
+    setDateFrom,
+    setDateTo,
+    setThisMonth,
+    setToday,
+    clearRange,
+    isThisMonth,
+    isToday,
+    isAll,
+    hydrated,
+  } = usePersistedDateRange();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<"add" | "edit">("add");
@@ -108,6 +120,7 @@ export function ExpenseCalendar({
   }
 
   const load = useCallback(async () => {
+    if (!hydrated) return;
     setLoading(true);
     try {
       const all = await listFactoryExpenses({
@@ -128,7 +141,7 @@ export function ExpenseCalendar({
     } finally {
       setLoading(false);
     }
-  }, [categorySet, t, dateFrom, dateTo]);
+  }, [categorySet, t, dateFrom, dateTo, hydrated]);
 
   useEffect(() => {
     const timer = setTimeout(() => void load(), 200);
@@ -243,29 +256,7 @@ export function ExpenseCalendar({
 
   const total = useMemo(() => sorted.reduce((s, e) => s + e.amount, 0), [sorted]);
 
-  const today = todayInput();
-  const month = thisMonthRange();
-  const isTodayRange = dateFrom === today && dateTo === today;
-  const isMonthRange = dateFrom === month.from && dateTo === month.to;
-  const isAllRange = !dateFrom && !dateTo;
   const hasDateFilter = Boolean(dateFrom || dateTo);
-
-  function setTodayRange() {
-    const d = todayInput();
-    setDateFrom(d);
-    setDateTo(d);
-  }
-
-  function setThisMonthRange() {
-    const m = thisMonthRange();
-    setDateFrom(m.from);
-    setDateTo(m.to);
-  }
-
-  function setAllRange() {
-    setDateFrom("");
-    setDateTo("");
-  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -298,24 +289,24 @@ export function ExpenseCalendar({
             <Button
               type="button"
               size="sm"
-              variant={isAllRange ? "default" : "outline"}
-              onClick={setAllRange}
+              variant={isAll ? "default" : "outline"}
+              onClick={clearRange}
             >
               {t("sal.filterAll")}
             </Button>
             <Button
               type="button"
               size="sm"
-              variant={isTodayRange ? "default" : "outline"}
-              onClick={setTodayRange}
+              variant={isToday ? "default" : "outline"}
+              onClick={setToday}
             >
               {t("sal.filterToday")}
             </Button>
             <Button
               type="button"
               size="sm"
-              variant={isMonthRange ? "default" : "outline"}
-              onClick={setThisMonthRange}
+              variant={isThisMonth ? "default" : "outline"}
+              onClick={setThisMonth}
             >
               {t("sal.filterThisMonth")}
             </Button>
@@ -360,7 +351,7 @@ export function ExpenseCalendar({
               {hasDateFilter ? t("sal.ledgerEmptyFiltered") : t("exp.historyEmpty")}
             </p>
             {hasDateFilter ? (
-              <Button type="button" variant="outline" onClick={setAllRange}>
+              <Button type="button" variant="outline" onClick={clearRange}>
                 {t("sal.filterAll")}
               </Button>
             ) : (

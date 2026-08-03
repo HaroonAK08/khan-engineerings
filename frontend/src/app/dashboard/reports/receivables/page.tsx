@@ -17,10 +17,9 @@ import {
   type ReceivablesReport,
 } from "@/lib/reports-api";
 import { listPartyGroups, type PartyGroup } from "@/lib/sales-api";
-import { thisMonthRange } from "@/lib/date-range";
+import { DateRangeFilter } from "@/components/date-range-filter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -39,12 +38,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
+import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 import type { MessageKey } from "@/lib/i18n/messages";
 
 export default function ReceivablesReportPage() {
   const { t } = useI18n();
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const { dateFrom, dateTo, hydrated, isAll } = usePersistedDateRange();
   const [groupId, setGroupId] = useState("");
   const [partyId, setPartyId] = useState("");
   const [view, setView] = useState<ReportViewMode>("party");
@@ -69,6 +68,7 @@ export default function ReceivablesReportPage() {
   }, [groups, t]);
 
   const load = useCallback(async () => {
+    if (!hydrated) return;
     setLoading(true);
     try {
       const params: {
@@ -87,7 +87,7 @@ export default function ReceivablesReportPage() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, groupId, partyId, t]);
+  }, [dateFrom, dateTo, hydrated, groupId, partyId, t]);
 
   useEffect(() => {
     const timer = setTimeout(load, 200);
@@ -118,17 +118,6 @@ export default function ReceivablesReportPage() {
     return t(key);
   }
 
-  function setThisMonth() {
-    const range = thisMonthRange();
-    setDateFrom(range.from);
-    setDateTo(range.to);
-  }
-
-  function setAllDates() {
-    setDateFrom("");
-    setDateTo("");
-  }
-
   function openGroup(g: { groupId: string; name: string }) {
     setPartyId("");
     setGroupId(g.groupId || "__ungrouped__");
@@ -152,7 +141,6 @@ export default function ReceivablesReportPage() {
     setView("party");
   }
 
-  const isAll = !dateFrom && !dateTo;
   const byGroup = (report?.byGroup || []).filter((g) => Boolean(g.groupId));
   const groupViewTotals = {
     totalReceivable: byGroup.reduce((s, g) => s + (g.balance || 0), 0),
@@ -175,34 +163,7 @@ export default function ReceivablesReportPage() {
       </div>
 
       <div className="flex flex-wrap items-end gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant={isAll ? "default" : "outline"}
-          onClick={setAllDates}
-        >
-          {t("recvReports.allDates")}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant={!isAll ? "default" : "outline"}
-          onClick={setThisMonth}
-        >
-          {t("recvReports.thisMonth")}
-        </Button>
-        <Input
-          type="date"
-          className="w-auto"
-          value={dateFrom}
-          onChange={(e) => setDateFrom(e.target.value)}
-        />
-        <Input
-          type="date"
-          className="w-auto"
-          value={dateTo}
-          onChange={(e) => setDateTo(e.target.value)}
-        />
+        <DateRangeFilter showAll />
         <div className="grid gap-1.5">
           <Label className="sr-only">{t("recvReports.group")}</Label>
           <Select

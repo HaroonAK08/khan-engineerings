@@ -19,10 +19,9 @@ import {
 } from "@/lib/materials-api";
 import type { PurchaseReport } from "@/types/materials";
 import { downloadReportExport } from "@/lib/reports-api";
-import { currentMonthRange } from "@/lib/date-range";
+import { DateRangeFilter } from "@/components/date-range-filter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -33,12 +32,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
+import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 
 export default function PurchaseReportsPage() {
   const { t } = useI18n();
-  const d = currentMonthRange();
-  const [dateFrom, setDateFrom] = useState(d.from);
-  const [dateTo, setDateTo] = useState(d.to);
+  const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
   const [supplierId, setSupplierId] = useState("");
   const [view, setView] = useState<ReportViewMode>("whole");
   const [report, setReport] = useState<PurchaseReport | null>(null);
@@ -46,6 +44,7 @@ export default function PurchaseReportsPage() {
   const [exporting, setExporting] = useState<"pdf" | null>(null);
 
   const load = useCallback(async () => {
+    if (!hydrated) return;
     setLoading(true);
     try {
       setReport(
@@ -60,7 +59,7 @@ export default function PurchaseReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, supplierId, t]);
+  }, [dateFrom, dateTo, hydrated, supplierId, t]);
 
   useEffect(() => {
     const timer = setTimeout(load, 200);
@@ -110,10 +109,7 @@ export default function PurchaseReportsPage() {
         </div>
         <ExportButtons exporting={exporting} onExport={onExport} />
       </div>
-      <div className="flex flex-wrap gap-2">
-        <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-        <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-      </div>
+      <DateRangeFilter />
       <ReportViewToggle
         value={view}
         onChange={(next) => {

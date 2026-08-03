@@ -6,11 +6,10 @@ import { toast } from "sonner";
 import { ArrowLeft, Loader2, TrendingDown, TrendingUp } from "lucide-react";
 import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
 import { getCostReport } from "@/lib/production-api";
-import { currentMonthRange } from "@/lib/date-range";
 import type { CostReport } from "@/types/production";
+import { DateRangeFilter } from "@/components/date-range-filter";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -20,16 +19,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
+import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 
 export default function CostReportsPage() {
   const { t } = useI18n();
-  const d = currentMonthRange();
+  const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
   const [report, setReport] = useState<CostReport | null>(null);
   const [loading, setLoading] = useState(true);
-  const [dateFrom, setDateFrom] = useState(d.from);
-  const [dateTo, setDateTo] = useState(d.to);
 
   const load = useCallback(async () => {
+    if (!hydrated) return;
     setLoading(true);
     try {
       const params: { dateFrom?: string; dateTo?: string } = {};
@@ -41,7 +40,7 @@ export default function CostReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, t]);
+  }, [dateFrom, dateTo, hydrated, t]);
 
   useEffect(() => {
     const t = setTimeout(load, 200);
@@ -62,12 +61,7 @@ export default function CostReportsPage() {
         <p className="mt-1 text-sm text-muted-foreground">{t("costReports.subtitle")}</p>
       </div>
 
-      <Card>
-        <CardContent className="grid grid-cols-1 gap-2 p-4 sm:grid-cols-2">
-          <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-          <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-        </CardContent>
-      </Card>
+      <DateRangeFilter />
 
       {loading || !report ? (
         <div className="flex justify-center py-16">

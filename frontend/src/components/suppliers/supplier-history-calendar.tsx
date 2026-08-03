@@ -14,7 +14,7 @@ import {
   updatePurchase,
 } from "@/lib/materials-api";
 import type { LedgerEntry } from "@/types/materials";
-import { thisMonthRange, toDateInput, todayInput } from "@/lib/date-range";
+import { toDateInput } from "@/lib/date-range";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -37,6 +37,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
+import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 
 type Props = {
   supplierId?: string;
@@ -150,8 +151,18 @@ export function SupplierHistoryCalendar({
   showSupplierNames = false,
 }: Props) {
   const { t, isUrdu } = useI18n();
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const {
+    dateFrom,
+    dateTo,
+    setDateFrom,
+    setDateTo,
+    setThisMonth,
+    setToday,
+    clearRange,
+    isThisMonth,
+    isToday,
+    isAll,
+  } = usePersistedDateRange();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<LedgerEntry | null>(null);
@@ -248,29 +259,7 @@ export function SupplierHistoryCalendar({
     return roundMoney(qty * rate);
   }, [formQty, formRate]);
 
-  const today = todayInput();
-  const month = thisMonthRange();
-  const isTodayRange = dateFrom === today && dateTo === today;
-  const isMonthRange = dateFrom === month.from && dateTo === month.to;
-  const isAllRange = !dateFrom && !dateTo;
   const hasDateFilter = Boolean(dateFrom || dateTo);
-
-  function setTodayRange() {
-    const d = todayInput();
-    setDateFrom(d);
-    setDateTo(d);
-  }
-
-  function setThisMonthRange() {
-    const m = thisMonthRange();
-    setDateFrom(m.from);
-    setDateTo(m.to);
-  }
-
-  function setAllRange() {
-    setDateFrom("");
-    setDateTo("");
-  }
 
   function materialLabel(type?: string) {
     return type === "daig" ? "D" : "S";
@@ -435,24 +424,24 @@ export function SupplierHistoryCalendar({
             <Button
               type="button"
               size="sm"
-              variant={isAllRange ? "default" : "outline"}
-              onClick={setAllRange}
+              variant={isAll ? "default" : "outline"}
+              onClick={clearRange}
             >
               {t("sal.filterAll")}
             </Button>
             <Button
               type="button"
               size="sm"
-              variant={isTodayRange ? "default" : "outline"}
-              onClick={setTodayRange}
+              variant={isToday ? "default" : "outline"}
+              onClick={setToday}
             >
               {t("sal.filterToday")}
             </Button>
             <Button
               type="button"
               size="sm"
-              variant={isMonthRange ? "default" : "outline"}
-              onClick={setThisMonthRange}
+              variant={isThisMonth ? "default" : "outline"}
+              onClick={setThisMonth}
             >
               {t("sal.filterThisMonth")}
             </Button>
@@ -497,7 +486,7 @@ export function SupplierHistoryCalendar({
                 : t("supplierDetail.noLedger")}
             </p>
             {hasDateFilter ? (
-              <Button type="button" variant="outline" onClick={setAllRange}>
+              <Button type="button" variant="outline" onClick={clearRange}>
                 {t("sal.filterAll")}
               </Button>
             ) : null}

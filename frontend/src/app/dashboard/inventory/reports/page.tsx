@@ -8,11 +8,10 @@ import { InventorySubnav } from "@/components/layout/inventory-subnav";
 import { useI18n } from "@/hooks/use-i18n";
 import { apiError, formatDate, formatKg, formatMoney, getPurchaseReport } from "@/lib/materials-api";
 import { getLiveInventoryReport, type InventoryReport } from "@/lib/inventory-api";
-import { currentMonthRange } from "@/lib/date-range";
 import type { PurchaseReport } from "@/types/materials";
+import { DateRangeFilter } from "@/components/date-range-filter";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -21,17 +20,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 
 export default function InventoryReportsPage() {
   const { t } = useI18n();
-  const d = currentMonthRange();
+  const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
   const [report, setReport] = useState<InventoryReport | null>(null);
   const [purchaseReport, setPurchaseReport] = useState<PurchaseReport | null>(null);
   const [loading, setLoading] = useState(true);
-  const [dateFrom, setDateFrom] = useState(d.from);
-  const [dateTo, setDateTo] = useState(d.to);
 
   const load = useCallback(async () => {
+    if (!hydrated) return;
     setLoading(true);
     try {
       const params: { dateFrom?: string; dateTo?: string } = {};
@@ -48,7 +47,7 @@ export default function InventoryReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, hydrated]);
 
   useEffect(() => {
     const t = setTimeout(load, 200);
@@ -65,12 +64,7 @@ export default function InventoryReportsPage() {
         </p>
       </div>
 
-      <Card>
-        <CardContent className="grid grid-cols-1 gap-2 p-4 sm:grid-cols-2">
-          <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-          <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-        </CardContent>
-      </Card>
+      <DateRangeFilter />
 
       {loading || !report ? (
         <div className="flex justify-center py-16">

@@ -6,10 +6,9 @@ import { toast } from "sonner";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { apiError, formatKg } from "@/lib/materials-api";
 import { getProductionReport, listProducts } from "@/lib/production-api";
-import { currentMonthRange } from "@/lib/date-range";
 import type { Product, ProductionReport } from "@/types/production";
+import { DateRangeFilter } from "@/components/date-range-filter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { ProductSearchSelect } from "@/components/products/product-search-select";
 import {
   Table,
@@ -20,18 +19,18 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
+import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 
 export default function ProductionReportsPage() {
   const { t } = useI18n();
-  const d = currentMonthRange();
+  const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
   const [report, setReport] = useState<ProductionReport | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dateFrom, setDateFrom] = useState(d.from);
-  const [dateTo, setDateTo] = useState(d.to);
   const [product, setProduct] = useState("");
 
   const load = useCallback(async () => {
+    if (!hydrated) return;
     setLoading(true);
     try {
       const params: { dateFrom?: string; dateTo?: string; product?: string } = {};
@@ -49,7 +48,7 @@ export default function ProductionReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, product, t]);
+  }, [dateFrom, dateTo, hydrated, product, t]);
 
   useEffect(() => {
     const t = setTimeout(load, 200);
@@ -92,7 +91,8 @@ export default function ProductionReportsPage() {
                 <TableRow>
                   <TableHead>{t("common.product")}</TableHead>
                   <TableHead className="text-right">{t("prodReports.runs")}</TableHead>
-                  <TableHead className="text-right">{t("prod.col.usedKg")}</TableHead>
+                  <TableHead className="text-right">{t("prod.scrap")}</TableHead>
+                  <TableHead className="text-right">{t("prod.daig")}</TableHead>
                   <TableHead className="text-right">{t("prodReports.pieces")}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -104,7 +104,10 @@ export default function ProductionReportsPage() {
                       {row.batchCount}
                     </TableCell>
                     <TableCell className="font-data text-right text-xs">
-                      {formatKg(row.netConsumedKg)}
+                      {formatKg(row.scrapKg ?? 0)}
+                    </TableCell>
+                    <TableCell className="font-data text-right text-xs">
+                      {formatKg(row.daigKg ?? 0)}
                     </TableCell>
                     <TableCell className="font-data text-right text-xs">
                       {row.goodUnits}
@@ -134,9 +137,8 @@ export default function ProductionReportsPage() {
       </div>
 
       <Card>
-        <CardContent className="grid grid-cols-1 gap-2 p-4 sm:grid-cols-3">
-          <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-          <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+        <CardContent className="flex flex-wrap items-end gap-2 p-4">
+          <DateRangeFilter />
           <ProductSearchSelect
             products={products}
             value={product}
@@ -159,9 +161,21 @@ export default function ProductionReportsPage() {
             {[
               {
                 label: t("prodReports.materialUsed"),
-                value: `${formatKg(report.totals.netConsumedKg ?? report.totals.totalInputKg)} kg`,
+                value: `${formatKg(report.totals.netConsumedKg ?? report.totals.totalInputKg ?? 0)} kg`,
                 hint: t("prodReports.scrapDaigHint"),
+                accent: "bg-chart-5",
+              },
+              {
+                label: t("prod.scrap"),
+                value: `${formatKg(report.totals.byMaterial?.scrap ?? report.totals.scrapKg ?? 0)} kg`,
+                hint: t("prodReports.materialUsed").toLowerCase(),
                 accent: "bg-chart-1",
+              },
+              {
+                label: t("prod.daig"),
+                value: `${formatKg(report.totals.byMaterial?.daig ?? report.totals.daigKg ?? 0)} kg`,
+                hint: t("prodReports.materialUsed").toLowerCase(),
+                accent: "bg-chart-2",
               },
               {
                 label: t("prod.calcWaste"),

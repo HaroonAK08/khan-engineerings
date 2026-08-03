@@ -13,7 +13,7 @@ import {
   type Worker,
 } from "@/lib/workers-api";
 import type { BatchExpense } from "@/types/production";
-import { thisMonthRange, toDateInput, todayInput } from "@/lib/date-range";
+import { toDateInput, todayInput } from "@/lib/date-range";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -37,6 +37,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
+import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 
 function displayWorkerName(
   w: { name: string; nameUr?: string } | string | null | undefined,
@@ -60,8 +61,19 @@ export default function AllSalariesLedgerPage() {
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [payments, setPayments] = useState<BatchExpense[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const {
+    dateFrom,
+    dateTo,
+    setDateFrom,
+    setDateTo,
+    setThisMonth,
+    setToday,
+    clearRange,
+    isThisMonth,
+    isToday,
+    isAll,
+    hydrated,
+  } = usePersistedDateRange();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<"add" | "edit">("add");
@@ -74,6 +86,7 @@ export default function AllSalariesLedgerPage() {
   const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
+    if (!hydrated) return;
     setLoading(true);
     try {
       const [w, list] = await Promise.all([
@@ -91,7 +104,7 @@ export default function AllSalariesLedgerPage() {
     } finally {
       setLoading(false);
     }
-  }, [t, dateFrom, dateTo]);
+  }, [t, dateFrom, dateTo, hydrated]);
 
   useEffect(() => {
     const timer = setTimeout(() => void load(), 200);
@@ -99,6 +112,7 @@ export default function AllSalariesLedgerPage() {
   }, [load]);
 
   const reloadPayments = useCallback(async () => {
+    if (!hydrated) return;
     try {
       setPayments(
         await listSalaryPayments({
@@ -109,7 +123,7 @@ export default function AllSalariesLedgerPage() {
     } catch (err) {
       toast.error(apiError(err, t("sal.historyLoadFailed")));
     }
-  }, [t, dateFrom, dateTo]);
+  }, [t, dateFrom, dateTo, hydrated]);
 
   function openAddPayment() {
     setDialogMode("add");
@@ -214,29 +228,7 @@ export default function AllSalariesLedgerPage() {
     [sortedPayments]
   );
 
-  const today = todayInput();
-  const month = thisMonthRange();
-  const isTodayRange = dateFrom === today && dateTo === today;
-  const isMonthRange = dateFrom === month.from && dateTo === month.to;
-  const isAllRange = !dateFrom && !dateTo;
   const hasDateFilter = Boolean(dateFrom || dateTo);
-
-  function setTodayRange() {
-    const d = todayInput();
-    setDateFrom(d);
-    setDateTo(d);
-  }
-
-  function setThisMonthRange() {
-    const m = thisMonthRange();
-    setDateFrom(m.from);
-    setDateTo(m.to);
-  }
-
-  function setAllRange() {
-    setDateFrom("");
-    setDateTo("");
-  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -269,24 +261,24 @@ export default function AllSalariesLedgerPage() {
             <Button
               type="button"
               size="sm"
-              variant={isAllRange ? "default" : "outline"}
-              onClick={setAllRange}
+              variant={isAll ? "default" : "outline"}
+              onClick={clearRange}
             >
               {t("sal.filterAll")}
             </Button>
             <Button
               type="button"
               size="sm"
-              variant={isTodayRange ? "default" : "outline"}
-              onClick={setTodayRange}
+              variant={isToday ? "default" : "outline"}
+              onClick={setToday}
             >
               {t("sal.filterToday")}
             </Button>
             <Button
               type="button"
               size="sm"
-              variant={isMonthRange ? "default" : "outline"}
-              onClick={setThisMonthRange}
+              variant={isThisMonth ? "default" : "outline"}
+              onClick={setThisMonth}
             >
               {t("sal.filterThisMonth")}
             </Button>
@@ -331,7 +323,7 @@ export default function AllSalariesLedgerPage() {
               {hasDateFilter ? t("sal.ledgerEmptyFiltered") : t("sal.ledgerEmpty")}
             </p>
             {hasDateFilter ? (
-              <Button type="button" variant="outline" onClick={setAllRange}>
+              <Button type="button" variant="outline" onClick={clearRange}>
                 {t("sal.filterAll")}
               </Button>
             ) : (

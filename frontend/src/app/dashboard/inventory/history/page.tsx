@@ -16,7 +16,7 @@ import {
   updatePurchase,
 } from "@/lib/materials-api";
 import type { Purchase, Supplier } from "@/types/materials";
-import { thisMonthRange, toDateInput, todayInput } from "@/lib/date-range";
+import { toDateInput } from "@/lib/date-range";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -38,6 +38,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
+import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 
 function roundMoney(n: number) {
   return Math.round(n * 100) / 100;
@@ -58,8 +59,18 @@ export default function InventoryHistoryPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const {
+    dateFrom,
+    dateTo,
+    setDateFrom,
+    setDateTo,
+    setThisMonth,
+    setToday,
+    clearRange,
+    isThisMonth,
+    isToday,
+    isAll,
+  } = usePersistedDateRange();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Purchase | null>(null);
@@ -119,11 +130,6 @@ export default function InventoryHistoryPage() {
     [filtered]
   );
 
-  const today = todayInput();
-  const month = thisMonthRange();
-  const isTodayRange = dateFrom === today && dateTo === today;
-  const isMonthRange = dateFrom === month.from && dateTo === month.to;
-  const isAllRange = !dateFrom && !dateTo;
   const hasDateFilter = Boolean(dateFrom || dateTo);
 
   function materialLabel(type: string | undefined) {
@@ -228,35 +234,24 @@ export default function InventoryHistoryPage() {
             <Button
               type="button"
               size="sm"
-              variant={isAllRange ? "default" : "outline"}
-              onClick={() => {
-                setDateFrom("");
-                setDateTo("");
-              }}
+              variant={isAll ? "default" : "outline"}
+              onClick={clearRange}
             >
               {t("sal.filterAll")}
             </Button>
             <Button
               type="button"
               size="sm"
-              variant={isTodayRange ? "default" : "outline"}
-              onClick={() => {
-                const d = todayInput();
-                setDateFrom(d);
-                setDateTo(d);
-              }}
+              variant={isToday ? "default" : "outline"}
+              onClick={setToday}
             >
               {t("sal.filterToday")}
             </Button>
             <Button
               type="button"
               size="sm"
-              variant={isMonthRange ? "default" : "outline"}
-              onClick={() => {
-                const m = thisMonthRange();
-                setDateFrom(m.from);
-                setDateTo(m.to);
-              }}
+              variant={isThisMonth ? "default" : "outline"}
+              onClick={setThisMonth}
             >
               {t("sal.filterThisMonth")}
             </Button>

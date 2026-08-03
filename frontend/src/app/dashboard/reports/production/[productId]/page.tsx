@@ -10,10 +10,9 @@ import { ExportButtons } from "@/components/reports/export-buttons";
 import { apiError, formatDate, formatKg } from "@/lib/materials-api";
 import { getProductProductionReport, type ProductProductionReport } from "@/lib/production-api";
 import { downloadReportExport } from "@/lib/reports-api";
-import { currentMonthRange } from "@/lib/date-range";
+import { DateRangeFilter } from "@/components/date-range-filter";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -24,22 +23,27 @@ import {
 } from "@/components/ui/table";
 import { familyBadgeClass } from "@/lib/product-family";
 import { useI18n } from "@/hooks/use-i18n";
+import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 
 export default function ProductProductionReportPage() {
   const { t } = useI18n();
   const params = useParams<{ productId: string }>();
   const searchParams = useSearchParams();
   const productId = params.productId;
-  const defaults = currentMonthRange();
+  const { dateFrom, dateTo, setRange, hydrated } = usePersistedDateRange();
 
-  const [dateFrom, setDateFrom] = useState(searchParams.get("dateFrom") || defaults.from);
-  const [dateTo, setDateTo] = useState(searchParams.get("dateTo") || defaults.to);
   const [report, setReport] = useState<ProductProductionReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<"pdf" | null>(null);
 
+  useEffect(() => {
+    const from = searchParams.get("dateFrom");
+    const to = searchParams.get("dateTo");
+    if (from || to) setRange(from || "", to || "");
+  }, [searchParams, setRange]);
+
   const load = useCallback(async () => {
-    if (!productId) return;
+    if (!hydrated || !productId) return;
     setLoading(true);
     try {
       setReport(
@@ -54,7 +58,7 @@ export default function ProductProductionReportPage() {
     } finally {
       setLoading(false);
     }
-  }, [productId, dateFrom, dateTo, t]);
+  }, [productId, dateFrom, dateTo, hydrated, t]);
 
   useEffect(() => {
     const timer = setTimeout(load, 200);
@@ -115,10 +119,7 @@ export default function ProductProductionReportPage() {
         <ExportButtons exporting={exporting} onExport={onExport} />
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-        <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-      </div>
+      <DateRangeFilter />
 
       {loading || !report ? (
         <div className="flex justify-center py-16">

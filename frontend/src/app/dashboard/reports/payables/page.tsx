@@ -16,10 +16,8 @@ import {
   getPayablesReport,
   type PayablesReport,
 } from "@/lib/reports-api";
-import { thisMonthRange } from "@/lib/date-range";
-import { Button } from "@/components/ui/button";
+import { DateRangeFilter } from "@/components/date-range-filter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -30,17 +28,18 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
+import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 
 export default function PayablesReportPage() {
   const { t } = useI18n();
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const { dateFrom, dateTo, hydrated, isAll } = usePersistedDateRange();
   const [view, setView] = useState<ReportViewMode>("party");
   const [report, setReport] = useState<PayablesReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<"pdf" | null>(null);
 
   const load = useCallback(async () => {
+    if (!hydrated) return;
     setLoading(true);
     try {
       const params: { dateFrom?: string; dateTo?: string } = {};
@@ -52,7 +51,7 @@ export default function PayablesReportPage() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, t]);
+  }, [dateFrom, dateTo, hydrated, t]);
 
   useEffect(() => {
     const timer = setTimeout(load, 200);
@@ -76,19 +75,6 @@ export default function PayablesReportPage() {
     }
   }
 
-  function setThisMonth() {
-    const range = thisMonthRange();
-    setDateFrom(range.from);
-    setDateTo(range.to);
-  }
-
-  function setAllDates() {
-    setDateFrom("");
-    setDateTo("");
-  }
-
-  const isAll = !dateFrom && !dateTo;
-
   return (
     <div className="flex flex-col gap-6">
       <ReportsSubnav />
@@ -100,36 +86,7 @@ export default function PayablesReportPage() {
         <ExportButtons exporting={exporting} onExport={onExport} />
       </div>
 
-      <div className="flex flex-wrap items-end gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant={isAll ? "default" : "outline"}
-          onClick={setAllDates}
-        >
-          {t("payReports.allDates")}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant={!isAll ? "default" : "outline"}
-          onClick={setThisMonth}
-        >
-          {t("payReports.thisMonth")}
-        </Button>
-        <Input
-          type="date"
-          className="w-auto"
-          value={dateFrom}
-          onChange={(e) => setDateFrom(e.target.value)}
-        />
-        <Input
-          type="date"
-          className="w-auto"
-          value={dateTo}
-          onChange={(e) => setDateTo(e.target.value)}
-        />
-      </div>
+      <DateRangeFilter showAll />
 
       <ReportViewToggle value={view} onChange={setView} modes={["whole", "party"]} />
 

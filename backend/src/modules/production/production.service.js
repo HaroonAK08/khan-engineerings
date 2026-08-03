@@ -848,6 +848,8 @@ async function getReport({ dateFrom, dateTo, family } = {}) {
 
   let batchCount = 0;
   let totalInputKg = 0;
+  let scrapKg = 0;
+  let daigKg = 0;
   let wasteKg = 0;
   let goodUnits = 0;
   let brokenUnits = 0;
@@ -859,9 +861,16 @@ async function getReport({ dateFrom, dateTo, family } = {}) {
     batchCount += 1;
     byFamily[b.family] = (byFamily[b.family] || 0) + 1;
     if (Array.isArray(b.inputs) && b.inputs.length) {
-      totalInputKg += b.inputs.reduce((s, i) => s + (i.quantityKg || 0), 0);
+      for (const inp of b.inputs) {
+        const qty = inp.quantityKg || 0;
+        totalInputKg += qty;
+        if (inp.materialType === "daig") daigKg += qty;
+        else scrapKg += qty;
+      }
     } else {
-      totalInputKg += b.inputScrapKg || 0;
+      const legacyKg = b.inputScrapKg || 0;
+      totalInputKg += legacyKg;
+      scrapKg += legacyKg;
     }
     wasteKg += b.furnaceWasteKg || b.materialLossKg || 0;
 
@@ -889,6 +898,8 @@ async function getReport({ dateFrom, dateTo, family } = {}) {
           goodUnits: 0,
           rejectedUnits: 0,
           netConsumedKg: 0,
+          scrapKg: 0,
+          daigKg: 0,
         };
         row.batchCount += 1;
         row.goodUnits += fin;
@@ -922,6 +933,8 @@ async function getReport({ dateFrom, dateTo, family } = {}) {
             goodUnits: 0,
             rejectedUnits: 0,
             netConsumedKg: 0,
+            scrapKg: 0,
+            daigKg: 0,
           };
           row.batchCount += 1;
           row.goodUnits += out.quantity || 0;
@@ -944,6 +957,8 @@ async function getReport({ dateFrom, dateTo, family } = {}) {
             goodUnits: 0,
             rejectedUnits: 0,
             netConsumedKg: 0,
+            scrapKg: 0,
+            daigKg: 0,
           };
           row.batchCount += 1;
           row.goodUnits += b.goodUnits || 0;
@@ -954,9 +969,18 @@ async function getReport({ dateFrom, dateTo, family } = {}) {
     }
 
     // Spread batch material across output products for report
-    const inputKg = Array.isArray(b.inputs) && b.inputs.length
-      ? b.inputs.reduce((s, i) => s + (i.quantityKg || 0), 0)
-      : b.inputScrapKg || 0;
+    let batchScrapKg = 0;
+    let batchDaigKg = 0;
+    if (Array.isArray(b.inputs) && b.inputs.length) {
+      for (const inp of b.inputs) {
+        const qty = inp.quantityKg || 0;
+        if (inp.materialType === "daig") batchDaigKg += qty;
+        else batchScrapKg += qty;
+      }
+    } else {
+      batchScrapKg = b.inputScrapKg || 0;
+    }
+    const inputKg = batchScrapKg + batchDaigKg;
     if (batchFinished > 0 && byProductMap.size) {
       for (const out of b.outputs || []) {
         const pid = String(out.product?._id || out.product || "");
@@ -964,6 +988,8 @@ async function getReport({ dateFrom, dateTo, family } = {}) {
         if (row) {
           const share = (out.quantity || 0) / batchFinished;
           row.netConsumedKg = roundKg(row.netConsumedKg + inputKg * share);
+          row.scrapKg = roundKg(row.scrapKg + batchScrapKg * share);
+          row.daigKg = roundKg(row.daigKg + batchDaigKg * share);
         }
       }
     }
@@ -981,7 +1007,9 @@ async function getReport({ dateFrom, dateTo, family } = {}) {
     totals: {
       batchCount,
       totalInputKg: roundKg(totalInputKg),
-      inputScrapKg: roundKg(totalInputKg),
+      inputScrapKg: roundKg(scrapKg),
+      scrapKg: roundKg(scrapKg),
+      daigKg: roundKg(daigKg),
       handKg: 0,
       returnedScrapKg: 0,
       wasteKg: roundKg(wasteKg),
@@ -994,6 +1022,10 @@ async function getReport({ dateFrom, dateTo, family } = {}) {
       rejectRate,
       lossRate,
       byFamily,
+      byMaterial: {
+        scrap: roundKg(scrapKg),
+        daig: roundKg(daigKg),
+      },
     },
     byProduct: Array.from(byProductMap.values()).sort((a, b) => {
       const fam = String(a.family || "hub").localeCompare(String(b.family || "hub"));

@@ -9,9 +9,8 @@ import { apiError, formatMoney } from "@/lib/materials-api";
 import { getCostReport } from "@/lib/production-api";
 import type { CostReport } from "@/types/production";
 import { downloadReportExport } from "@/lib/reports-api";
-import { currentMonthRange } from "@/lib/date-range";
+import { DateRangeFilter } from "@/components/date-range-filter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -21,17 +20,17 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
+import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 
 export default function ExpenseReportsPage() {
   const { t } = useI18n();
-  const d = currentMonthRange();
-  const [dateFrom, setDateFrom] = useState(d.from);
-  const [dateTo, setDateTo] = useState(d.to);
+  const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
   const [report, setReport] = useState<CostReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<"pdf" | null>(null);
 
   const load = useCallback(async () => {
+    if (!hydrated) return;
     setLoading(true);
     try {
       setReport(await getCostReport({ dateFrom, dateTo }));
@@ -40,7 +39,7 @@ export default function ExpenseReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, t]);
+  }, [dateFrom, dateTo, hydrated, t]);
 
   useEffect(() => {
     const t = setTimeout(load, 200);
@@ -69,10 +68,7 @@ export default function ExpenseReportsPage() {
         </div>
         <ExportButtons exporting={exporting} onExport={onExport} />
       </div>
-      <div className="flex flex-wrap gap-2">
-        <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-        <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-      </div>
+      <DateRangeFilter />
       {loading || !report ? (
         <div className="flex justify-center py-16">
           <Loader2 className="size-6 animate-spin text-primary" />

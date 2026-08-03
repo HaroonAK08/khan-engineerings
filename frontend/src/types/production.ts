@@ -80,6 +80,8 @@ export type ProductionReport = {
     batchCount: number;
     totalInputKg: number;
     inputScrapKg?: number;
+    scrapKg?: number;
+    daigKg?: number;
     handKg: number;
     returnedScrapKg?: number;
     wasteKg: number;
@@ -92,6 +94,7 @@ export type ProductionReport = {
     rejectRate?: number;
     lossRate?: number;
     byFamily?: Record<string, number>;
+    byMaterial?: { scrap?: number; daig?: number };
   };
   byProduct?: Array<{
     productId: string;
@@ -101,6 +104,8 @@ export type ProductionReport = {
     goodUnits: number;
     rejectedUnits: number;
     netConsumedKg: number;
+    scrapKg?: number;
+    daigKg?: number;
     materialLossKg?: number;
   }>;
 };

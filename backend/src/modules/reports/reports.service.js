@@ -587,13 +587,14 @@ async function exportProduction(query, format, res) {
     return exportProductionProduct(query.product, query, format, res);
   }
   const report = await productionService.getReport(query);
-  const columns = ["Product", "Batches", "Good", "Rejected", "Net kg"];
+  const columns = ["Product", "Batches", "Good", "Rejected", "Scrap kg", "Daig kg"];
   const toRow = (p) => [
     p.name,
     p.batchCount,
     p.goodUnits,
     p.rejectedUnits,
-    p.netConsumedKg,
+    p.scrapKg ?? 0,
+    p.daigKg ?? 0,
   ];
   const hubRows = (report.byProduct || [])
     .filter((p) => (p.family || "hub") === "hub")
@@ -602,14 +603,16 @@ async function exportProduction(query, format, res) {
     .filter((p) => p.family === "drum")
     .map(toRow);
   const sections = [
-    { heading: "Hub", columns, rows: hubRows.length ? hubRows : [["—", 0, 0, 0, 0]] },
-    { heading: "Drum", columns, rows: drumRows.length ? drumRows : [["—", 0, 0, 0, 0]] },
+    { heading: "Hub", columns, rows: hubRows.length ? hubRows : [["—", 0, 0, 0, 0, 0]] },
+    { heading: "Drum", columns, rows: drumRows.length ? drumRows : [["—", 0, 0, 0, 0, 0]] },
   ];
   const meta = {
     Period: periodLabel(query.dateFrom, query.dateTo),
     Batches: report.totals.batchCount,
     Hub: report.totals.byFamily?.hub ?? 0,
     Drum: report.totals.byFamily?.drum ?? 0,
+    "Scrap used (kg)": report.totals.byMaterial?.scrap ?? report.totals.scrapKg ?? 0,
+    "Daig used (kg)": report.totals.byMaterial?.daig ?? report.totals.daigKg ?? 0,
     "Good units": report.totals.goodUnits,
     "Reject rate": `${report.totals.rejectRate}%`,
   };
@@ -746,7 +749,15 @@ function inventorySummaryRows(report) {
 async function exportInventory(query, format, res) {
   const report = await inventoryService.getInventoryReport(query);
   const { summaryRows, finishedRows } = inventorySummaryRows(report);
-  const meta = { Period: periodLabel(query.dateFrom, query.dateTo) };
+  const asOfLabel = query.asOf
+    ? String(query.asOf)
+    : report.asOf
+      ? new Date(report.asOf).toISOString().slice(0, 10)
+      : "today";
+  const meta = {
+    "As of": asOfLabel,
+    Period: periodLabel(query.dateFrom, query.dateTo),
+  };
   const title = "Inventory report";
   const sections = [
     { heading: "Stock summary", columns: ["Item", "Value"], rows: summaryRows },

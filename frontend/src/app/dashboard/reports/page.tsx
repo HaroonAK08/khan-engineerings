@@ -1,10 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { FileDown, FileText, Loader2, Settings2 } from "lucide-react";
 import { apiError } from "@/lib/materials-api";
-import { currentMonthRange } from "@/lib/date-range";
 import {
   COMBINED_REPORT_MODULES,
   downloadCustomReport,
@@ -13,9 +12,9 @@ import {
   type CombinedReportPreview,
   type ExportKind,
 } from "@/lib/reports-api";
+import { DateRangeFilter } from "@/components/date-range-filter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Table,
@@ -26,6 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
+import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 import { cn } from "@/lib/utils";
 import { ReportsSubnav } from "@/components/layout/reports-subnav";
 
@@ -33,11 +33,9 @@ type ReportMode = "full" | "custom";
 
 export default function ReportsHubPage() {
   const { t } = useI18n();
-  const month = useMemo(() => currentMonthRange(), []);
+  const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
 
   const [mode, setMode] = useState<ReportMode>("full");
-  const [dateFrom, setDateFrom] = useState(month.from);
-  const [dateTo, setDateTo] = useState(month.to);
   const [format, setFormat] = useState<"pdf" | "xlsx">("pdf");
   const [summaryOnly, setSummaryOnly] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -50,6 +48,7 @@ export default function ReportsHubPage() {
   const previewModules = mode === "full" ? COMBINED_REPORT_MODULES.map((m) => m.id) : customModules;
 
   const loadPreview = useCallback(async () => {
+    if (!hydrated) return;
     if (mode === "custom" && customModules.length === 0) {
       setPreview(null);
       return;
@@ -69,7 +68,7 @@ export default function ReportsHubPage() {
     } finally {
       setLoadingPreview(false);
     }
-  }, [mode, customModules, dateFrom, dateTo, summaryOnly]);
+  }, [mode, customModules, dateFrom, dateTo, hydrated, summaryOnly]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -190,16 +189,7 @@ export default function ReportsHubPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="flex flex-col gap-1.5">
-              <Label>{t("common.from")}</Label>
-              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>{t("common.to")}</Label>
-              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-            </div>
-          </div>
+          <DateRangeFilter />
 
           <div>
             <Label className="mb-2 block">Report content</Label>

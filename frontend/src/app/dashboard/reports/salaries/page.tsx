@@ -11,9 +11,8 @@ import {
   type Worker,
 } from "@/lib/workers-api";
 import type { BatchExpense } from "@/types/production";
-import { currentMonthRange } from "@/lib/date-range";
+import { DateRangeFilter } from "@/components/date-range-filter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -31,6 +30,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
+import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 
 function displayWorkerName(
   w: { name: string; nameUr?: string } | string | null | undefined,
@@ -44,9 +44,7 @@ function displayWorkerName(
 
 export default function SalaryReportsPage() {
   const { t, isUrdu } = useI18n();
-  const d = currentMonthRange();
-  const [dateFrom, setDateFrom] = useState(d.from);
-  const [dateTo, setDateTo] = useState(d.to);
+  const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
   const [workerId, setWorkerId] = useState("all");
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [payments, setPayments] = useState<BatchExpense[]>([]);
@@ -63,6 +61,7 @@ export default function SalaryReportsPage() {
   }, [t]);
 
   const load = useCallback(async () => {
+    if (!hydrated) return;
     setLoading(true);
     try {
       const list = await listSalaryPayments({
@@ -77,7 +76,7 @@ export default function SalaryReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, workerId, t]);
+  }, [dateFrom, dateTo, hydrated, workerId, t]);
 
   useEffect(() => {
     const timer = setTimeout(() => void load(), 200);
@@ -156,13 +155,8 @@ export default function SalaryReportsPage() {
               </SelectContent>
             </Select>
           </div>
-          <div className="grid gap-1.5">
-            <Label>{t("common.from")}</Label>
-            <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-          </div>
-          <div className="grid gap-1.5">
-            <Label>{t("common.to")}</Label>
-            <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          <div className="sm:col-span-2 lg:col-span-2">
+            <DateRangeFilter />
           </div>
         </CardContent>
       </Card>
