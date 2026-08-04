@@ -20,6 +20,7 @@ const OTHER_CATEGORIES: Array<{ id: string; labelKey: MessageKey }> = [
   { id: "lpg_gas", labelKey: "other.cat.lpg" },
   { id: "petrol", labelKey: "other.cat.petrol" },
   { id: "silica_sand", labelKey: "other.cat.silica" },
+  { id: "silicate", labelKey: "other.cat.silicate" },
   { id: "sheera", labelKey: "other.cat.sheera" },
   { id: "tools", labelKey: "other.cat.tools" },
   { id: "machine", labelKey: "other.cat.machine" },

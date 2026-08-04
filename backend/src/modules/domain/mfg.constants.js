@@ -66,6 +66,7 @@ const EXPENSE_CATEGORY_GROUPS = [
     items: [
       { id: "paint", label: "Paint" },
       { id: "silica_sand", label: "Silica Sand" },
+      { id: "silicate", label: "Silicate" },
       { id: "sheera", label: "Sheera" },
       { id: "tools", label: "Tools" },
     ],
