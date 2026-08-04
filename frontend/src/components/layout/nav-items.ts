@@ -18,6 +18,8 @@ import {
   Package,
   ScrollText,
   FolderKanban,
+  CircleDollarSign,
+  CalendarDays,
 } from "lucide-react";
 import type { MessageKey } from "@/lib/i18n/messages";
 
@@ -48,6 +50,20 @@ export const PARTY_CHILDREN: NavChild[] = [
   { labelKey: "nav.party.groups", href: "/dashboard/party/groups", icon: FolderKanban },
 ];
 
+export const FINANCE_CHILDREN: NavChild[] = [
+  {
+    labelKey: "financeSubnav.productionMargin",
+    href: "/dashboard/finance",
+    icon: Factory,
+    exact: true,
+  },
+  {
+    labelKey: "financeSubnav.monthly",
+    href: "/dashboard/finance/monthly",
+    icon: CalendarDays,
+  },
+];
+
 export const NAV_ITEMS: NavItem[] = [
   { labelKey: "nav.dashboard", href: "/dashboard", icon: LayoutDashboard, ready: true },
   { labelKey: "nav.inventory", href: "/dashboard/inventory", icon: Boxes, ready: true },
@@ -71,7 +87,12 @@ export const NAV_ITEMS: NavItem[] = [
   { labelKey: "nav.claims", href: "/dashboard/claims", icon: RotateCcw, ready: true },
   { labelKey: "nav.suppliers", href: "/dashboard/suppliers", icon: Truck, ready: true },
   { labelKey: "nav.salesmen", href: "/dashboard/salesmen", icon: Handshake, ready: true },
+  {
+    labelKey: "nav.finance",
+    href: "/dashboard/finance",
+    icon: CircleDollarSign,
+    ready: true,
+    children: FINANCE_CHILDREN,
+  },
   { labelKey: "nav.reports", href: "/dashboard/reports", icon: BarChart3, ready: true },
-  // { labelKey: "nav.profile", href: "/dashboard/profile", icon: UserRound, ready: true },
-  // { labelKey: "nav.settings", href: "/dashboard/settings", icon: Settings, ready: true },
 ];

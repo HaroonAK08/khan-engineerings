@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { FinanceSubnav } from "@/components/layout/finance-subnav";
-import { ReportsSubnav } from "@/components/layout/reports-subnav";
 import { apiError, formatMoney } from "@/lib/materials-api";
 import { getFinanceMonthly, type MonthlyPoint } from "@/lib/finance-api";
 import { Badge } from "@/components/ui/badge";
@@ -44,7 +43,6 @@ export default function FinanceMonthlyPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <ReportsSubnav />
       <FinanceSubnav />
 
       <div>
@@ -63,7 +61,9 @@ export default function FinanceMonthlyPage() {
         <>
           <Card>
             <CardHeader>
-              <CardTitle className="text-nameplate text-sm">{t("financeMonthly.revenueByMonth")}</CardTitle>
+              <CardTitle className="text-nameplate text-sm">
+                {t("financeMonthly.revenueByMonth")}
+              </CardTitle>
               <CardDescription>{t("financeMonthly.barHeightDesc")}</CardDescription>
             </CardHeader>
             <CardContent>
@@ -76,7 +76,7 @@ export default function FinanceMonthlyPage() {
                       title={`${m.label}: ${formatMoney(m.revenue)}`}
                     />
                     <span className="font-data text-[9px] text-muted-foreground">
-                      {m.label.slice(0, 3)}
+                      {m.label.slice(5)}
                     </span>
                   </div>
                 ))}
@@ -86,7 +86,9 @@ export default function FinanceMonthlyPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-nameplate text-sm">{t("financeMonthly.cashInVsOut")}</CardTitle>
+              <CardTitle className="text-nameplate text-sm">
+                {t("financeMonthly.cashInVsOut")}
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex h-36 items-end gap-1.5 sm:gap-2">
@@ -118,7 +120,9 @@ export default function FinanceMonthlyPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-nameplate text-sm">{t("financeMonthly.monthDetail")}</CardTitle>
+              <CardTitle className="text-nameplate text-sm">
+                {t("financeMonthly.monthDetail")}
+              </CardTitle>
             </CardHeader>
             <CardContent className="px-0">
               <Table>

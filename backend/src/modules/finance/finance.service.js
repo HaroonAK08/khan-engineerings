@@ -6,6 +6,7 @@ const LedgerEntry = require("../ledger/ledger.model");
 const BatchExpense = require("../expenses/expense.model");
 const ProductionBatch = require("../production/production.model");
 const { EXPENSE_CATEGORIES } = require("../expenses/expense.constants");
+const mongoose = require("mongoose");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -21,6 +22,10 @@ function parseDate(value, label = "Date") {
 
 function roundMoney(n) {
   return Math.round((n || 0) * 100) / 100;
+}
+
+function roundKg(n) {
+  return Math.round((n || 0) * 1000) / 1000;
 }
 
 function periodBounds({ dateFrom, dateTo } = {}) {
@@ -539,6 +544,360 @@ async function getExpenseBreakdown(query = {}) {
   };
 }
 
+async function getAvgMaterialRates() {
+  const rows = await Purchase.aggregate([
+    {
+      $group: {
+        _id: "$materialType",
+        spend: {
+          $sum: { $add: ["$totalAmount", { $ifNull: ["$freightAmount", 0] }] },
+        },
+        kg: { $sum: "$quantityKg" },
+      },
+    },
+  ]);
+  const rates = { scrap: 0, daig: 0 };
+  for (const row of rows) {
+    if (row._id === "scrap" || row._id === "daig") {
+      rates[row._id] = row.kg > 0 ? (row.spend || 0) / row.kg : 0;
+    }
+  }
+  return rates;
+}
+
+function emptyFamilyTotals() {
+  return {
+    pieces: 0,
+    scrapKg: 0,
+    daigKg: 0,
+    wasteKg: 0,
+    materialCost: 0,
+    overhead: 0,
+    totalCost: 0,
+    sellValue: 0,
+    profit: 0,
+    marginPct: null,
+  };
+}
+
+async function getProductionMargin(query = {}) {
+  const { from, to } = periodBounds(query);
+  const Product = require("../products/product.model");
+  const { EXPENSE_CATEGORIES: expenseCats } = require("../domain/mfg.constants");
+
+  const match = {
+    status: { $ne: "cancelled" },
+    ...dateMatch("productionDate", from, to),
+  };
+
+  const batches = await ProductionBatch.find(match)
+    .populate("outputs.product", "name sku family weightKg pricePerKg sellingPrice")
+    .populate("outputProgress.product", "name sku family weightKg pricePerKg sellingPrice")
+    .populate("product", "name sku family weightKg pricePerKg sellingPrice")
+    .lean();
+
+  const rates = await getAvgMaterialRates();
+  const avgScrapRate = rates.scrap;
+  const avgDaigRate = rates.daig;
+
+  const byProductMap = new Map();
+
+  function ensureRow(pid, name, family, sellPrice) {
+    let row = byProductMap.get(pid);
+    if (!row) {
+      row = {
+        productId: pid,
+        name: name || "Product",
+        family: family || "hub",
+        pieces: 0,
+        scrapKg: 0,
+        daigKg: 0,
+        wasteKg: 0,
+        sellPricePerPiece: Number(sellPrice) || 0,
+      };
+      byProductMap.set(pid, row);
+    } else if (sellPrice && !row.sellPricePerPiece) {
+      row.sellPricePerPiece = Number(sellPrice) || 0;
+    }
+    return row;
+  }
+
+  for (const b of batches) {
+    let batchScrapKg = 0;
+    let batchDaigKg = 0;
+    if (Array.isArray(b.inputs) && b.inputs.length) {
+      for (const inp of b.inputs) {
+        const qty = inp.quantityKg || 0;
+        if (inp.materialType === "daig") batchDaigKg += qty;
+        else if (inp.materialType === "scrap" || !inp.materialType) batchScrapKg += qty;
+      }
+    } else {
+      batchScrapKg = Math.max(0, (b.inputScrapKg || 0) - (b.returnedScrapKg || 0));
+    }
+    const batchWasteKg = b.furnaceWasteKg || b.materialLossKg || 0;
+
+    const pieceLines = [];
+    if (Array.isArray(b.outputProgress) && b.outputProgress.length) {
+      for (const p of b.outputProgress) {
+        const fin = p.finishedQty || p.goodAfterTurning || 0;
+        if (fin <= 0) continue;
+        const pid = String(p.product?._id || p.product || "");
+        if (!pid) continue;
+        const prodObj = typeof p.product === "object" ? p.product : null;
+        pieceLines.push({
+          productId: pid,
+          quantity: fin,
+          name: prodObj?.name || "Product",
+          family: prodObj?.family || b.family || "hub",
+          sellPrice: prodObj?.sellingPrice,
+        });
+      }
+    } else if (Array.isArray(b.outputs) && b.outputs.length) {
+      for (const out of b.outputs) {
+        const qty = out.quantity || 0;
+        if (qty <= 0) continue;
+        const pid = String(out.product?._id || out.product || "");
+        if (!pid) continue;
+        const prodObj = typeof out.product === "object" ? out.product : null;
+        pieceLines.push({
+          productId: pid,
+          quantity: qty,
+          name: prodObj?.name || "Product",
+          family: out.family || prodObj?.family || b.family || "hub",
+          sellPrice: prodObj?.sellingPrice,
+        });
+      }
+    } else {
+      const legacyPid = String(b.product?._id || b.product || "");
+      const qty = b.goodUnits || 0;
+      if (legacyPid && qty > 0) {
+        const prodObj = typeof b.product === "object" ? b.product : null;
+        pieceLines.push({
+          productId: legacyPid,
+          quantity: qty,
+          name: prodObj?.name || "Product",
+          family: prodObj?.family || b.family || "hub",
+          sellPrice: prodObj?.sellingPrice,
+        });
+      }
+    }
+
+    const batchFinished = pieceLines.reduce((s, l) => s + l.quantity, 0);
+    for (const line of pieceLines) {
+      const row = ensureRow(line.productId, line.name, line.family, line.sellPrice);
+      row.pieces += line.quantity;
+      if (batchFinished > 0) {
+        const share = line.quantity / batchFinished;
+        row.scrapKg = roundKg(row.scrapKg + batchScrapKg * share);
+        row.daigKg = roundKg(row.daigKg + batchDaigKg * share);
+        row.wasteKg = roundKg(row.wasteKg + batchWasteKg * share);
+      }
+    }
+  }
+
+  const productIds = [...byProductMap.keys()].filter(Boolean);
+  const products = await Product.find({ _id: { $in: productIds } }).lean();
+  const productMap = Object.fromEntries(products.map((p) => [String(p._id), p]));
+
+  for (const row of byProductMap.values()) {
+    const prod = productMap[row.productId];
+    if (prod) {
+      row.name = prod.name || row.name;
+      row.family = prod.family || row.family;
+      row.catalogSellPrice = Number(prod.sellingPrice) || 0;
+    }
+  }
+
+  // Quantity-weighted avg sell price from actual builty lines
+  // (same product sold to different parties at different prices).
+  async function avgSellByProduct(dateFilter) {
+    if (!productIds.length) return {};
+    const objectIds = productIds
+      .filter((id) => mongoose.isValidObjectId(id))
+      .map((id) => new mongoose.Types.ObjectId(id));
+    if (!objectIds.length) return {};
+
+    const pipeline = [];
+    if (dateFilter) pipeline.push({ $match: dateFilter });
+    pipeline.push(
+      { $unwind: "$items" },
+      { $match: { "items.product": { $in: objectIds }, "items.quantity": { $gt: 0 } } },
+      {
+        $group: {
+          _id: "$items.product",
+          revenue: { $sum: "$items.lineTotal" },
+          units: { $sum: "$items.quantity" },
+        },
+      }
+    );
+    const rows = await Builty.aggregate(pipeline);
+    const map = {};
+    for (const r of rows) {
+      const id = String(r._id);
+      const units = r.units || 0;
+      map[id] = {
+        avgSellPerPiece: units > 0 ? (r.revenue || 0) / units : 0,
+        unitsSold: units,
+        revenue: r.revenue || 0,
+      };
+    }
+    return map;
+  }
+
+  const periodSales = await avgSellByProduct(dateMatch("builtyDate", from, to));
+  const allTimeSales =
+    productIds.some((id) => !periodSales[id] || !periodSales[id].unitsSold)
+      ? await avgSellByProduct(null)
+      : {};
+
+  const expenseByCategory = await BatchExpense.aggregate([
+    { $match: dateMatch("expenseDate", from, to) },
+    { $group: { _id: "$category", amount: { $sum: "$amount" } } },
+  ]);
+  const overheadTotal = expenseByCategory.reduce((s, e) => s + (e.amount || 0), 0);
+  const categoryAmountMap = Object.fromEntries(
+    expenseByCategory.map((e) => [e._id, e.amount || 0])
+  );
+  const categoryLabel = Object.fromEntries(expenseCats.map((c) => [c.id, c.label]));
+
+  const totalPieces = [...byProductMap.values()].reduce((s, r) => s + r.pieces, 0);
+
+  const productRows = [...byProductMap.values()]
+    .filter((r) => r.pieces > 0)
+    .map((row) => {
+      const scrapCost = row.scrapKg * avgScrapRate;
+      const daigCost = row.daigKg * avgDaigRate;
+      const materialCost = scrapCost + daigCost;
+      const overhead =
+        totalPieces > 0 ? (row.pieces / totalPieces) * overheadTotal : 0;
+      const totalCost = materialCost + overhead;
+
+      const period = periodSales[row.productId];
+      const allTime = allTimeSales[row.productId];
+      let sellPricePerPiece = 0;
+      let sellPriceSource = "none";
+      if (period?.unitsSold > 0) {
+        sellPricePerPiece = period.avgSellPerPiece;
+        sellPriceSource = "period_sales";
+      } else if (allTime?.unitsSold > 0) {
+        sellPricePerPiece = allTime.avgSellPerPiece;
+        sellPriceSource = "all_time_sales";
+      } else if (row.catalogSellPrice > 0) {
+        sellPricePerPiece = row.catalogSellPrice;
+        sellPriceSource = "catalog";
+      }
+
+      sellPricePerPiece = roundMoney(sellPricePerPiece);
+      const sellValue = row.pieces * sellPricePerPiece;
+      const profit = sellValue - totalCost;
+      const costPerPiece = row.pieces > 0 ? totalCost / row.pieces : 0;
+      const profitPerPiece = sellPricePerPiece - costPerPiece;
+      const marginPct = sellValue > 0 ? (profit / sellValue) * 100 : null;
+      return {
+        productId: row.productId,
+        name: row.name,
+        family: row.family,
+        pieces: row.pieces,
+        scrapKg: roundKg(row.scrapKg),
+        daigKg: roundKg(row.daigKg),
+        wasteKg: roundKg(row.wasteKg),
+        avgScrapRate: roundMoney(avgScrapRate),
+        avgDaigRate: roundMoney(avgDaigRate),
+        scrapCost: roundMoney(scrapCost),
+        daigCost: roundMoney(daigCost),
+        materialCost: roundMoney(materialCost),
+        overhead: roundMoney(overhead),
+        totalCost: roundMoney(totalCost),
+        costPerPiece: roundMoney(costPerPiece),
+        sellPricePerPiece,
+        sellPriceSource,
+        unitsSoldPeriod: period?.unitsSold || 0,
+        sellValue: roundMoney(sellValue),
+        profit: roundMoney(profit),
+        profitPerPiece: roundMoney(profitPerPiece),
+        marginPct: marginPct != null ? roundMoney(marginPct) : null,
+      };
+    })
+    .sort((a, b) => b.profit - a.profit);
+
+  const byFamily = { hub: emptyFamilyTotals(), drum: emptyFamilyTotals() };
+  for (const row of productRows) {
+    const fam = byFamily[row.family] ? row.family : "hub";
+    const t = byFamily[fam];
+    t.pieces += row.pieces;
+    t.scrapKg = roundKg(t.scrapKg + row.scrapKg);
+    t.daigKg = roundKg(t.daigKg + row.daigKg);
+    t.wasteKg = roundKg(t.wasteKg + row.wasteKg);
+    t.materialCost = roundMoney(t.materialCost + row.materialCost);
+    t.overhead = roundMoney(t.overhead + row.overhead);
+    t.totalCost = roundMoney(t.totalCost + row.totalCost);
+    t.sellValue = roundMoney(t.sellValue + row.sellValue);
+    t.profit = roundMoney(t.profit + row.profit);
+  }
+  for (const key of Object.keys(byFamily)) {
+    const t = byFamily[key];
+    t.marginPct = t.sellValue > 0 ? roundMoney((t.profit / t.sellValue) * 100) : null;
+  }
+
+  const totalScrapKg = roundKg(productRows.reduce((s, r) => s + r.scrapKg, 0));
+  const totalDaigKg = roundKg(productRows.reduce((s, r) => s + r.daigKg, 0));
+  const totalWasteKg = roundKg(productRows.reduce((s, r) => s + r.wasteKg, 0));
+  const totalScrapCost = roundMoney(productRows.reduce((s, r) => s + r.scrapCost, 0));
+  const totalDaigCost = roundMoney(productRows.reduce((s, r) => s + r.daigCost, 0));
+  const totalMaterialCost = roundMoney(totalScrapCost + totalDaigCost);
+  const totalOverhead = roundMoney(overheadTotal);
+  const totalProductionCost = roundMoney(totalMaterialCost + totalOverhead);
+  const totalSellValue = roundMoney(productRows.reduce((s, r) => s + r.sellValue, 0));
+  const totalProfit = roundMoney(totalSellValue - totalProductionCost);
+
+  const expenseBreakdown = [
+    { id: "scrap_cost", label: "Scrap Cost", amount: totalScrapCost, kind: "material" },
+    { id: "daig_cost", label: "Daig Cost", amount: totalDaigCost, kind: "material" },
+    ...expenseCats
+      .map((c) => ({
+        id: c.id,
+        label: c.label,
+        amount: roundMoney(categoryAmountMap[c.id] || 0),
+        kind: "overhead",
+      }))
+      .filter((c) => c.amount > 0),
+    ...Object.entries(categoryAmountMap)
+      .filter(([id]) => !expenseCats.some((c) => c.id === id))
+      .map(([id, amount]) => ({
+        id,
+        label: categoryLabel[id] || id,
+        amount: roundMoney(amount),
+        kind: "overhead",
+      }))
+      .filter((c) => c.amount > 0),
+  ].filter((e) => e.amount > 0);
+
+  return {
+    period: { from, to },
+    rates: {
+      avgScrapRate: roundMoney(avgScrapRate),
+      avgDaigRate: roundMoney(avgDaigRate),
+    },
+    summary: {
+      pieces: totalPieces,
+      scrapKg: totalScrapKg,
+      daigKg: totalDaigKg,
+      wasteKg: totalWasteKg,
+      scrapCost: totalScrapCost,
+      daigCost: totalDaigCost,
+      materialCost: totalMaterialCost,
+      overhead: totalOverhead,
+      totalCost: totalProductionCost,
+      sellValue: totalSellValue,
+      profit: totalProfit,
+      marginPct: totalSellValue > 0 ? roundMoney((totalProfit / totalSellValue) * 100) : null,
+    },
+    byFamily,
+    products: productRows,
+    expenseBreakdown,
+  };
+}
+
 module.exports = {
   createEntry,
   listEntries,
@@ -550,5 +909,6 @@ module.exports = {
   getProductProfitability,
   getManufacturingAnalysis,
   getExpenseBreakdown,
+  getProductionMargin,
   EXPENSE_CATEGORIES,
 };

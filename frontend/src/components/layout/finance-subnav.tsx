@@ -7,11 +7,12 @@ import { useI18n } from "@/hooks/use-i18n";
 import type { MessageKey } from "@/lib/i18n/messages";
 
 const LINKS: Array<{ href: string; labelKey: MessageKey; exact?: boolean }> = [
-  { href: "/dashboard/reports/finance", labelKey: "financeSubnav.overview", exact: true },
-  { href: "/dashboard/reports/finance/monthly", labelKey: "financeSubnav.monthly" },
-  { href: "/dashboard/reports/finance/profit", labelKey: "financeSubnav.products" },
-  { href: "/dashboard/reports/finance/expenses", labelKey: "financeSubnav.expenses" },
-  { href: "/dashboard/reports/finance/entries", labelKey: "financeSubnav.entries" },
+  {
+    href: "/dashboard/finance",
+    labelKey: "financeSubnav.productionMargin",
+    exact: true,
+  },
+  { href: "/dashboard/finance/monthly", labelKey: "financeSubnav.monthly" },
 ];
 
 export function FinanceSubnav() {

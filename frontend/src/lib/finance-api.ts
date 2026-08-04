@@ -119,6 +119,68 @@ export async function getProductProfit(params?: { dateFrom?: string; dateTo?: st
   return data;
 }
 
+export type ProductionMarginFamily = {
+  pieces: number;
+  scrapKg: number;
+  daigKg: number;
+  wasteKg: number;
+  materialCost: number;
+  overhead: number;
+  totalCost: number;
+  sellValue: number;
+  profit: number;
+  marginPct: number | null;
+};
+
+export type ProductionMarginProduct = {
+  productId: string;
+  name: string;
+  family: string;
+  pieces: number;
+  scrapKg: number;
+  daigKg: number;
+  wasteKg: number;
+  avgScrapRate: number;
+  avgDaigRate: number;
+  scrapCost: number;
+  daigCost: number;
+  materialCost: number;
+  overhead: number;
+  totalCost: number;
+  costPerPiece: number;
+  sellPricePerPiece: number;
+  sellPriceSource?: "period_sales" | "all_time_sales" | "catalog" | "none";
+  unitsSoldPeriod?: number;
+  sellValue: number;
+  profit: number;
+  profitPerPiece: number;
+  marginPct: number | null;
+};
+
+export type ProductionMarginReport = {
+  period: { from: string; to: string };
+  rates: { avgScrapRate: number; avgDaigRate: number };
+  summary: ProductionMarginFamily & {
+    scrapCost: number;
+    daigCost: number;
+  };
+  byFamily: { hub: ProductionMarginFamily; drum: ProductionMarginFamily };
+  products: ProductionMarginProduct[];
+  expenseBreakdown: Array<{
+    id: string;
+    label: string;
+    amount: number;
+    kind: "material" | "overhead";
+  }>;
+};
+
+export async function getProductionMargin(params?: { dateFrom?: string; dateTo?: string }) {
+  const { data } = await api.get<ProductionMarginReport>("/finance/production-margin", {
+    params,
+  });
+  return data;
+}
+
 export async function getManufacturingFinance(params?: { dateFrom?: string; dateTo?: string }) {
   const { data } = await api.get<{
     period: { from: string; to: string };
