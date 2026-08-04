@@ -23,6 +23,7 @@ import { UrduPhoneticInput } from "@/components/ui/urdu-phonetic-input";
 import { Label } from "@/components/ui/label";
 import { useI18n } from "@/hooks/use-i18n";
 import { todayInput } from "@/lib/date-range";
+import { WorkerSearchSelect } from "@/components/workers/worker-search-select";
 
 function displayWorkerName(
   w: { name: string; nameUr?: string } | string | null | undefined,
@@ -60,6 +61,8 @@ export default function SalariesPage() {
 
   const [search, setSearch] = useState("");
   const [showAddWorker, setShowAddWorker] = useState(false);
+  const [showAddPayment, setShowAddPayment] = useState(false);
+  const [addPayWorkerId, setAddPayWorkerId] = useState("");
   const [newName, setNewName] = useState("");
   const [newNameUr, setNewNameUr] = useState("");
   const [newJob, setNewJob] = useState("");
@@ -110,6 +113,8 @@ export default function SalariesPage() {
 
   function openPay(w: Worker) {
     setEditingId(null);
+    setShowAddWorker(false);
+    setShowAddPayment(false);
     setPayingId(w._id);
     setPayAmount("");
     setPayDate(todayInput());
@@ -118,11 +123,31 @@ export default function SalariesPage() {
 
   function openEdit(w: Worker) {
     setPayingId(null);
+    setShowAddWorker(false);
+    setShowAddPayment(false);
     setEditingId(w._id);
     setEditName(w.name);
     setEditNameUr(w.nameUr || "");
     setEditJob(w.job || "");
     setEditUnitLabel(w.unitLabel || "piece");
+  }
+
+  function openAddPaymentForm() {
+    setPayingId(null);
+    setEditingId(null);
+    setShowAddWorker(false);
+    setShowAddPayment(true);
+    setAddPayWorkerId("");
+    setPayAmount("");
+    setPayDate(todayInput());
+    setPayNote("");
+  }
+
+  function openAddWorkerForm() {
+    setPayingId(null);
+    setEditingId(null);
+    setShowAddPayment(false);
+    setShowAddWorker(true);
   }
 
   async function onSaveEdit(w: Worker) {
@@ -168,6 +193,45 @@ export default function SalariesPage() {
       });
       toast.success(`Paid ${displayWorkerName(w, isUrdu)} · ${formatDate(payDate)}`);
       setPayingId(null);
+      await load();
+    } catch (err) {
+      toast.error(apiError(err, "Pay failed"));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function confirmAddPayment() {
+    if (!addPayWorkerId) {
+      toast.error(t("sal.pickWorker"));
+      return;
+    }
+    const w = workers.find((row) => row._id === addPayWorkerId);
+    if (!w) {
+      toast.error(t("sal.pickWorker"));
+      return;
+    }
+    if (!payDate) {
+      toast.error("Pick the pay date");
+      return;
+    }
+    const amount = Number(payAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error("Enter the amount for this pay");
+      return;
+    }
+    setBusyId("add-payment");
+    try {
+      await payWorker(w._id, {
+        expenseDate: payDate,
+        amount,
+        notes: payNote.trim() || undefined,
+      });
+      toast.success(`Paid ${displayWorkerName(w, isUrdu)} · ${formatDate(payDate)}`);
+      setShowAddPayment(false);
+      setAddPayWorkerId("");
+      setPayAmount("");
+      setPayNote("");
       await load();
     } catch (err) {
       toast.error(apiError(err, "Pay failed"));
@@ -263,16 +327,39 @@ export default function SalariesPage() {
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 className="text-nameplate text-base">{t("sal.workers")}</h2>
-              {/* <p className="mt-1 text-sm text-muted-foreground">{t("sal.workersDesc")}</p> */}
             </div>
-            <Button
-              type="button"
-              variant={showAddWorker ? "outline" : "default"}
-              onClick={() => setShowAddWorker((v) => !v)}
-            >
-              <Plus className="size-4" />
-              {showAddWorker ? t("sal.cancel") : t("sal.addWorker")}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant={showAddPayment ? "outline" : "default"}
+                className="gap-1.5"
+                onClick={() => {
+                  if (showAddPayment) {
+                    setShowAddPayment(false);
+                    return;
+                  }
+                  openAddPaymentForm();
+                }}
+              >
+                <Plus className="size-4" />
+                {showAddPayment ? t("sal.cancel") : t("sal.addPayment")}
+              </Button>
+              <Button
+                type="button"
+                variant={showAddWorker ? "outline" : "default"}
+                className="gap-1.5"
+                onClick={() => {
+                  if (showAddWorker) {
+                    setShowAddWorker(false);
+                    return;
+                  }
+                  openAddWorkerForm();
+                }}
+              >
+                <Plus className="size-4" />
+                {showAddWorker ? t("sal.cancel") : t("sal.addWorker")}
+              </Button>
+            </div>
           </div>
 
           <div className="max-w-md">
@@ -293,6 +380,67 @@ export default function SalariesPage() {
               />
             </div>
           </div>
+
+          {showAddPayment && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-nameplate text-sm">{t("sal.addPayment")}</CardTitle>
+                <CardDescription>{t("sal.pickWorker")}</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-4">
+                  <Label>{t("salReports.worker")}</Label>
+                  <WorkerSearchSelect
+                    workers={workers}
+                    value={addPayWorkerId}
+                    onChange={setAddPayWorkerId}
+                    placeholder={t("sal.pickWorker")}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>{t("sal.paymentAmount")}</Label>
+                  <Input
+                    type="number"
+                    step="1"
+                    value={payAmount}
+                    onChange={(e) => setPayAmount(e.target.value)}
+                    className="h-11 text-base"
+                    placeholder={t("sal.phAmount")}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>{t("sal.payDate")}</Label>
+                  <Input
+                    type="date"
+                    value={payDate}
+                    onChange={(e) => setPayDate(e.target.value)}
+                    className="h-11"
+                    required
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5 sm:col-span-2">
+                  <Label>{t("exp.noteOptional")}</Label>
+                  <UrduPhoneticInput
+                    value={payNote}
+                    onChange={setPayNote}
+                    className="h-11"
+                    placeholder={t("sal.notePh")}
+                  />
+                </div>
+                <div className="flex items-end sm:col-span-2 lg:col-span-4">
+                  <Button
+                    type="button"
+                    disabled={busyId === "add-payment"}
+                    className="gap-2"
+                    onClick={() => void confirmAddPayment()}
+                  >
+                    {busyId === "add-payment" && <Loader2 className="size-4 animate-spin" />}
+                    {t("sal.confirmPay")}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {showAddWorker && (
             <Card>

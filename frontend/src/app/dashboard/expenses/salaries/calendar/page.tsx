@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
+import { WorkerSearchSelect } from "@/components/workers/worker-search-select";
 
 function displayWorkerName(
   w: { name: string; nameUr?: string } | string | null | undefined,
@@ -442,18 +443,12 @@ export default function AllSalariesLedgerPage() {
             {dialogMode === "add" && (
               <div className="flex flex-col gap-1.5">
                 <Label>{t("salReports.worker")}</Label>
-                <select
-                  className="h-11 rounded-lg border border-input bg-background px-3 text-sm"
+                <WorkerSearchSelect
+                  workers={workers}
                   value={formWorkerId}
-                  onChange={(e) => setFormWorkerId(e.target.value)}
-                >
-                  <option value="">{t("sal.pickWorker")}</option>
-                  {workers.map((w) => (
-                    <option key={w._id} value={w._id}>
-                      {displayWorkerName(w, isUrdu)}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setFormWorkerId}
+                  placeholder={t("sal.pickWorker")}
+                />
               </div>
             )}
             {dialogMode === "edit" && editingPayment && (
