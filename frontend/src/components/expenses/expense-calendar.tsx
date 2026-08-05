@@ -132,7 +132,9 @@ export function ExpenseCalendar({
           (e) =>
             categorySet.has(e.category) &&
             e.category !== "fixed_salary" &&
-            !e.worker
+            e.category !== "salesman_commission" &&
+            !e.worker &&
+            !e.salesman
         )
       );
     } catch (err) {

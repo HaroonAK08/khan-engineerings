@@ -10,9 +10,11 @@ const OTHER_CATEGORIES: Array<{ id: string; labelKey: MessageKey }> = [
   { id: "silica_sand", labelKey: "other.cat.silica" },
   { id: "silicate", labelKey: "other.cat.silicate" },
   { id: "sheera", labelKey: "other.cat.sheera" },
+  { id: "chemicals", labelKey: "other.cat.chemicals" },
   { id: "tools", labelKey: "other.cat.tools" },
   { id: "machine", labelKey: "other.cat.machine" },
   { id: "repairs", labelKey: "other.cat.repairs" },
+  { id: "tour_expenses", labelKey: "other.cat.tour" },
   { id: "other", labelKey: "other.cat.other" },
 ];
 

@@ -130,8 +130,9 @@ export default function ReportsHubPage() {
         </p>
         <h1 className="text-nameplate text-xl">Report</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Choose full report or build a custom report, then download. For Overall / Party wise /
-          Group wise, open Receivables, Sales, or Statements above.
+          Choose full report or build a custom report, then download. For money
+          received party wise / group wise, open <strong>Received</strong> above.
+          For money still owed, use Receivables.
         </p>
       </div>
 
