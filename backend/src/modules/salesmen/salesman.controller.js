@@ -45,4 +45,22 @@ async function remove(req, res, next) {
   }
 }
 
-module.exports = { create, list, getOne, update, remove };
+async function pay(req, res, next) {
+  try {
+    const result = await salesmanService.pay(req.params.id, req.body);
+    res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function listPayments(req, res, next) {
+  try {
+    const payments = await salesmanService.listPayments(req.query);
+    res.json({ payments });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { create, list, getOne, update, remove, pay, listPayments };

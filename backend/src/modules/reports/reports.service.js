@@ -1199,6 +1199,156 @@ async function getReceivablesReport({ dateFrom, dateTo, groupId, customerId } = 
   };
 }
 
+/**
+ * Cash/bank received from parties in a period — from CustomerPayment.
+ * Supports party-wise and group-wise rollups.
+ */
+async function getReceivedReport({ dateFrom, dateTo, groupId, customerId } = {}) {
+  const PartyGroup = require("../party-groups/party-group.model");
+  let allowedCustomerIds = null;
+  let groupMeta = null;
+  let partyMeta = null;
+
+  if (groupId === "__ungrouped__" || groupId === "ungrouped") {
+    groupMeta = { id: "", name: "Ungrouped" };
+    const members = await Customer.find({
+      $or: [{ group: null }, { group: { $exists: false } }],
+    })
+      .select("_id")
+      .lean();
+    allowedCustomerIds = new Set(members.map((m) => String(m._id)));
+  } else if (groupId) {
+    const group = await PartyGroup.findById(groupId).lean();
+    if (!group) throw httpError("Party group not found", 404);
+    groupMeta = { id: String(group._id), name: group.name };
+    const members = await Customer.find({ group: group._id }).select("_id").lean();
+    allowedCustomerIds = new Set(members.map((m) => String(m._id)));
+  }
+
+  if (customerId) {
+    if (!mongoose.isValidObjectId(customerId)) throw httpError("Invalid party", 400);
+    const customer = await Customer.findById(customerId).select("name phone").lean();
+    if (!customer) throw httpError("Party not found", 404);
+    partyMeta = { id: String(customer._id), name: customer.name };
+    const id = String(customer._id);
+    if (allowedCustomerIds && !allowedCustomerIds.has(id)) {
+      allowedCustomerIds = new Set();
+    } else {
+      allowedCustomerIds = new Set([id]);
+    }
+  }
+
+  const filter = {
+    ...dateRangeFilter("paymentDate", dateFrom, dateTo),
+  };
+  if (allowedCustomerIds) {
+    filter.customer = { $in: [...allowedCustomerIds] };
+  }
+
+  const [payments, allGroups] = await Promise.all([
+    CustomerPayment.find(filter)
+      .populate("customer", "name phone group")
+      .populate("builty", "builtyNo")
+      .sort({ paymentDate: -1, createdAt: -1 })
+      .lean(),
+    PartyGroup.find({}).select("name").lean(),
+  ]);
+
+  const groupNameMap = new Map(allGroups.map((g) => [String(g._id), g.name]));
+
+  const records = payments.map((p) => {
+    const cust = p.customer && typeof p.customer === "object" ? p.customer : null;
+    const partyId = cust ? String(cust._id) : String(p.customer || "");
+    const groupIdVal =
+      cust && cust.group ? String(cust.group._id || cust.group || "") : "";
+    const builtyNo =
+      p.builty && typeof p.builty === "object" ? p.builty.builtyNo || "" : "";
+    const reference =
+      (p.reference && String(p.reference).trim()) ||
+      builtyNo ||
+      (p.notes && String(p.notes).trim()) ||
+      "—";
+    return {
+      id: String(p._id),
+      type: "payment",
+      date: p.paymentDate,
+      reference,
+      method: p.method || "cash",
+      notes: p.notes || "",
+      partyId,
+      partyName: cust?.name || "—",
+      partyPhone: cust?.phone || "",
+      groupId: groupIdVal,
+      builtyId: p.builty
+        ? String(typeof p.builty === "object" ? p.builty._id : p.builty)
+        : "",
+      amount: roundMoney(p.amount),
+      href: partyId
+        ? `/dashboard/party/customers/${partyId}`
+        : "/dashboard/party/customers",
+    };
+  });
+
+  const byPartyMap = new Map();
+  for (const r of records) {
+    const key = r.partyId || r.partyName;
+    const existing = byPartyMap.get(key);
+    if (existing) {
+      existing.amount = roundMoney(existing.amount + r.amount);
+      existing.recordCount += 1;
+    } else {
+      byPartyMap.set(key, {
+        partyId: r.partyId,
+        name: r.partyName,
+        phone: r.partyPhone,
+        groupId: r.groupId || "",
+        amount: r.amount,
+        recordCount: 1,
+      });
+    }
+  }
+  const byParty = [...byPartyMap.values()].sort((a, b) => b.amount - a.amount);
+
+  const byGroupMap = new Map();
+  for (const p of byParty) {
+    const key = p.groupId || "__ungrouped__";
+    const existing = byGroupMap.get(key);
+    if (existing) {
+      existing.amount = roundMoney(existing.amount + p.amount);
+      existing.recordCount += p.recordCount;
+      existing.partyCount += 1;
+    } else {
+      byGroupMap.set(key, {
+        groupId: p.groupId || "",
+        name: p.groupId ? groupNameMap.get(p.groupId) || "—" : "Ungrouped",
+        amount: p.amount,
+        recordCount: p.recordCount,
+        partyCount: 1,
+      });
+    }
+  }
+  const byGroup = [...byGroupMap.values()]
+    .filter((g) => Boolean(g.groupId))
+    .sort((a, b) => b.amount - a.amount);
+
+  const totalReceived = roundMoney(records.reduce((s, r) => s + r.amount, 0));
+
+  return {
+    period: { from: dateFrom || null, to: dateTo || null },
+    group: groupMeta,
+    party: partyMeta,
+    totals: {
+      totalReceived,
+      partyCount: byParty.length,
+      groupCount: byGroup.length,
+      recordCount: records.length,
+    },
+    byParty,
+    byGroup,
+    records,
+  };
+}
+
 async function getPayablesReport({ dateFrom, dateTo } = {}) {
   const supplierIds = await Purchase.distinct("supplier");
   for (const id of supplierIds) {
@@ -1427,6 +1577,150 @@ async function exportReceivables(query, format, res) {
     meta,
   });
   return sendExcel(res, buf, "receivables-report.xlsx");
+}
+
+async function exportReceived(query, format, res) {
+  const report = await getReceivedReport(query);
+  const view = ["whole", "party", "group"].includes(query.view) ? query.view : "party";
+  const period = periodLabel(query.dateFrom, query.dateTo);
+  const viewLabel =
+    view === "whole" ? "Overall" : view === "group" ? "Group wise" : "Party wise";
+  const meta = {
+    Period: period,
+    Overall: !query.dateFrom && !query.dateTo ? "All" : period,
+    View: viewLabel,
+    Group: report.group?.name || "All groups",
+    Party: report.party?.name || "All parties",
+    "Total received": money(report.totals.totalReceived),
+    Parties: report.totals.partyCount,
+    Groups: report.totals.groupCount,
+    Records: report.totals.recordCount,
+  };
+  const title = report.party
+    ? `Money received — ${report.party.name}`
+    : report.group
+      ? `Money received report — ${report.group.name}`
+      : "Money received report";
+
+  const partyColumns = ["Party", "Records", "Amount received"];
+  const partyRows = (report.byParty || []).map((p) => [
+    p.name,
+    p.recordCount,
+    money(p.amount),
+  ]);
+  if (partyRows.length > 0) {
+    partyRows.push([
+      "Total received",
+      report.totals.recordCount,
+      money(report.totals.totalReceived),
+    ]);
+  }
+
+  const groupColumns = ["Group", "Parties", "Records", "Amount received"];
+  const groupRows = (report.byGroup || []).map((g) => [
+    g.name,
+    g.partyCount,
+    g.recordCount,
+    money(g.amount),
+  ]);
+  if (groupRows.length > 0) {
+    groupRows.push([
+      "Total received",
+      report.totals.partyCount,
+      report.totals.recordCount,
+      money(report.totals.totalReceived),
+    ]);
+  }
+
+  const recordColumns = ["Date", "Party", "Reference", "Method", "Amount"];
+  const recordRows = (report.records || []).map((r) => [
+    fmtDate(r.date),
+    r.partyName,
+    r.reference,
+    r.method || "cash",
+    money(r.amount),
+  ]);
+
+  if (format === "pdf") {
+    const sections = [];
+    if (query.customerId || report.party) {
+      sections.push({
+        heading: report.party
+          ? `Received — ${report.party.name}`
+          : "Party received",
+        columns: partyColumns,
+        rows: partyRows,
+      });
+      sections.push({
+        heading: "All payments",
+        columns: recordColumns,
+        rows: recordRows,
+      });
+    } else if (view === "group") {
+      sections.push({
+        heading: "Received total of each group",
+        columns: groupColumns,
+        rows: groupRows,
+      });
+    } else if (view === "party") {
+      sections.push({
+        heading: "Received total of each party",
+        columns: partyColumns,
+        rows: partyRows,
+      });
+      sections.push({
+        heading: "All payments",
+        columns: recordColumns,
+        rows: recordRows,
+      });
+    } else {
+      sections.push({
+        heading: "Overall received",
+        columns: ["Metric", "Value"],
+        rows: [
+          ["Total received", money(report.totals.totalReceived)],
+          ["Groups", report.totals.groupCount],
+          ["Parties", report.totals.partyCount],
+          ["Records", report.totals.recordCount],
+        ],
+      });
+    }
+
+    const buf = await buildPdf({
+      title,
+      subtitle: "Khan Engineerings",
+      metaLines: [
+        `View: ${viewLabel}`,
+        `Overall: ${meta.Overall}`,
+        `Group: ${meta.Group}`,
+        `Party: ${meta.Party}`,
+        `Total received: ${meta["Total received"]}`,
+        `Parties: ${meta.Parties}`,
+        `Records: ${meta.Records}`,
+      ],
+      sections,
+    });
+    return sendPdf(res, buf, "received-report.pdf");
+  }
+
+  const buf = await buildExcel({
+    title,
+    sheetName: "Received",
+    columns: view === "group" ? groupColumns : view === "whole" ? ["Metric", "Value"] : recordColumns,
+    rows:
+      view === "group"
+        ? groupRows
+        : view === "whole"
+          ? [
+              ["Total received", money(report.totals.totalReceived)],
+              ["Groups", report.totals.groupCount],
+              ["Parties", report.totals.partyCount],
+              ["Records", report.totals.recordCount],
+            ]
+          : recordRows,
+    meta,
+  });
+  return sendExcel(res, buf, "received-report.xlsx");
 }
 
 async function exportPayables(query, format, res) {
@@ -2058,6 +2352,7 @@ module.exports = {
   groupStatement,
   customersOverviewStatement,
   getReceivablesReport,
+  getReceivedReport,
   getPayablesReport,
   exportSales,
   exportPurchases,
@@ -2066,6 +2361,7 @@ module.exports = {
   exportInventory,
   exportFinance,
   exportReceivables,
+  exportReceived,
   exportPayables,
   exportStatement,
   exportGroupStatement,
