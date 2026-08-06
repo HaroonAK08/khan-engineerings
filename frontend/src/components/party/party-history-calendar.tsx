@@ -159,31 +159,45 @@ export function PartyHistoryCalendar({ customerId, entries, onChanged }: Props) 
       );
   }, [allRows, dateFrom, dateTo]);
 
+  /** Carry-forward بقایا from before dateFrom (khata opening). */
+  const openingBalance = useMemo(() => {
+    if (!dateFrom) return 0;
+    const prior = allRows.filter(
+      (r) => dayKey(new Date(r.entry.entryDate)) < dateFrom
+    );
+    return prior.length ? prior[prior.length - 1].baqaya : 0;
+  }, [allRows, dateFrom]);
+
   const totals = useMemo(() => {
     const totalDebit = roundMoney(filteredRows.reduce((s, r) => s + r.debit, 0));
     const totalCredit = roundMoney(filteredRows.reduce((s, r) => s + r.credit, 0));
-    let closing = filteredRows.length
-      ? filteredRows[filteredRows.length - 1].baqaya
-      : 0;
-    if (dateFrom || dateTo) {
-      closing = 0;
+    let closing: number;
+    if (dateFrom) {
+      closing = openingBalance;
       for (const r of filteredRows) {
         closing = roundMoney(closing + r.debit - r.credit);
       }
+    } else {
+      closing = filteredRows.length
+        ? filteredRows[filteredRows.length - 1].baqaya
+        : 0;
     }
     return { totalDebit, totalCredit, closing };
-  }, [filteredRows, dateFrom, dateTo]);
+  }, [filteredRows, dateFrom, openingBalance]);
 
   const displayRows = useMemo(() => {
-    if (!dateFrom && !dateTo) return filteredRows;
-    let b = 0;
+    if (!dateFrom) return filteredRows;
+    let b = openingBalance;
     return filteredRows.map((r) => {
       b = roundMoney(b + r.debit - r.credit);
       return { ...r, baqaya: b };
     });
-  }, [filteredRows, dateFrom, dateTo]);
+  }, [filteredRows, dateFrom, openingBalance]);
 
   const hasDateFilter = Boolean(dateFrom || dateTo);
+  const showOpeningRow =
+    Boolean(dateFrom) &&
+    (displayRows.length > 0 || Math.abs(openingBalance) > 0.001);
 
   function rowDetail(e: CustomerLedgerEntry) {
     if (e.type === "payment") {
@@ -362,7 +376,7 @@ export function PartyHistoryCalendar({ customerId, entries, onChanged }: Props) 
         </CardContent>
       </Card>
 
-      {displayRows.length === 0 ? (
+      {displayRows.length === 0 && !showOpeningRow ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-14">
             <p className="text-sm text-muted-foreground">
@@ -398,6 +412,26 @@ export function PartyHistoryCalendar({ customerId, entries, onChanged }: Props) 
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {showOpeningRow ? (
+                  <TableRow className="bg-muted/40 hover:bg-muted/50">
+                    <TableCell className="font-data whitespace-nowrap text-muted-foreground">
+                      —
+                    </TableCell>
+                    <TableCell className="whitespace-normal">
+                      <span className="text-sm text-muted-foreground">
+                        {t("statements.opening")}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-end text-muted-foreground">—</TableCell>
+                    <TableCell className="text-end text-muted-foreground">—</TableCell>
+                    <TableCell
+                      className={`font-data text-end whitespace-nowrap font-medium ${baqayaClass(openingBalance) || ""}`}
+                    >
+                      {formatBaqaya(openingBalance)}
+                    </TableCell>
+                    <TableCell />
+                  </TableRow>
+                ) : null}
                 {displayRows.map((row) => {
                   const e = row.entry;
                   const isPayment = e.type === "payment";
