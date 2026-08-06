@@ -4,6 +4,7 @@ const builtyItemSchema = new mongoose.Schema(
   {
     product: { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: true },
     quantity: { type: Number, required: true, min: 0 },
+    claimedQuantity: { type: Number, min: 0, default: 0 },
     pricingMode: { type: String, enum: ["rate_kg", "fixed"], default: "rate_kg" },
     ratePerKg: { type: Number, min: 0, default: 0 },
     weightKg: { type: Number, min: 0, default: 0 },

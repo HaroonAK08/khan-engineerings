@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, Plus } from "lucide-react";
-import { apiError, formatMoney, withSameDayConfirm } from "@/lib/materials-api";
+import { api } from "@/lib/api";
+import { apiError, formatDate, formatMoney, withSameDayConfirm } from "@/lib/materials-api";
 import {
   getCustomer,
   getCustomerLedger,
@@ -14,13 +15,32 @@ import {
   type Customer,
   type CustomerLedgerEntry,
 } from "@/lib/sales-api";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { PartyHistoryCalendar } from "@/components/party/party-history-calendar";
 import { useI18n } from "@/hooks/use-i18n";
 import { todayInput } from "@/lib/date-range";
+
+type PartyClaim = {
+  _id: string;
+  claimNo: string;
+  claimDate: string;
+  status: string;
+  refundAmount?: number;
+  builty?: { _id?: string; builtyNo: string };
+  items: Array<{ quantity: number; disposition: string; product?: { name: string } }>;
+};
 
 export default function CustomerDetailPage() {
   const { t } = useI18n();
@@ -35,6 +55,7 @@ export default function CustomerDetailPage() {
     totalDue: 0,
   });
   const [entries, setEntries] = useState<CustomerLedgerEntry[]>([]);
+  const [claims, setClaims] = useState<PartyClaim[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [showPendingForm, setShowPendingForm] = useState(false);
@@ -54,13 +75,15 @@ export default function CustomerDetailPage() {
     async (opts?: { silent?: boolean }) => {
       if (!opts?.silent) setLoading(true);
       try {
-        const [detail, ledger] = await Promise.all([
+        const [detail, ledger, claimsRes] = await Promise.all([
           getCustomer(id),
           getCustomerLedger(id),
+          api.get<{ claims: PartyClaim[] }>("/claims", { params: { customer: id } }),
         ]);
         setCustomer(detail.customer);
         setBalance(detail.balance);
         setEntries(ledger.entries);
+        setClaims(claimsRes.data.claims || []);
         setStats({
           orderCount: detail.stats.orderCount || 0,
           totalSales: detail.stats.totalSales || 0,
@@ -358,6 +381,75 @@ export default function CustomerDetailPage() {
           </CardContent>
         ) : null}
       </Card>
+
+      <div className="flex flex-col gap-2">
+        <div>
+          <h2 className="text-nameplate text-sm">{t("customerDetail.claimsTitle")}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t("customerDetail.claimsDesc")}
+          </p>
+        </div>
+        {claims.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            {t("customerDetail.claimsEmpty")}
+          </p>
+        ) : (
+          <Card>
+            <CardContent className="pt-4">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t("claims.col.claim")}</TableHead>
+                    <TableHead>{t("claims.col.date")}</TableHead>
+                    <TableHead>{t("claims.col.invoice")}</TableHead>
+                    <TableHead>{t("claims.col.items")}</TableHead>
+                    <TableHead className="text-right">{t("claims.col.refund")}</TableHead>
+                    <TableHead>{t("claims.col.status")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {claims.map((c) => (
+                    <TableRow key={c._id}>
+                      <TableCell className="font-data text-xs">{c.claimNo}</TableCell>
+                      <TableCell className="font-data text-xs">
+                        {formatDate(c.claimDate)}
+                      </TableCell>
+                      <TableCell className="font-data text-xs">
+                        {c.builty?._id ? (
+                          <Link
+                            href={`/dashboard/builty/${c.builty._id}`}
+                            className="text-primary hover:underline"
+                          >
+                            {c.builty.builtyNo}
+                          </Link>
+                        ) : (
+                          c.builty?.builtyNo || "—"
+                        )}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {c.items
+                          .map(
+                            (i) =>
+                              `${i.quantity} ${i.product?.name || ""} (${i.disposition})`
+                          )
+                          .join(", ")}
+                      </TableCell>
+                      <TableCell className="font-data text-right text-xs">
+                        {c.refundAmount ? formatMoney(c.refundAmount) : "—"}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="uppercase text-[10px]">
+                          {c.status}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
       <div className="flex flex-col gap-2">
         <div>

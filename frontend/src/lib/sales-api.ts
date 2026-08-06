@@ -55,11 +55,27 @@ export type BuiltyItem = {
   _id?: string;
   product: ProductRef | string;
   quantity: number;
+  claimedQuantity?: number;
   pricingMode: PricingMode;
   ratePerKg: number;
   weightKg: number;
   unitPrice: number;
   lineTotal: number;
+};
+
+export type BuiltyClaim = {
+  _id: string;
+  claimNo: string;
+  claimDate: string;
+  status: string;
+  refundAmount?: number;
+  items: Array<{
+    quantity: number;
+    disposition: string;
+    weightKg?: number | null;
+    refundAmount?: number;
+    product?: ProductRef | string;
+  }>;
 };
 
 export type BuiltyRow = {
@@ -423,6 +439,7 @@ export async function getBuilty(id: string) {
     builty: Builty;
     summary: BuiltySummary;
     payments: CustomerPayment[];
+    claims?: BuiltyClaim[];
   }>(`/builty/${id}`);
   return data;
 }
