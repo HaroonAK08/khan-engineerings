@@ -1,20 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { History, Loader2, Plus, Search } from "lucide-react";
-import { apiError } from "@/lib/materials-api";
+import { Loader2, Plus, Search } from "lucide-react";
+import { apiError, formatMoney } from "@/lib/materials-api";
 import {
   createSalesman,
   listSalesmen,
   updateSalesman,
   type Salesman,
 } from "@/lib/sales-api";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
@@ -47,6 +46,7 @@ type FormValues = z.infer<typeof schema>;
 
 export default function SalesmenPage() {
   const { t } = useI18n();
+  const router = useRouter();
   const [salesmen, setSalesmen] = useState<Salesman[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -81,7 +81,8 @@ export default function SalesmenPage() {
     setDialogOpen(true);
   }
 
-  function openEdit(s: Salesman) {
+  function openEdit(s: Salesman, e?: { stopPropagation: () => void }) {
+    e?.stopPropagation();
     setEditing(s);
     form.reset({
       name: s.name,
@@ -90,6 +91,10 @@ export default function SalesmenPage() {
       isActive: s.isActive,
     });
     setDialogOpen(true);
+  }
+
+  function openSalesman(id: string) {
+    router.push(`/dashboard/salesmen/${id}`);
   }
 
   async function onSubmit(values: FormValues) {
@@ -119,23 +124,15 @@ export default function SalesmenPage() {
             {t("sm.eyebrow")}
           </p>
           <h1 className="text-nameplate text-xl">{t("sm.title")}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t("sm.listHint")}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href="#salesman-history"
-            className="inline-flex h-10 items-center gap-2 rounded-lg border border-input bg-background px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-muted"
-          >
-            <History className="size-4" />
-            Salesman History
-          </Link>
-          <Button onClick={openCreate} className="gap-2">
-            <Plus className="size-4" />
-            {t("sm.add")}
-          </Button>
-        </div>
+        <Button onClick={openCreate} className="gap-2">
+          <Plus className="size-4" />
+          {t("sm.add")}
+        </Button>
       </div>
 
-      <Card id="salesman-history">
+      <Card>
         <CardHeader className="pb-3">
           <div className="relative">
             <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -160,25 +157,37 @@ export default function SalesmenPage() {
                 <TableRow>
                   <TableHead>{t("sm.col.name")}</TableHead>
                   <TableHead>{t("sm.col.phone")}</TableHead>
-                  <TableHead>{t("sm.col.status")}</TableHead>
+                  <TableHead className="text-right">{t("sm.col.totalPaid")}</TableHead>
                   <TableHead className="text-right">{t("sm.col.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {salesmen.map((s) => (
-                  <TableRow key={s._id}>
-                    <TableCell className="font-medium">{s.name}</TableCell>
+                  <TableRow
+                    key={s._id}
+                    tabIndex={0}
+                    className="cursor-pointer"
+                    onClick={() => openSalesman(s._id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openSalesman(s._id);
+                      }
+                    }}
+                  >
+                    <TableCell className="font-medium text-primary underline-offset-2">
+                      {s.name}
+                    </TableCell>
                     <TableCell className="font-data text-xs">{s.phone || "—"}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={s.isActive ? "secondary" : "outline"}
-                        className="font-data text-[10px]"
-                      >
-                        {s.isActive ? t("sm.status.active") : t("sm.status.inactive")}
-                      </Badge>
+                    <TableCell className="font-data text-right text-xs font-medium">
+                      {formatMoney(s.totalPaid || 0)}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button size="sm" variant="ghost" onClick={() => openEdit(s)}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={(e) => openEdit(s, e)}
+                      >
                         {t("sm.edit")}
                       </Button>
                     </TableCell>

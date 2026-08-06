@@ -29,6 +29,13 @@ const batchExpenseSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    /** When commission / payment was paid to a salesman */
+    salesman: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Salesman",
+      default: null,
+      index: true,
+    },
     /** Pieces paid for per_unit wages */
     units: { type: Number, default: null },
     payType: {

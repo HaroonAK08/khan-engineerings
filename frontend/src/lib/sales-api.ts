@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import type { BatchExpense } from "@/types/production";
 
 export type PartyGroupRef = {
   _id: string;
@@ -37,6 +38,7 @@ export type Salesman = {
   phone: string;
   notes: string;
   isActive: boolean;
+  totalPaid?: number;
 };
 
 export type ProductRef = {
@@ -53,11 +55,27 @@ export type BuiltyItem = {
   _id?: string;
   product: ProductRef | string;
   quantity: number;
+  claimedQuantity?: number;
   pricingMode: PricingMode;
   ratePerKg: number;
   weightKg: number;
   unitPrice: number;
   lineTotal: number;
+};
+
+export type BuiltyClaim = {
+  _id: string;
+  claimNo: string;
+  claimDate: string;
+  status: string;
+  refundAmount?: number;
+  items: Array<{
+    quantity: number;
+    disposition: string;
+    weightKg?: number | null;
+    refundAmount?: number;
+    product?: ProductRef | string;
+  }>;
 };
 
 export type BuiltyRow = {
@@ -364,6 +382,11 @@ export async function listSalesmen(params?: { q?: string; active?: string }) {
   return data.salesmen;
 }
 
+export async function getSalesman(id: string) {
+  const { data } = await api.get<{ salesman: Salesman }>(`/salesmen/${id}`);
+  return data.salesman;
+}
+
 export async function createSalesman(body: Partial<Salesman>) {
   const { data } = await api.post<{ salesman: Salesman }>("/salesmen", body);
   return data.salesman;
@@ -372,6 +395,32 @@ export async function createSalesman(body: Partial<Salesman>) {
 export async function updateSalesman(id: string, body: Partial<Salesman>) {
   const { data } = await api.patch<{ salesman: Salesman }>(`/salesmen/${id}`, body);
   return data.salesman;
+}
+
+export async function paySalesman(
+  id: string,
+  body: {
+    expenseDate: string;
+    amount: number;
+    notes?: string;
+  }
+) {
+  const { data } = await api.post<{ expense: BatchExpense; salesman: Salesman }>(
+    `/salesmen/${id}/pay`,
+    body
+  );
+  return data;
+}
+
+export async function listSalesmanPayments(params?: {
+  dateFrom?: string;
+  dateTo?: string;
+  salesmanId?: string;
+}) {
+  const { data } = await api.get<{ payments: BatchExpense[] }>("/salesmen/payments", {
+    params,
+  });
+  return data.payments;
 }
 
 export async function listBuilties(params?: {
@@ -390,6 +439,7 @@ export async function getBuilty(id: string) {
     builty: Builty;
     summary: BuiltySummary;
     payments: CustomerPayment[];
+    claims?: BuiltyClaim[];
   }>(`/builty/${id}`);
   return data;
 }

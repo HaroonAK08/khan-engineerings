@@ -68,6 +68,7 @@ const EXPENSE_CATEGORY_GROUPS = [
       { id: "silica_sand", label: "Silica Sand" },
       { id: "silicate", label: "Silicate" },
       { id: "sheera", label: "Sheera" },
+      { id: "chemicals", label: "Chemicals" },
       { id: "tools", label: "Tools" },
     ],
   },
@@ -86,6 +87,8 @@ const EXPENSE_CATEGORY_GROUPS = [
     label: "Miscellaneous",
     items: [
       { id: "repairs", label: "Repairs" },
+      { id: "tour_expenses", label: "Tour Expenses" },
+      { id: "salesman_commission", label: "Salesman Commission" },
       { id: "other", label: "Other" },
     ],
   },

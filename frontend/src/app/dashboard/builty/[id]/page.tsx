@@ -13,6 +13,7 @@ import {
   productName,
   updateBuilty,
   type Builty,
+  type BuiltyClaim,
   type BuiltySummary,
 } from "@/lib/sales-api";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +37,7 @@ export default function BuiltyDetailPage() {
   const id = String(params.id);
   const [builty, setBuilty] = useState<Builty | null>(null);
   const [summary, setSummary] = useState<BuiltySummary | null>(null);
+  const [claims, setClaims] = useState<BuiltyClaim[]>([]);
   const [loading, setLoading] = useState(true);
   const [billNo, setBillNo] = useState("");
   const [saving, setSaving] = useState(false);
@@ -46,6 +48,7 @@ export default function BuiltyDetailPage() {
       const data = await getBuilty(id);
       setBuilty(data.builty);
       setSummary(data.summary);
+      setClaims(data.claims || []);
       setBillNo(data.builty.billNo || "");
     } catch (err) {
       toast.error(apiError(err, t("builtyDetail.loadFailed")));
@@ -179,31 +182,88 @@ export default function BuiltyDetailPage() {
               <TableRow>
                 <TableHead>{t("orderNew.col.product")}</TableHead>
                 <TableHead className="text-right">{t("orderNew.col.qty")}</TableHead>
+                <TableHead className="text-right">{t("builtyDetail.claimed")}</TableHead>
+                <TableHead className="text-right">{t("builtyDetail.remaining")}</TableHead>
                 <TableHead>{t("builtyNew.pricingMode")}</TableHead>
                 <TableHead className="text-right">{t("orderNew.col.rate")}</TableHead>
                 <TableHead className="text-right">{t("orderNew.col.amount")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {builty.items.map((item, index) => (
-                <TableRow key={item._id || index}>
-                  <TableCell>{productName(item.product)}</TableCell>
-                  <TableCell className="font-data text-right text-xs">{item.quantity}</TableCell>
-                  <TableCell className="font-data text-xs">
-                    {item.pricingMode === "fixed"
-                      ? t("builtyNew.mode.fixed")
-                      : t("builtyNew.mode.rate")}
-                  </TableCell>
-                  <TableCell className="font-data text-right text-xs">
-                    {item.pricingMode === "fixed" ? "—" : formatMoney(item.ratePerKg)}
-                  </TableCell>
-                  <TableCell className="font-data text-right text-xs">
-                    {formatMoney(item.lineTotal)}
-                  </TableCell>
-                </TableRow>
-              ))}
+              {builty.items.map((item, index) => {
+                const claimed = Number(item.claimedQuantity) || 0;
+                const remaining = Math.max(0, Number(item.quantity) - claimed);
+                return (
+                  <TableRow key={item._id || index}>
+                    <TableCell>{productName(item.product)}</TableCell>
+                    <TableCell className="font-data text-right text-xs">{item.quantity}</TableCell>
+                    <TableCell className="font-data text-right text-xs">{claimed || "—"}</TableCell>
+                    <TableCell className="font-data text-right text-xs">{remaining}</TableCell>
+                    <TableCell className="font-data text-xs">
+                      {item.pricingMode === "fixed"
+                        ? t("builtyNew.mode.fixed")
+                        : t("builtyNew.mode.rate")}
+                    </TableCell>
+                    <TableCell className="font-data text-right text-xs">
+                      {item.pricingMode === "fixed" ? "—" : formatMoney(item.ratePerKg)}
+                    </TableCell>
+                    <TableCell className="font-data text-right text-xs">
+                      {formatMoney(item.lineTotal)}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-nameplate text-sm">{t("builtyDetail.claims")}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {claims.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              {t("builtyDetail.claimsEmpty")}
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("claims.col.claim")}</TableHead>
+                  <TableHead>{t("claims.col.date")}</TableHead>
+                  <TableHead>{t("claims.col.items")}</TableHead>
+                  <TableHead className="text-right">{t("claims.col.refund")}</TableHead>
+                  <TableHead>{t("claims.col.status")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {claims.map((c) => (
+                  <TableRow key={c._id}>
+                    <TableCell className="font-data text-xs">{c.claimNo}</TableCell>
+                    <TableCell className="font-data text-xs">{formatDate(c.claimDate)}</TableCell>
+                    <TableCell className="text-xs">
+                      {c.items
+                        .map(
+                          (i) =>
+                            `${i.quantity} ${productName(i.product)} (${i.disposition})`
+                        )
+                        .join(", ")}
+                    </TableCell>
+                    <TableCell className="font-data text-right text-xs">
+                      {c.refundAmount ? formatMoney(c.refundAmount) : "—"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="uppercase text-[10px]">
+                        {c.status}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </div>

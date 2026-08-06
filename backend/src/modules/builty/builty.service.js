@@ -90,6 +90,7 @@ async function normalizeItems(items) {
     normalized.push({
       product: product._id,
       quantity,
+      claimedQuantity: Number(raw.claimedQuantity) || 0,
       pricingMode: mode,
       ratePerKg: roundMoney(ratePerKg),
       weightKg: roundMoney(weightKg),
@@ -181,6 +182,10 @@ function itemSummary(builty) {
     .map((line) => {
       const name =
         line.product && typeof line.product === "object" ? line.product.name : "Item";
+      const claimed = Number(line.claimedQuantity) || 0;
+      if (claimed > 0) {
+        return `${name} x ${line.quantity || 0} (claimed ${claimed})`;
+      }
       return `${name} x ${line.quantity || 0}`;
     })
     .filter(Boolean);
@@ -240,7 +245,11 @@ async function getBuilty(id) {
     paymentDate: -1,
     createdAt: -1,
   });
-  return { builty: fresh, summary: summary(fresh), payments };
+  const Claim = require("../claims/claim.model");
+  const claims = await Claim.find({ builty: fresh._id })
+    .populate("items.product", "name sku family")
+    .sort({ claimDate: -1, createdAt: -1 });
+  return { builty: fresh, summary: summary(fresh), payments, claims };
 }
 
 async function createBuilty(data) {
@@ -354,7 +363,19 @@ async function updateBuilty(id, data) {
   if (data.notes !== undefined) builty.notes = String(data.notes || "").trim();
 
   if (data.items !== undefined) {
-    const { items, totalAmount } = await normalizeItems(data.items);
+    const claimedByProduct = new Map();
+    for (const line of builty.items || []) {
+      const pid = String(line.product?._id || line.product);
+      claimedByProduct.set(pid, Number(line.claimedQuantity) || 0);
+    }
+    const withClaimed = (data.items || []).map((raw) => ({
+      ...raw,
+      claimedQuantity:
+        raw.claimedQuantity != null
+          ? raw.claimedQuantity
+          : claimedByProduct.get(String(raw.product)) || 0,
+    }));
+    const { items, totalAmount } = await normalizeItems(withClaimed);
     const warehouse =
       builty.warehouse || (await inventoryService.getDefaultWarehouse())._id;
 

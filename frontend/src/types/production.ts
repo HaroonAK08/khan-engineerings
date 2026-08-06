@@ -159,6 +159,14 @@ export type BatchExpense = {
         rate?: number;
         job?: string;
       };
+  salesman?:
+    | string
+    | null
+    | {
+        _id: string;
+        name: string;
+        phone?: string;
+      };
   units?: number | null;
   /** Purchase qty for paint/tools/etc. */
   quantity?: number | null;

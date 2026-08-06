@@ -9,6 +9,7 @@ router.use(requireAuth);
 router.get("/search", controller.search);
 
 router.get("/receivables", controller.receivables);
+router.get("/received", controller.received);
 router.get("/payables", controller.payables);
 
 router.get("/statements/customers/:id", controller.customerStatement);
@@ -23,6 +24,7 @@ router.get("/export/expenses", controller.exportExpenses);
 router.get("/export/inventory", controller.exportInventory);
 router.get("/export/finance", controller.exportFinance);
 router.get("/export/receivables", controller.exportReceivables);
+router.get("/export/received", controller.exportReceived);
 router.get("/export/payables", controller.exportPayables);
 router.get("/export/statements/customers/:id", controller.exportCustomerStatement);
 router.get("/export/statements/suppliers/:id", controller.exportSupplierStatement);

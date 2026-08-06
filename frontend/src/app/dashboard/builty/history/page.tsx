@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, Pencil, Trash2 } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
-import { thisMonthRange, toDateInput } from "@/lib/date-range";
+import { toDateInput } from "@/lib/date-range";
 import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
 import {
   customerName,
@@ -54,7 +54,6 @@ export default function BuiltyHistoryPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const monthStart = thisMonthRange().from;
       const params: {
         q?: string;
         paymentStatus?: string;
@@ -64,9 +63,7 @@ export default function BuiltyHistoryPage() {
       if (q.trim()) params.q = q.trim();
       if (paymentStatus) params.paymentStatus = paymentStatus;
       if (dateFrom) params.dateFrom = dateFrom;
-      // Cap at day before this month so current-month rows stay on the main page
-      const cappedTo = dateTo && dateTo < monthStart ? dateTo : endOfPreviousMonth();
-      params.dateTo = cappedTo;
+      if (dateTo) params.dateTo = dateTo;
       setRows(await listBuilties(params));
     } catch (err) {
       toast.error(apiError(err, t("builty.loadFailed")));
@@ -137,7 +134,6 @@ export default function BuiltyHistoryPage() {
               <Input
                 type="date"
                 value={dateFrom}
-                max={endOfPreviousMonth()}
                 onChange={(e) => setDateFrom(e.target.value)}
               />
             </div>
@@ -146,7 +142,6 @@ export default function BuiltyHistoryPage() {
               <Input
                 type="date"
                 value={dateTo}
-                max={endOfPreviousMonth()}
                 onChange={(e) => setDateTo(e.target.value)}
               />
             </div>

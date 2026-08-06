@@ -185,6 +185,66 @@ export async function getReceivablesReport(params?: {
   return data.report;
 }
 
+export type ReceivedRecord = {
+  id: string;
+  type: string;
+  date: string;
+  reference: string;
+  method: string;
+  notes?: string;
+  partyId: string;
+  partyName: string;
+  partyPhone?: string;
+  groupId?: string;
+  builtyId?: string;
+  amount: number;
+  href: string;
+};
+
+export type ReceivedPartyRollup = {
+  partyId: string;
+  name: string;
+  phone?: string;
+  groupId?: string;
+  amount: number;
+  recordCount: number;
+};
+
+export type ReceivedGroupRollup = {
+  groupId: string;
+  name: string;
+  amount: number;
+  recordCount: number;
+  partyCount: number;
+};
+
+export type ReceivedReport = {
+  period: { from: string | null; to: string | null };
+  group?: { id: string; name: string } | null;
+  party?: { id: string; name: string } | null;
+  totals: {
+    totalReceived: number;
+    partyCount: number;
+    groupCount?: number;
+    recordCount: number;
+  };
+  byParty: ReceivedPartyRollup[];
+  byGroup?: ReceivedGroupRollup[];
+  records: ReceivedRecord[];
+};
+
+export async function getReceivedReport(params?: {
+  dateFrom?: string;
+  dateTo?: string;
+  groupId?: string;
+  customerId?: string;
+}) {
+  const { data } = await api.get<{ report: ReceivedReport }>("/reports/received", {
+    params,
+  });
+  return data.report;
+}
+
 export async function getPayablesReport(params?: { dateFrom?: string; dateTo?: string }) {
   const { data } = await api.get<{ report: PayablesReport }>("/reports/payables", { params });
   return data.report;
@@ -198,6 +258,7 @@ export type ExportKind =
   | "inventory"
   | "finance"
   | "receivables"
+  | "received"
   | "payables";
 
 export const COMBINED_REPORT_MODULES: Array<{ id: ExportKind; label: string }> = [
