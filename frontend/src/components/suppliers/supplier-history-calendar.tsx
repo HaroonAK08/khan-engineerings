@@ -195,19 +195,31 @@ export function SupplierHistoryCalendar({
       );
   }, [allRows, dateFrom, dateTo]);
 
+  /** Per-supplier carry-forward بقایا from before dateFrom. */
+  const openingBySupplier = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!dateFrom) return map;
+    for (const r of allRows) {
+      if (dayKey(new Date(r.entry.entryDate)) < dateFrom) {
+        map.set(supplierIdOf(r.entry), r.baqaya);
+      }
+    }
+    return map;
+  }, [allRows, dateFrom]);
+
+  const openingBalance = useMemo(() => {
+    if (!dateFrom) return 0;
+    if (supplierId) return openingBySupplier.get(supplierId) ?? 0;
+    let sum = 0;
+    for (const v of openingBySupplier.values()) sum = roundMoney(sum + v);
+    return sum;
+  }, [dateFrom, supplierId, openingBySupplier]);
+
   const totals = useMemo(() => {
     const totalDebit = roundMoney(filteredRows.reduce((s, r) => s + r.debit, 0));
     const totalCredit = roundMoney(filteredRows.reduce((s, r) => s + r.credit, 0));
-    // Closing baqaya: last line per supplier in filtered set, summed.
-    const lastBySup = new Map<string, number>();
-    for (const r of filteredRows) {
-      lastBySup.set(supplierIdOf(r.entry), r.baqaya);
-    }
     let closing = 0;
-    for (const v of lastBySup.values()) closing = roundMoney(closing + v);
-    // If date filter skips early lines, baqaya on rows is still full-history — fix for filter:
-    // Recompute filtered-only running when date filter is on.
-    if (dateFrom || dateTo) {
+    if (dateFrom) {
       const bySup = new Map<string, KhataRow[]>();
       for (const r of filteredRows) {
         const sid = supplierIdOf(r.entry);
@@ -215,21 +227,36 @@ export function SupplierHistoryCalendar({
         list.push(r);
         bySup.set(sid, list);
       }
-      closing = 0;
-      for (const [, rows] of bySup) {
-        let b = 0;
+      const seen = new Set<string>();
+      for (const [sid, rows] of bySup) {
+        seen.add(sid);
+        let b = openingBySupplier.get(sid) ?? 0;
         for (const r of rows) {
           b = roundMoney(b + r.debit - r.credit);
         }
         closing = roundMoney(closing + b);
       }
+      if (supplierId) {
+        if (!seen.has(supplierId)) {
+          closing = roundMoney(closing + (openingBySupplier.get(supplierId) ?? 0));
+        }
+      } else {
+        for (const [sid, open] of openingBySupplier) {
+          if (!seen.has(sid)) closing = roundMoney(closing + open);
+        }
+      }
+    } else {
+      const lastBySup = new Map<string, number>();
+      for (const r of filteredRows) {
+        lastBySup.set(supplierIdOf(r.entry), r.baqaya);
+      }
+      for (const v of lastBySup.values()) closing = roundMoney(closing + v);
     }
     return { totalDebit, totalCredit, closing };
-  }, [filteredRows, dateFrom, dateTo]);
+  }, [filteredRows, dateFrom, openingBySupplier, supplierId]);
 
-  // When date-filtered, show baqaya as running within filtered window only.
   const displayRows = useMemo(() => {
-    if (!dateFrom && !dateTo) return filteredRows;
+    if (!dateFrom) return filteredRows;
     const bySup = new Map<string, KhataRow[]>();
     for (const r of filteredRows) {
       const sid = supplierIdOf(r.entry);
@@ -238,8 +265,8 @@ export function SupplierHistoryCalendar({
       bySup.set(sid, list);
     }
     const out: KhataRow[] = [];
-    for (const [, rows] of bySup) {
-      let b = 0;
+    for (const [sid, rows] of bySup) {
+      let b = openingBySupplier.get(sid) ?? 0;
       for (const r of rows) {
         b = roundMoney(b + r.debit - r.credit);
         out.push({ ...r, baqaya: b });
@@ -250,7 +277,7 @@ export function SupplierHistoryCalendar({
         entryTime(a.entry) - entryTime(b.entry) ||
         a.entry._id.localeCompare(b.entry._id)
     );
-  }, [filteredRows, dateFrom, dateTo]);
+  }, [filteredRows, dateFrom, openingBySupplier]);
 
   const formTotal = useMemo(() => {
     const qty = Number(formQty);
@@ -260,6 +287,9 @@ export function SupplierHistoryCalendar({
   }, [formQty, formRate]);
 
   const hasDateFilter = Boolean(dateFrom || dateTo);
+  const showOpeningRow =
+    Boolean(dateFrom) &&
+    (displayRows.length > 0 || Math.abs(openingBalance) > 0.001);
 
   function materialLabel(type?: string) {
     return type === "daig" ? "D" : "S";
@@ -477,7 +507,7 @@ export function SupplierHistoryCalendar({
         </CardContent>
       </Card>
 
-      {displayRows.length === 0 ? (
+      {displayRows.length === 0 && !showOpeningRow ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-14">
             <p className="text-sm text-muted-foreground">
@@ -516,6 +546,29 @@ export function SupplierHistoryCalendar({
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {showOpeningRow ? (
+                  <TableRow className="bg-muted/40 hover:bg-muted/50">
+                    <TableCell className="font-data whitespace-nowrap text-muted-foreground">
+                      —
+                    </TableCell>
+                    {showSupplierNames ? (
+                      <TableCell className="text-muted-foreground">—</TableCell>
+                    ) : null}
+                    <TableCell className="whitespace-normal">
+                      <span className="text-sm text-muted-foreground">
+                        {t("statements.opening")}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-end text-muted-foreground">—</TableCell>
+                    <TableCell className="text-end text-muted-foreground">—</TableCell>
+                    <TableCell
+                      className={`font-data text-end whitespace-nowrap font-medium ${baqayaClass(openingBalance) || ""}`}
+                    >
+                      {formatBaqaya(openingBalance)}
+                    </TableCell>
+                    <TableCell />
+                  </TableRow>
+                ) : null}
                 {displayRows.map((row) => {
                   const e = row.entry;
                   const isPayment = e.type === "payment";
