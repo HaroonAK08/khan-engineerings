@@ -544,25 +544,41 @@ async function getExpenseBreakdown(query = {}) {
   };
 }
 
-async function getAvgMaterialRates() {
-  const rows = await Purchase.aggregate([
-    {
-      $group: {
-        _id: "$materialType",
-        spend: {
-          $sum: { $add: ["$totalAmount", { $ifNull: ["$freightAmount", 0] }] },
+async function getAvgMaterialRates(from, to) {
+  const match = {};
+  if (from || to) Object.assign(match, dateMatch("purchaseDate", from, to));
+
+  async function ratesFor(filter) {
+    const rows = await Purchase.aggregate([
+      ...(Object.keys(filter).length ? [{ $match: filter }] : []),
+      {
+        $group: {
+          _id: "$materialType",
+          spend: {
+            $sum: { $add: ["$totalAmount", { $ifNull: ["$freightAmount", 0] }] },
+          },
+          kg: { $sum: "$quantityKg" },
         },
-        kg: { $sum: "$quantityKg" },
       },
-    },
-  ]);
-  const rates = { scrap: 0, daig: 0 };
-  for (const row of rows) {
-    if (row._id === "scrap" || row._id === "daig") {
-      rates[row._id] = row.kg > 0 ? (row.spend || 0) / row.kg : 0;
+    ]);
+    const rates = { scrap: 0, daig: 0 };
+    for (const row of rows) {
+      if (row._id === "scrap" || row._id === "daig") {
+        rates[row._id] = row.kg > 0 ? (row.spend || 0) / row.kg : 0;
+      }
     }
+    return rates;
   }
-  return rates;
+
+  const period = await ratesFor(match);
+  const needsFallback = (!period.scrap || !period.daig);
+  const allTime = needsFallback ? await ratesFor({}) : period;
+  return {
+    scrap: period.scrap || allTime.scrap || 0,
+    daig: period.daig || allTime.daig || 0,
+    scrapSource: period.scrap ? "period" : "all_time",
+    daigSource: period.daig ? "period" : "all_time",
+  };
 }
 
 function emptyFamilyTotals() {
@@ -575,6 +591,7 @@ function emptyFamilyTotals() {
     overhead: 0,
     totalCost: 0,
     sellValue: 0,
+    unitsSold: 0,
     profit: 0,
     marginPct: null,
   };
@@ -596,9 +613,33 @@ async function getProductionMargin(query = {}) {
     .populate("product", "name sku family weightKg pricePerKg sellingPrice")
     .lean();
 
-  const rates = await getAvgMaterialRates();
+  const rates = await getAvgMaterialRates(from, to);
   const avgScrapRate = rates.scrap;
   const avgDaigRate = rates.daig;
+
+  const purchaseRows = await Purchase.aggregate([
+    { $match: dateMatch("purchaseDate", from, to) },
+    {
+      $group: {
+        _id: "$materialType",
+        kg: { $sum: "$quantityKg" },
+        amount: {
+          $sum: { $add: ["$totalAmount", { $ifNull: ["$freightAmount", 0] }] },
+        },
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+  const purchasedByType = { scrap: { kg: 0, amount: 0, count: 0 }, daig: { kg: 0, amount: 0, count: 0 } };
+  for (const row of purchaseRows) {
+    if (row._id === "scrap" || row._id === "daig") {
+      purchasedByType[row._id] = {
+        kg: roundKg(row.kg || 0),
+        amount: roundMoney(row.amount || 0),
+        count: row.count || 0,
+      };
+    }
+  }
 
   const byProductMap = new Map();
 
@@ -708,47 +749,73 @@ async function getProductionMargin(query = {}) {
     }
   }
 
-  // Quantity-weighted avg sell price from actual builty lines
-  // (same product sold to different parties at different prices).
-  async function avgSellByProduct(dateFilter) {
-    if (!productIds.length) return {};
-    const objectIds = productIds
-      .filter((id) => mongoose.isValidObjectId(id))
-      .map((id) => new mongoose.Types.ObjectId(id));
-    if (!objectIds.length) return {};
-
-    const pipeline = [];
-    if (dateFilter) pipeline.push({ $match: dateFilter });
-    pipeline.push(
+  // Actual builty sales this period (by product + by family).
+  async function salesInPeriod() {
+    const pipeline = [
+      { $match: dateMatch("builtyDate", from, to) },
       { $unwind: "$items" },
-      { $match: { "items.product": { $in: objectIds }, "items.quantity": { $gt: 0 } } },
+      { $match: { "items.quantity": { $gt: 0 } } },
+      {
+        $lookup: {
+          from: "products",
+          localField: "items.product",
+          foreignField: "_id",
+          as: "productDoc",
+        },
+      },
+      { $unwind: { path: "$productDoc", preserveNullAndEmptyArrays: true } },
       {
         $group: {
-          _id: "$items.product",
+          _id: {
+            productId: "$items.product",
+            family: { $ifNull: ["$productDoc.family", "hub"] },
+          },
           revenue: { $sum: "$items.lineTotal" },
           units: { $sum: "$items.quantity" },
+          builtyIds: { $addToSet: "$_id" },
         },
-      }
-    );
+      },
+    ];
     const rows = await Builty.aggregate(pipeline);
-    const map = {};
+    const byProduct = {};
+    const byFamily = {
+      hub: { revenue: 0, units: 0, builtyIds: new Set() },
+      drum: { revenue: 0, units: 0, builtyIds: new Set() },
+    };
+    const allBuiltyIds = new Set();
     for (const r of rows) {
-      const id = String(r._id);
+      const pid = r._id?.productId ? String(r._id.productId) : "";
+      const fam = r._id?.family === "drum" ? "drum" : "hub";
+      const revenue = r.revenue || 0;
       const units = r.units || 0;
-      map[id] = {
-        avgSellPerPiece: units > 0 ? (r.revenue || 0) / units : 0,
-        unitsSold: units,
-        revenue: r.revenue || 0,
-      };
+      if (pid) {
+        byProduct[pid] = {
+          revenue,
+          units,
+          avgSellPerPiece: units > 0 ? revenue / units : 0,
+        };
+      }
+      byFamily[fam].revenue += revenue;
+      byFamily[fam].units += units;
+      for (const id of r.builtyIds || []) {
+        byFamily[fam].builtyIds.add(String(id));
+        allBuiltyIds.add(String(id));
+      }
     }
-    return map;
+    return {
+      byProduct,
+      hubSales: roundMoney(byFamily.hub.revenue),
+      drumSales: roundMoney(byFamily.drum.revenue),
+      hubUnits: byFamily.hub.units,
+      drumUnits: byFamily.drum.units,
+      totalSales: roundMoney(byFamily.hub.revenue + byFamily.drum.revenue),
+      totalUnits: byFamily.hub.units + byFamily.drum.units,
+      builtyCount: allBuiltyIds.size,
+    };
   }
 
-  const periodSales = await avgSellByProduct(dateMatch("builtyDate", from, to));
-  const allTimeSales =
-    productIds.some((id) => !periodSales[id] || !periodSales[id].unitsSold)
-      ? await avgSellByProduct(null)
-      : {};
+  const periodSalesAgg = await salesInPeriod();
+  const periodSales = periodSalesAgg.byProduct;
 
   const expenseByCategory = await BatchExpense.aggregate([
     { $match: dateMatch("expenseDate", from, to) },
@@ -773,22 +840,20 @@ async function getProductionMargin(query = {}) {
       const totalCost = materialCost + overhead;
 
       const period = periodSales[row.productId];
-      const allTime = allTimeSales[row.productId];
+      const unitsSoldPeriod = period?.units || 0;
       let sellPricePerPiece = 0;
       let sellPriceSource = "none";
-      if (period?.unitsSold > 0) {
+      if (unitsSoldPeriod > 0) {
         sellPricePerPiece = period.avgSellPerPiece;
         sellPriceSource = "period_sales";
-      } else if (allTime?.unitsSold > 0) {
-        sellPricePerPiece = allTime.avgSellPerPiece;
-        sellPriceSource = "all_time_sales";
       } else if (row.catalogSellPrice > 0) {
         sellPricePerPiece = row.catalogSellPrice;
         sellPriceSource = "catalog";
       }
 
       sellPricePerPiece = roundMoney(sellPricePerPiece);
-      const sellValue = row.pieces * sellPricePerPiece;
+      // Actual billed sales for this product in the period (not produced × avg).
+      const sellValue = roundMoney(period?.revenue || 0);
       const profit = sellValue - totalCost;
       const costPerPiece = row.pieces > 0 ? totalCost / row.pieces : 0;
       const profitPerPiece = sellPricePerPiece - costPerPiece;
@@ -811,8 +876,8 @@ async function getProductionMargin(query = {}) {
         costPerPiece: roundMoney(costPerPiece),
         sellPricePerPiece,
         sellPriceSource,
-        unitsSoldPeriod: period?.unitsSold || 0,
-        sellValue: roundMoney(sellValue),
+        unitsSoldPeriod,
+        sellValue,
         profit: roundMoney(profit),
         profitPerPiece: roundMoney(profitPerPiece),
         marginPct: marginPct != null ? roundMoney(marginPct) : null,
@@ -831,9 +896,13 @@ async function getProductionMargin(query = {}) {
     t.materialCost = roundMoney(t.materialCost + row.materialCost);
     t.overhead = roundMoney(t.overhead + row.overhead);
     t.totalCost = roundMoney(t.totalCost + row.totalCost);
-    t.sellValue = roundMoney(t.sellValue + row.sellValue);
-    t.profit = roundMoney(t.profit + row.profit);
   }
+  byFamily.hub.sellValue = periodSalesAgg.hubSales;
+  byFamily.drum.sellValue = periodSalesAgg.drumSales;
+  byFamily.hub.unitsSold = periodSalesAgg.hubUnits;
+  byFamily.drum.unitsSold = periodSalesAgg.drumUnits;
+  byFamily.hub.profit = roundMoney(byFamily.hub.sellValue - byFamily.hub.totalCost);
+  byFamily.drum.profit = roundMoney(byFamily.drum.sellValue - byFamily.drum.totalCost);
   for (const key of Object.keys(byFamily)) {
     const t = byFamily[key];
     t.marginPct = t.sellValue > 0 ? roundMoney((t.profit / t.sellValue) * 100) : null;
@@ -847,7 +916,7 @@ async function getProductionMargin(query = {}) {
   const totalMaterialCost = roundMoney(totalScrapCost + totalDaigCost);
   const totalOverhead = roundMoney(overheadTotal);
   const totalProductionCost = roundMoney(totalMaterialCost + totalOverhead);
-  const totalSellValue = roundMoney(productRows.reduce((s, r) => s + r.sellValue, 0));
+  const totalSellValue = periodSalesAgg.totalSales;
   const totalProfit = roundMoney(totalSellValue - totalProductionCost);
 
   const expenseBreakdown = [
@@ -872,11 +941,18 @@ async function getProductionMargin(query = {}) {
       .filter((c) => c.amount > 0),
   ].filter((e) => e.amount > 0);
 
+  const purchasedScrap = purchasedByType.scrap;
+  const purchasedDaig = purchasedByType.daig;
+  const purchasedTotalKg = roundKg(purchasedScrap.kg + purchasedDaig.kg);
+  const purchasedTotalAmount = roundMoney(purchasedScrap.amount + purchasedDaig.amount);
+
   return {
     period: { from, to },
     rates: {
       avgScrapRate: roundMoney(avgScrapRate),
       avgDaigRate: roundMoney(avgDaigRate),
+      scrapSource: rates.scrapSource,
+      daigSource: rates.daigSource,
     },
     summary: {
       pieces: totalPieces,
@@ -889,8 +965,35 @@ async function getProductionMargin(query = {}) {
       overhead: totalOverhead,
       totalCost: totalProductionCost,
       sellValue: totalSellValue,
+      unitsSold: periodSalesAgg.totalUnits,
+      hubSales: periodSalesAgg.hubSales,
+      drumSales: periodSalesAgg.drumSales,
+      hubUnits: periodSalesAgg.hubUnits,
+      drumUnits: periodSalesAgg.drumUnits,
+      builtyCount: periodSalesAgg.builtyCount,
       profit: totalProfit,
       marginPct: totalSellValue > 0 ? roundMoney((totalProfit / totalSellValue) * 100) : null,
+    },
+    purchasedVsUsed: {
+      purchased: {
+        scrapKg: purchasedScrap.kg,
+        daigKg: purchasedDaig.kg,
+        totalKg: purchasedTotalKg,
+        scrapAmount: purchasedScrap.amount,
+        daigAmount: purchasedDaig.amount,
+        totalAmount: purchasedTotalAmount,
+        scrapCount: purchasedScrap.count,
+        daigCount: purchasedDaig.count,
+        purchaseCount: purchasedScrap.count + purchasedDaig.count,
+      },
+      used: {
+        scrapKg: totalScrapKg,
+        daigKg: totalDaigKg,
+        totalKg: roundKg(totalScrapKg + totalDaigKg),
+        scrapAmount: totalScrapCost,
+        daigAmount: totalDaigCost,
+        totalAmount: totalMaterialCost,
+      },
     },
     byFamily,
     products: productRows,

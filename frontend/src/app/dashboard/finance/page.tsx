@@ -33,6 +33,7 @@ function FamilyCard({
   data: ProductionMarginFamily;
   labels: {
     pieces: string;
+    unitsSold: string;
     material: string;
     overhead: string;
     sellValue: string;
@@ -51,6 +52,12 @@ function FamilyCard({
             {labels.pieces}
           </p>
           <p className="font-data mt-1 text-lg">{data.pieces}</p>
+        </div>
+        <div>
+          <p className="font-data text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
+            {labels.unitsSold}
+          </p>
+          <p className="font-data mt-1 text-lg">{data.unitsSold ?? 0}</p>
         </div>
         <div>
           <p className="font-data text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
@@ -118,6 +125,7 @@ export default function ProductionMarginPage() {
 
   const familyLabels = {
     pieces: t("prodMargin.pieces"),
+    unitsSold: t("prodMargin.unitsSold"),
     material: t("prodMargin.materialCost"),
     overhead: t("prodMargin.overhead"),
     sellValue: t("prodMargin.sellValue"),
@@ -194,9 +202,15 @@ export default function ProductionMarginPage() {
                 accent: "bg-chart-2",
               },
               {
-                label: t("prodMargin.materialCost"),
-                value: formatMoney(summary.materialCost),
-                hint: t("prodMargin.scrapPlusDaig"),
+                label: t("prodMargin.materialPurchased"),
+                value: formatMoney(report.purchasedVsUsed?.purchased.totalAmount ?? 0),
+                hint: `${formatKg(report.purchasedVsUsed?.purchased.totalKg ?? 0)} · ${t("prodMargin.purchasedHint")}`,
+                accent: "bg-primary",
+              },
+              {
+                label: t("prodMargin.materialUsed"),
+                value: formatMoney(report.purchasedVsUsed?.used.totalAmount ?? summary.materialCost),
+                hint: `${formatKg(report.purchasedVsUsed?.used.totalKg ?? summary.scrapKg + summary.daigKg)} · ${t("prodMargin.usedHint")}`,
                 accent: "bg-chart-5",
               },
               {
@@ -208,7 +222,10 @@ export default function ProductionMarginPage() {
               {
                 label: t("prodMargin.sellValue"),
                 value: formatMoney(summary.sellValue),
-                hint: t("prodMargin.catalogValue"),
+                hint: t("prodMargin.sellCountHint", {
+                  units: String(summary.unitsSold ?? 0),
+                  builties: String(summary.builtyCount ?? 0),
+                }),
                 accent: "bg-chart-3",
               },
               {
@@ -249,6 +266,105 @@ export default function ProductionMarginPage() {
               labels={familyLabels}
             />
           </div>
+
+          {report.purchasedVsUsed && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-nameplate text-sm">
+                  {t("prodMargin.purchasedVsUsed")}
+                </CardTitle>
+                <CardDescription>{t("prodMargin.purchasedVsUsedDesc")}</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+                  <span className="font-data">
+                    {t("prodMargin.avgScrapRate")}: {formatMoney(report.rates.avgScrapRate)}/kg
+                    <span className="ml-1 opacity-70">
+                      (
+                      {report.rates.scrapSource === "all_time"
+                        ? t("prodMargin.rateAllTime")
+                        : t("prodMargin.rateThisPeriod")}
+                      )
+                    </span>
+                  </span>
+                  <span className="font-data">
+                    {t("prodMargin.avgDaigRate")}: {formatMoney(report.rates.avgDaigRate)}/kg
+                    <span className="ml-1 opacity-70">
+                      (
+                      {report.rates.daigSource === "all_time"
+                        ? t("prodMargin.rateAllTime")
+                        : t("prodMargin.rateThisPeriod")}
+                      )
+                    </span>
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t("prodMargin.material")}</TableHead>
+                        <TableHead className="text-right">{t("prodMargin.purchased")} · {t("prodMargin.kg")}</TableHead>
+                        <TableHead className="text-right">{t("prodMargin.purchased")} · {t("prodMargin.amount")}</TableHead>
+                        <TableHead className="text-right">{t("prodMargin.used")} · {t("prodMargin.kg")}</TableHead>
+                        <TableHead className="text-right">{t("prodMargin.used")} · {t("prodMargin.amount")}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      <TableRow>
+                        <TableCell>{t("prodMargin.scrap")}</TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {formatKg(report.purchasedVsUsed.purchased.scrapKg)}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {formatMoney(report.purchasedVsUsed.purchased.scrapAmount)}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {formatKg(report.purchasedVsUsed.used.scrapKg)}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {formatMoney(report.purchasedVsUsed.used.scrapAmount)}
+                        </TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell>{t("prodMargin.daig")}</TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {formatKg(report.purchasedVsUsed.purchased.daigKg)}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {formatMoney(report.purchasedVsUsed.purchased.daigAmount)}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {formatKg(report.purchasedVsUsed.used.daigKg)}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {formatMoney(report.purchasedVsUsed.used.daigAmount)}
+                        </TableCell>
+                      </TableRow>
+                      <TableRow className="font-medium">
+                        <TableCell>{t("prodMargin.total")}</TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {formatKg(report.purchasedVsUsed.purchased.totalKg)}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {formatMoney(report.purchasedVsUsed.purchased.totalAmount)}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {formatKg(report.purchasedVsUsed.used.totalKg)}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {formatMoney(report.purchasedVsUsed.used.totalAmount)}
+                        </TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
+                <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+                  <p>{t("prodMargin.purchasedHint")}</p>
+                  <p>{t("prodMargin.usedHint")}</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader>
@@ -292,32 +408,54 @@ export default function ProductionMarginPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
+          <Card className="gap-0 overflow-visible py-0">
+            <CardHeader className="border-b px-4 py-3 sm:px-5">
               <CardTitle className="text-nameplate text-sm">
                 {t("prodMargin.byProduct")}
               </CardTitle>
             </CardHeader>
-            <CardContent className="px-0 overflow-x-auto">
+            <CardContent className="px-0 pt-0">
               {report.products.length === 0 ? (
                 <p className="px-6 py-8 text-sm text-muted-foreground">
                   {t("prodMargin.noProduction")}
                 </p>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{t("common.product")}</TableHead>
-                      <TableHead className="text-right">{t("prodMargin.pieces")}</TableHead>
-                      <TableHead className="text-right">{t("prodMargin.materialKg")}</TableHead>
-                      <TableHead className="text-right">{t("prodMargin.materialCost")}</TableHead>
-                      <TableHead className="text-right">{t("prodMargin.overhead")}</TableHead>
-                      <TableHead className="text-right">{t("prodMargin.totalCost")}</TableHead>
-                      <TableHead className="text-right">{t("prodMargin.costPerPiece")}</TableHead>
-                      <TableHead className="text-right">{t("prodMargin.sellPerPiece")}</TableHead>
-                      <TableHead className="text-right">{t("prodMargin.sellValue")}</TableHead>
-                      <TableHead className="text-right">{t("prodMargin.netProfit")}</TableHead>
-                      <TableHead className="text-right">{t("prodMargin.margin")}</TableHead>
+                <Table containerClassName="overflow-visible">
+                  <TableHeader className="sticky top-0 z-20 shadow-md [&_tr]:border-b-0">
+                    <TableRow className="hover:bg-transparent bg-primary">
+                      <TableHead className="bg-primary text-primary-foreground font-semibold">
+                        {t("common.product")}
+                      </TableHead>
+                      <TableHead className="bg-primary text-right text-primary-foreground font-semibold">
+                        {t("prodMargin.pieces")}
+                      </TableHead>
+                      <TableHead className="bg-primary text-right text-primary-foreground font-semibold">
+                        {t("prodMargin.materialKg")}
+                      </TableHead>
+                      <TableHead className="bg-primary text-right text-primary-foreground font-semibold">
+                        {t("prodMargin.materialCost")}
+                      </TableHead>
+                      <TableHead className="bg-primary text-right text-primary-foreground font-semibold">
+                        {t("prodMargin.overhead")}
+                      </TableHead>
+                      <TableHead className="bg-primary text-right text-primary-foreground font-semibold">
+                        {t("prodMargin.totalCost")}
+                      </TableHead>
+                      <TableHead className="bg-primary text-right text-primary-foreground font-semibold">
+                        {t("prodMargin.costPerPiece")}
+                      </TableHead>
+                      <TableHead className="bg-primary text-right text-primary-foreground font-semibold">
+                        {t("prodMargin.sellPerPiece")}
+                      </TableHead>
+                      <TableHead className="bg-primary text-right text-primary-foreground font-semibold">
+                        {t("prodMargin.sellValue")}
+                      </TableHead>
+                      <TableHead className="bg-primary text-right text-primary-foreground font-semibold">
+                        {t("prodMargin.netProfit")}
+                      </TableHead>
+                      <TableHead className="bg-primary text-right text-primary-foreground font-semibold">
+                        {t("prodMargin.margin")}
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>

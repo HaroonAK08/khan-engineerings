@@ -128,6 +128,7 @@ export type ProductionMarginFamily = {
   overhead: number;
   totalCost: number;
   sellValue: number;
+  unitsSold?: number;
   profit: number;
   marginPct: number | null;
 };
@@ -159,10 +160,42 @@ export type ProductionMarginProduct = {
 
 export type ProductionMarginReport = {
   period: { from: string; to: string };
-  rates: { avgScrapRate: number; avgDaigRate: number };
+  rates: {
+    avgScrapRate: number;
+    avgDaigRate: number;
+    scrapSource?: "period" | "all_time";
+    daigSource?: "period" | "all_time";
+  };
   summary: ProductionMarginFamily & {
     scrapCost: number;
     daigCost: number;
+    unitsSold?: number;
+    hubSales?: number;
+    drumSales?: number;
+    hubUnits?: number;
+    drumUnits?: number;
+    builtyCount?: number;
+  };
+  purchasedVsUsed: {
+    purchased: {
+      scrapKg: number;
+      daigKg: number;
+      totalKg: number;
+      scrapAmount: number;
+      daigAmount: number;
+      totalAmount: number;
+      scrapCount: number;
+      daigCount: number;
+      purchaseCount: number;
+    };
+    used: {
+      scrapKg: number;
+      daigKg: number;
+      totalKg: number;
+      scrapAmount: number;
+      daigAmount: number;
+      totalAmount: number;
+    };
   };
   byFamily: { hub: ProductionMarginFamily; drum: ProductionMarginFamily };
   products: ProductionMarginProduct[];
