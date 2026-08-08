@@ -41,10 +41,15 @@ const stickyGroupHead = (withParty: boolean) =>
     withParty ? "left-44" : "left-0"
   );
 
+const plRowClass = (loss: boolean) =>
+  loss
+    ? "bg-red-600 text-white hover:bg-red-600"
+    : "bg-emerald-600 text-white hover:bg-emerald-600";
+
 const stickyPartyCell = (loss: boolean) =>
   cn(
-    "sticky left-0 z-20 w-44 min-w-44 max-w-44 truncate font-medium shadow-[4px_0_8px_-4px_rgba(0,0,0,0.2)]",
-    loss ? "bg-red-50 dark:bg-red-950" : "bg-emerald-50 dark:bg-emerald-950"
+    "sticky left-0 z-20 w-44 min-w-44 max-w-44 truncate font-medium text-white shadow-[4px_0_8px_-4px_rgba(0,0,0,0.2)]",
+    loss ? "bg-red-600" : "bg-emerald-600"
   );
 
 const stickyGroupCell = (withParty: boolean, loss: boolean, tint?: "profit" | "loss" | "none") =>
@@ -52,9 +57,9 @@ const stickyGroupCell = (withParty: boolean, loss: boolean, tint?: "profit" | "l
     "sticky z-10 w-40 min-w-40 max-w-40 overflow-hidden shadow-[4px_0_8px_-4px_rgba(0,0,0,0.15)]",
     withParty ? "left-44" : "left-0",
     tint === "loss" || loss
-      ? "bg-red-50 dark:bg-red-950"
+      ? "bg-red-600 text-white"
       : tint === "profit"
-        ? "bg-emerald-50 dark:bg-emerald-950"
+        ? "bg-emerald-600 text-white"
         : "bg-background"
   );
 
@@ -150,14 +155,22 @@ function sumChannelGroups(
   return row;
 }
 
-function PlCell({ value, perKg: perKgValue }: { value: number; perKg?: number | null }) {
+function PlCell({
+  value,
+  perKg: perKgValue,
+  solid,
+}: {
+  value: number;
+  perKg?: number | null;
+  solid?: boolean;
+}) {
   const loss = value < 0;
   return (
     <>
       <TableCell
         className={cn(
           "font-data text-right text-xs font-semibold",
-          loss ? "text-destructive" : "text-chart-3"
+          solid ? "text-white" : loss ? "text-destructive" : "text-chart-3"
         )}
       >
         {formatMoney(value)}
@@ -166,7 +179,7 @@ function PlCell({ value, perKg: perKgValue }: { value: number; perKg?: number | 
         <TableCell
           className={cn(
             "font-data text-right text-xs",
-            loss ? "text-destructive" : "text-chart-3"
+            solid ? "text-white/90" : loss ? "text-destructive" : "text-chart-3"
           )}
         >
           {moneyOrDash(perKgValue)}
@@ -203,16 +216,14 @@ function RowCells({
           <Badge
             variant="secondary"
             className={cn(
-              "font-data shrink-0 text-[9px]",
-              row.salesmanChannel
-                ? "border-amber-400/40 bg-amber-500/20 text-amber-900 dark:text-amber-100"
-                : "border-sky-400/40 bg-sky-500/20 text-sky-900 dark:text-sky-100"
+              "font-data shrink-0 border-white/30 bg-white/20 text-[9px] text-white",
+              row.salesmanChannel ? "border-amber-200/50 bg-amber-300/30" : "border-sky-200/50 bg-sky-300/30"
             )}
           >
             {row.salesmanChannel ? "PE" : "IK"}
           </Badge>
           {row.partyCount != null ? (
-            <span className="shrink-0 text-xs text-muted-foreground">· {row.partyCount}</span>
+            <span className="shrink-0 text-xs text-white/80">· {row.partyCount}</span>
           ) : null}
         </div>
       </TableCell>
@@ -258,9 +269,9 @@ function RowCells({
       <TableCell className={cn("font-data text-right text-xs", strong && "font-semibold")}>
         {formatMoney(row.totalMfg)}
       </TableCell>
-      <PlCell value={row.hubProfit} perKg={row.hubProfitPerKg} />
-      <PlCell value={row.drumProfit} perKg={row.drumProfitPerKg} />
-      <PlCell value={row.profit} perKg={row.profitPerKg} />
+      <PlCell value={row.hubProfit} perKg={row.hubProfitPerKg} solid />
+      <PlCell value={row.drumProfit} perKg={row.drumProfitPerKg} solid />
+      <PlCell value={row.profit} perKg={row.profitPerKg} solid />
     </>
   );
 }
@@ -480,14 +491,51 @@ export default function PartySalesMarginPage() {
                 accent: isProfit ? "text-chart-3" : "text-destructive",
               },
             ].map((card) => (
-              <Card key={card.label} className="py-0">
+              <Card
+                key={card.label}
+                className={cn(
+                  "py-0",
+                  card.accent?.includes("text-chart-3") &&
+                    "border-emerald-600/40 bg-emerald-600 text-white",
+                  card.accent?.includes("text-destructive") &&
+                    "border-red-600/40 bg-red-600 text-white"
+                )}
+              >
                 <CardContent className="p-4">
-                  <p className="font-data text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
+                  <p
+                    className={cn(
+                      "font-data text-[10px] tracking-[0.12em] uppercase",
+                      card.accent?.includes("text-chart-3") ||
+                        card.accent?.includes("text-destructive")
+                        ? "text-white/80"
+                        : "text-muted-foreground"
+                    )}
+                  >
                     {card.label}
                   </p>
-                  <p className={cn("font-data mt-1 text-xl", card.accent)}>{card.value}</p>
+                  <p
+                    className={cn(
+                      "font-data mt-1 text-xl",
+                      card.accent?.includes("text-chart-3") ||
+                        card.accent?.includes("text-destructive")
+                        ? "text-white"
+                        : card.accent
+                    )}
+                  >
+                    {card.value}
+                  </p>
                   {card.hint ? (
-                    <p className="mt-1 text-xs text-muted-foreground">{card.hint}</p>
+                    <p
+                      className={cn(
+                        "mt-1 text-xs",
+                        card.accent?.includes("text-chart-3") ||
+                          card.accent?.includes("text-destructive")
+                          ? "text-white/75"
+                          : "text-muted-foreground"
+                      )}
+                    >
+                      {card.hint}
+                    </p>
                   ) : null}
                 </CardContent>
               </Card>
@@ -711,7 +759,7 @@ export default function PartySalesMarginPage() {
                       {powerGroups.map((g) => (
                         <TableRow
                           key={g.groupId || g.groupName}
-                          className={g.profit < 0 ? "bg-destructive/5" : "bg-chart-3/5"}
+                          className={plRowClass(g.profit < 0)}
                         >
                           <RowCells row={g} showParty={false} />
                         </TableRow>
@@ -741,11 +789,7 @@ export default function PartySalesMarginPage() {
                           </span>
                         </TableCell>
                       </TableRow>
-                      <TableRow
-                        className={
-                          ikMerged.profit < 0 ? "bg-destructive/5" : "bg-chart-3/5"
-                        }
-                      >
+                      <TableRow className={plRowClass(ikMerged.profit < 0)}>
                         <RowCells row={ikMerged} showParty={false} strong />
                       </TableRow>
                     </>
@@ -805,9 +849,7 @@ export default function PartySalesMarginPage() {
                     {parties.map((p) => (
                       <TableRow
                         key={p.partyId}
-                        className={
-                          p.profit < 0 ? "bg-destructive/5" : "bg-chart-3/5"
-                        }
+                        className={plRowClass(p.profit < 0)}
                       >
                         <RowCells row={p} showParty />
                       </TableRow>

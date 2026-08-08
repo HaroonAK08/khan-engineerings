@@ -8,7 +8,7 @@ import type { MessageKey } from "@/lib/i18n/messages";
 
 const LINKS: Array<{ href: string; labelKey: MessageKey; exact?: boolean }> = [
   {
-    href: "/dashboard/finance",
+    href: "/dashboard",
     labelKey: "financeSubnav.productionMargin",
     exact: true,
   },

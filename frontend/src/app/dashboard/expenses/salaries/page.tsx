@@ -65,15 +65,69 @@ function paymentWorkerId(e: BatchExpense) {
   return typeof e.worker === "string" ? e.worker : e.worker._id;
 }
 
-/** Drum payroll groups: Idrees / Amin / Ashraf / Shakeel → Khrad; everyone else → Molder */
+function normalizeWorkerName(name: string) {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[\/_,.-]+/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function workerFirst(name: string) {
+  return normalizeWorkerName(name).split(" ")[0] || "";
+}
+
+function workerHasToken(name: string, token: string) {
+  return normalizeWorkerName(name).split(" ").includes(token.toLowerCase());
+}
+
+function isJavedWarma(w: Worker) {
+  const n = normalizeWorkerName(w.name);
+  return workerFirst(n) === "javed" && (workerHasToken(n, "warma") || n === "javed");
+}
+
+/** Drum Khrad: Idrees / Amin / Ashraf / Shakeel + Javed (40%). */
 const DRUM_KHRAD_FIRST_NAMES = new Set(["idrees", "idris", "amin", "ashraf", "shakeel"]);
 
-type DrumGroupId = "khrad" | "molder";
+type LabourGroupId = "khrad" | "casting" | "others";
 
 function isDrumKhradWorker(w: Worker) {
-  const first = w.name.trim().toLowerCase().split(/\s+/)[0] || "";
+  if (isJavedWarma(w)) return true;
+  const first = workerFirst(w.name);
   return DRUM_KHRAD_FIRST_NAMES.has(first);
 }
+
+function isHubKhradWorker(w: Worker) {
+  if (isJavedWarma(w)) return true;
+  const first = workerFirst(w.name);
+  if (first === "abbas" || first === "abdullah" || first === "afzal" || first === "ejaz") {
+    return true;
+  }
+  if (first === "ramzan" && workerHasToken(w.name, "khrad")) return true;
+  if (first === "sajid" && workerHasToken(w.name, "khrad")) return true;
+  return false;
+}
+
+function isHubCastingWorker(w: Worker) {
+  const first = workerFirst(w.name);
+  if (first === "amin" && (workerHasToken(w.name, "4man") || workerHasToken(w.name, "4"))) {
+    return true;
+  }
+  if (first === "amir" && workerHasToken(w.name, "molder")) return true;
+  if (first === "banaras" || first === "ikram" || first === "madad" || first === "shahbaz") {
+    return true;
+  }
+  return false;
+}
+
+function classifyHubLabour(w: Worker): LabourGroupId {
+  if (isHubKhradWorker(w)) return "khrad";
+  if (isHubCastingWorker(w)) return "casting";
+  return "others";
+}
+
+const JAVED_HUB_SHARE = 0.6;
+const JAVED_DRUM_SHARE = 0.4;
 
 function accountingMonthKey(dateFrom: string, dateTo: string) {
   if (!dateFrom || !dateTo) return null;
@@ -140,7 +194,7 @@ export default function SalariesPage() {
   const [editJob, setEditJob] = useState("");
   const [editUnitLabel, setEditUnitLabel] = useState("");
   const [editScope, setEditScope] = useState<ExpenseScope>("common");
-  const [openDrumGroup, setOpenDrumGroup] = useState<DrumGroupId | null>(null);
+  const [openLabourGroup, setOpenLabourGroup] = useState<LabourGroupId | null>(null);
   const [payrollMonth, setPayrollMonth] = useState("");
   const [payrollFrom, setPayrollFrom] = useState("");
   const [payrollTo, setPayrollTo] = useState("");
@@ -246,29 +300,49 @@ export default function SalariesPage() {
     return () => clearTimeout(t);
   }, [load]);
 
-  const periodTotal = useMemo(
-    () =>
-      payments
-        .filter((e) => matchesExpenseScope(e.scope, scopeFilter))
-        .reduce((s, e) => s + e.amount, 0),
-    [payments, scopeFilter]
-  );
+  const periodTotal = useMemo(() => {
+    const workerById = new Map(workers.map((w) => [w._id, w]));
+    let total = 0;
+    for (const e of payments) {
+      const id = paymentWorkerId(e);
+      const worker = id ? workerById.get(id) : undefined;
+      const javed = worker ? isJavedWarma(worker) : false;
+      if (javed && (scopeFilter === "hub" || scopeFilter === "drum")) {
+        const share = scopeFilter === "hub" ? JAVED_HUB_SHARE : JAVED_DRUM_SHARE;
+        total += (e.amount || 0) * share;
+        continue;
+      }
+      if (!matchesExpenseScope(e.scope, scopeFilter)) continue;
+      total += e.amount || 0;
+    }
+    return total;
+  }, [payments, scopeFilter, workers]);
 
   const paidByWorker = useMemo(() => {
     const map = new Map<string, number>();
+    const workerById = new Map(workers.map((w) => [w._id, w]));
     for (const e of payments) {
-      if (!matchesExpenseScope(e.scope, scopeFilter)) continue;
       const id = paymentWorkerId(e);
       if (!id) continue;
+      const worker = workerById.get(id);
+      const javed = worker ? isJavedWarma(worker) : false;
+      if (javed && (scopeFilter === "hub" || scopeFilter === "drum")) {
+        const share = scopeFilter === "hub" ? JAVED_HUB_SHARE : JAVED_DRUM_SHARE;
+        map.set(id, (map.get(id) || 0) + (e.amount || 0) * share);
+        continue;
+      }
+      if (!matchesExpenseScope(e.scope, scopeFilter)) continue;
       map.set(id, (map.get(id) || 0) + (e.amount || 0));
     }
     return map;
-  }, [payments, scopeFilter]);
+  }, [payments, scopeFilter, workers]);
 
-  const scopedWorkers = useMemo(
-    () => workers.filter((w) => matchesExpenseScope(w.scope, scopeFilter)),
-    [workers, scopeFilter]
-  );
+  const scopedWorkers = useMemo(() => {
+    return workers.filter((w) => {
+      if (isJavedWarma(w) && (scopeFilter === "hub" || scopeFilter === "drum")) return true;
+      return matchesExpenseScope(w.scope, scopeFilter);
+    });
+  }, [workers, scopeFilter]);
 
   const producedKgCard = useMemo(() => {
     if (scopeFilter === "hub") {
@@ -294,28 +368,55 @@ export default function SalariesPage() {
     );
   }, [scopedWorkers, search]);
 
-  const drumGroups = useMemo(() => {
-    if (scopeFilter !== "drum") return null;
-    const khrad = filteredWorkers.filter(isDrumKhradWorker);
-    const molder = filteredWorkers.filter((w) => !isDrumKhradWorker(w));
-    return [
-      {
-        id: "khrad" as const,
-        label: t("sal.groupKhrad"),
-        workers: khrad,
-        paid: khrad.reduce((s, w) => s + (paidByWorker.get(w._id) || 0), 0),
-      },
-      {
-        id: "molder" as const,
-        label: t("sal.groupMolder"),
-        workers: molder,
-        paid: molder.reduce((s, w) => s + (paidByWorker.get(w._id) || 0), 0),
-      },
-    ];
+  const labourGroups = useMemo(() => {
+    if (scopeFilter === "drum") {
+      const khrad = filteredWorkers.filter(isDrumKhradWorker);
+      const casting = filteredWorkers.filter((w) => !isDrumKhradWorker(w));
+      return [
+        {
+          id: "khrad" as const,
+          label: t("sal.groupKhrad"),
+          workers: khrad,
+          paid: khrad.reduce((s, w) => s + (paidByWorker.get(w._id) || 0), 0),
+        },
+        {
+          id: "casting" as const,
+          label: t("sal.groupMolder"),
+          workers: casting,
+          paid: casting.reduce((s, w) => s + (paidByWorker.get(w._id) || 0), 0),
+        },
+      ];
+    }
+    if (scopeFilter === "hub") {
+      const khrad = filteredWorkers.filter((w) => classifyHubLabour(w) === "khrad");
+      const casting = filteredWorkers.filter((w) => classifyHubLabour(w) === "casting");
+      const others = filteredWorkers.filter((w) => classifyHubLabour(w) === "others");
+      return [
+        {
+          id: "khrad" as const,
+          label: t("sal.groupKhrad"),
+          workers: khrad,
+          paid: khrad.reduce((s, w) => s + (paidByWorker.get(w._id) || 0), 0),
+        },
+        {
+          id: "casting" as const,
+          label: t("sal.groupMolder"),
+          workers: casting,
+          paid: casting.reduce((s, w) => s + (paidByWorker.get(w._id) || 0), 0),
+        },
+        {
+          id: "others" as const,
+          label: t("sal.groupOthers"),
+          workers: others,
+          paid: others.reduce((s, w) => s + (paidByWorker.get(w._id) || 0), 0),
+        },
+      ];
+    }
+    return null;
   }, [scopeFilter, filteredWorkers, paidByWorker, t]);
 
   useEffect(() => {
-    if (scopeFilter !== "drum") setOpenDrumGroup(null);
+    if (scopeFilter !== "hub" && scopeFilter !== "drum") setOpenLabourGroup(null);
   }, [scopeFilter]);
 
   function openPay(w: Worker) {
@@ -515,6 +616,11 @@ export default function SalariesPage() {
                 >
                   {scopeLabels[(w.scope as ExpenseScope) || "common"]}
                 </Badge>
+                {isJavedWarma(w) ? (
+                  <Badge variant="secondary" className="font-data text-[9px]">
+                    {t("sal.javedSplitHint")}
+                  </Badge>
+                ) : null}
               </div>
               {w.job ? (
                 <p className="mt-0.5 text-xs text-muted-foreground">{displayJob(w.job, t)}</p>
@@ -1001,17 +1107,17 @@ export default function SalariesPage() {
                 {t("sal.noMatch", { query: search.trim() })}
               </CardContent>
             </Card>
-          ) : drumGroups ? (
+          ) : labourGroups ? (
             <div className="grid gap-3">
-              {drumGroups.map((group) => {
-                const open = openDrumGroup === group.id;
+              {labourGroups.map((group) => {
+                const open = openLabourGroup === group.id;
                 return (
                   <Card key={group.id} className="py-0 overflow-hidden">
                     <button
                       type="button"
                       className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left transition-colors hover:bg-muted/40"
                       onClick={() =>
-                        setOpenDrumGroup((prev) => (prev === group.id ? null : group.id))
+                        setOpenLabourGroup((prev) => (prev === group.id ? null : group.id))
                       }
                     >
                       <div className="flex min-w-0 items-center gap-3">

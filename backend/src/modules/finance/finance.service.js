@@ -6,6 +6,13 @@ const LedgerEntry = require("../ledger/ledger.model");
 const BatchExpense = require("../expenses/expense.model");
 const ProductionBatch = require("../production/production.model");
 const { EXPENSE_CATEGORIES } = require("../expenses/expense.constants");
+const {
+  isJavedWarma,
+  classifyHubLabour,
+  isDrumKhradWorkerName,
+  JAVED_HUB_SHARE,
+  JAVED_DRUM_SHARE,
+} = require("./labour-groups");
 const mongoose = require("mongoose");
 
 function httpError(message, statusCode) {
@@ -905,16 +912,116 @@ async function getProductionMargin(query = {}) {
       },
     },
   ]);
+
+  const salaryPools = { hub: 0, drum: 0, common: 0 };
+  let hubKhradSalary = 0;
+  let hubCastingSalary = 0;
+  let hubOthersSalary = 0;
+  let drumKhradSalary = 0;
+  let drumMolderSalary = 0;
+  const salaryByWorker = await BatchExpense.aggregate([
+    {
+      $match: {
+        ...expenseMatch,
+        category: "fixed_salary",
+      },
+    },
+    {
+      $lookup: {
+        from: "workers",
+        localField: "worker",
+        foreignField: "_id",
+        as: "_worker",
+      },
+    },
+    {
+      $addFields: {
+        effectiveScope: {
+          $let: {
+            vars: {
+              expenseScope: "$scope",
+              workerScope: { $arrayElemAt: ["$_worker.scope", 0] },
+            },
+            in: {
+              $cond: [
+                { $in: ["$$expenseScope", ["hub", "drum", "common"]] },
+                "$$expenseScope",
+                {
+                  $cond: [
+                    { $in: ["$$workerScope", ["hub", "drum", "common"]] },
+                    "$$workerScope",
+                    "common",
+                  ],
+                },
+              ],
+            },
+          },
+        },
+        workerName: { $ifNull: [{ $arrayElemAt: ["$_worker.name", 0] }, ""] },
+      },
+    },
+    {
+      $group: {
+        _id: { name: "$workerName", scope: "$effectiveScope" },
+        amount: { $sum: "$amount" },
+      },
+    },
+  ]);
+  for (const row of salaryByWorker) {
+    const amount = row.amount || 0;
+    if (!(amount > 0)) continue;
+    const name = row._id?.name || "";
+    const scope =
+      row._id?.scope === "hub" || row._id?.scope === "drum" ? row._id.scope : "common";
+
+    if (isJavedWarma(name)) {
+      const toHub = roundMoney(amount * JAVED_HUB_SHARE);
+      const toDrum = roundMoney(amount - toHub);
+      hubKhradSalary = roundMoney(hubKhradSalary + toHub);
+      drumKhradSalary = roundMoney(drumKhradSalary + toDrum);
+      salaryPools.hub = roundMoney(salaryPools.hub + toHub);
+      salaryPools.drum = roundMoney(salaryPools.drum + toDrum);
+      continue;
+    }
+
+    if (scope === "hub") {
+      const group = classifyHubLabour(name);
+      if (group === "khrad") hubKhradSalary = roundMoney(hubKhradSalary + amount);
+      else if (group === "casting") hubCastingSalary = roundMoney(hubCastingSalary + amount);
+      else hubOthersSalary = roundMoney(hubOthersSalary + amount);
+      salaryPools.hub = roundMoney(salaryPools.hub + amount);
+      continue;
+    }
+
+    if (scope === "drum") {
+      if (isDrumKhradWorkerName(name)) {
+        drumKhradSalary = roundMoney(drumKhradSalary + amount);
+      } else {
+        drumMolderSalary = roundMoney(drumMolderSalary + amount);
+      }
+      salaryPools.drum = roundMoney(salaryPools.drum + amount);
+      continue;
+    }
+
+    salaryPools.common = roundMoney(salaryPools.common + amount);
+  }
+
   /** Hub vs drum electricity intensity when production kg is equal (60% / 40%). */
   const ELECTRICITY_HUB_INTENSITY = 0.6;
   const ELECTRICITY_DRUM_INTENSITY = 0.4;
-  const overheadPools = { hub: 0, drum: 0, common: 0 };
+  const overheadPools = {
+    hub: salaryPools.hub,
+    drum: salaryPools.drum,
+    common: salaryPools.common,
+  };
   let electricityCommon = 0;
   for (const row of expenseByScopeCategory) {
     const scope =
       row._id?.scope === "hub" || row._id?.scope === "drum" ? row._id.scope : "common";
     const amount = row.amount || 0;
-    if (row._id?.category === "electricity" && scope === "common") {
+    const category = row._id?.category || "";
+    if (category === "fixed_salary") continue;
+    if (category === "electricity" && scope === "common") {
       electricityCommon = roundMoney(electricityCommon + amount);
     } else {
       overheadPools[scope] = roundMoney((overheadPools[scope] || 0) + amount);
@@ -1056,7 +1163,6 @@ async function getProductionMargin(query = {}) {
     t.marginPct = t.sellValue > 0 ? roundMoney((t.profit / t.sellValue) * 100) : null;
   }
 
-  const salaryPools = { hub: 0, drum: 0, common: 0 };
   const mfgExpensePools = { hub: 0, drum: 0, common: 0 };
   /** category -> { hub, drum, common } for non-salary mfg expenses */
   const mfgCategoryPools = {};
@@ -1072,7 +1178,6 @@ async function getProductionMargin(query = {}) {
       continue;
     }
     if (category === "fixed_salary") {
-      salaryPools[scope] = roundMoney((salaryPools[scope] || 0) + amount);
       continue;
     }
     if (category === "electricity" && scope === "common") {
@@ -1086,77 +1191,6 @@ async function getProductionMargin(query = {}) {
     mfgCategoryPools[category][scope] = roundMoney(
       (mfgCategoryPools[category][scope] || 0) + amount
     );
-  }
-
-  /** Drum salaries: Khrad (Idrees/Amin/Ashraf/Shakeel) vs Casting Labour (everyone else). */
-  const DRUM_KHRAD_FIRST_NAMES = new Set(["idrees", "idris", "amin", "ashraf", "shakeel"]);
-  function isDrumKhradWorkerName(name) {
-    const first = String(name || "")
-      .trim()
-      .toLowerCase()
-      .split(/\s+/)[0];
-    return DRUM_KHRAD_FIRST_NAMES.has(first);
-  }
-
-  const drumSalarySplit = await BatchExpense.aggregate([
-    {
-      $match: {
-        ...expenseMatch,
-        category: "fixed_salary",
-      },
-    },
-    {
-      $lookup: {
-        from: "workers",
-        localField: "worker",
-        foreignField: "_id",
-        as: "_worker",
-      },
-    },
-    {
-      $addFields: {
-        effectiveScope: {
-          $let: {
-            vars: {
-              expenseScope: "$scope",
-              workerScope: { $arrayElemAt: ["$_worker.scope", 0] },
-            },
-            in: {
-              $cond: [
-                { $in: ["$$expenseScope", ["hub", "drum", "common"]] },
-                "$$expenseScope",
-                {
-                  $cond: [
-                    { $in: ["$$workerScope", ["hub", "drum", "common"]] },
-                    "$$workerScope",
-                    "common",
-                  ],
-                },
-              ],
-            },
-          },
-        },
-        workerName: { $ifNull: [{ $arrayElemAt: ["$_worker.name", 0] }, ""] },
-      },
-    },
-    { $match: { effectiveScope: "drum" } },
-    {
-      $group: {
-        _id: "$workerName",
-        amount: { $sum: "$amount" },
-      },
-    },
-  ]);
-
-  let drumKhradSalary = 0;
-  let drumMolderSalary = 0;
-  for (const row of drumSalarySplit) {
-    const amount = row.amount || 0;
-    if (isDrumKhradWorkerName(row._id)) {
-      drumKhradSalary = roundMoney(drumKhradSalary + amount);
-    } else {
-      drumMolderSalary = roundMoney(drumMolderSalary + amount);
-    }
   }
 
   function allocateBucketPerKg(pools, electricityAmount) {
@@ -1208,7 +1242,9 @@ async function getProductionMargin(query = {}) {
         ? roundMoney(salesmanChannelLoad / allFinishedKg)
         : 0;
 
-  const hubSalaryPerKg = amountOnFamilyPerKg(salaryPools.hub, "hub");
+  const hubKhradPerKg = amountOnFamilyPerKg(hubKhradSalary, "hub");
+  const hubCastingPerKg = amountOnFamilyPerKg(hubCastingSalary, "hub");
+  const hubOthersPerKg = amountOnFamilyPerKg(hubOthersSalary, "hub");
   const commonSalarySplit = allocateBucketPerKg(
     { hub: 0, drum: 0, common: salaryPools.common },
     0
@@ -1260,11 +1296,25 @@ async function getProductionMargin(query = {}) {
 
     const salaryLines = [];
     if (fam === "hub") {
-      if (hubSalaryPerKg != null) {
+      if (hubKhradPerKg != null) {
         salaryLines.push({
-          id: "hub_salaries",
-          label: "Hub salaries",
-          perKg: hubSalaryPerKg,
+          id: "khrad_salaries",
+          label: "Khrad Labour",
+          perKg: hubKhradPerKg,
+        });
+      }
+      if (hubCastingPerKg != null) {
+        salaryLines.push({
+          id: "casting_labour",
+          label: "Casting Labour",
+          perKg: hubCastingPerKg,
+        });
+      }
+      if (hubOthersPerKg != null) {
+        salaryLines.push({
+          id: "others_salaries",
+          label: "Others",
+          perKg: hubOthersPerKg,
         });
       }
       if (commonSalarySplit.hub != null) {
@@ -1276,7 +1326,7 @@ async function getProductionMargin(query = {}) {
       }
     } else {
       if (drumKhradPerKg != null) {
-        salaryLines.push({ id: "khrad_salaries", label: "Khrad salaries", perKg: drumKhradPerKg });
+        salaryLines.push({ id: "khrad_salaries", label: "Khrad Labour", perKg: drumKhradPerKg });
       }
       if (drumMolderPerKg != null) {
         salaryLines.push({

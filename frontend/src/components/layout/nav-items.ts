@@ -18,7 +18,6 @@ import {
   Package,
   ScrollText,
   FolderKanban,
-  CircleDollarSign,
   CalendarDays,
 } from "lucide-react";
 import type { MessageKey } from "@/lib/i18n/messages";
@@ -53,7 +52,7 @@ export const PARTY_CHILDREN: NavChild[] = [
 export const FINANCE_CHILDREN: NavChild[] = [
   {
     labelKey: "financeSubnav.productionMargin",
-    href: "/dashboard/finance",
+    href: "/dashboard",
     icon: Factory,
     exact: true,
   },
@@ -70,7 +69,13 @@ export const FINANCE_CHILDREN: NavChild[] = [
 ];
 
 export const NAV_ITEMS: NavItem[] = [
-  { labelKey: "nav.dashboard", href: "/dashboard", icon: LayoutDashboard, ready: true },
+  {
+    labelKey: "nav.dashboard",
+    href: "/dashboard",
+    icon: LayoutDashboard,
+    ready: true,
+    children: FINANCE_CHILDREN,
+  },
   { labelKey: "nav.inventory", href: "/dashboard/inventory", icon: Boxes, ready: true },
   { labelKey: "nav.products", href: "/dashboard/products", icon: Package, ready: true },
   { labelKey: "nav.production", href: "/dashboard/production", icon: Factory, ready: true },
@@ -92,12 +97,5 @@ export const NAV_ITEMS: NavItem[] = [
   { labelKey: "nav.claims", href: "/dashboard/claims", icon: RotateCcw, ready: true },
   { labelKey: "nav.suppliers", href: "/dashboard/suppliers", icon: Truck, ready: true },
   { labelKey: "nav.salesmen", href: "/dashboard/salesmen", icon: Handshake, ready: true },
-  {
-    labelKey: "nav.finance",
-    href: "/dashboard/finance",
-    icon: CircleDollarSign,
-    ready: true,
-    children: FINANCE_CHILDREN,
-  },
   { labelKey: "nav.reports", href: "/dashboard/reports", icon: BarChart3, ready: true },
 ];

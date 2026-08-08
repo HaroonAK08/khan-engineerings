@@ -9,6 +9,7 @@ import type { MessageKey } from "@/lib/i18n/messages";
 const LINKS: Array<{ href: string; labelKey: MessageKey; exact?: boolean }> = [
   { href: "/dashboard/inventory", labelKey: "inventory.purchases", exact: true },
   { href: "/dashboard/inventory/finished", labelKey: "inventory.finished" },
+  { href: "/dashboard/inventory/reports", labelKey: "inventory.reports" },
 ];
 
 export function InventorySubnav() {

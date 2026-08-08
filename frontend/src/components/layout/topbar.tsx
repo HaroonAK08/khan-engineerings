@@ -40,7 +40,11 @@ function currentTitleKey(pathname: string | null): MessageKey {
     if (item.children?.length) {
       const child = [...item.children]
         .reverse()
-        .find((c) => pathname === c.href || pathname.startsWith(`${c.href}/`));
+        .find((c) =>
+          c.exact
+            ? pathname === c.href
+            : pathname === c.href || pathname.startsWith(`${c.href}/`)
+        );
       if (child) return child.labelKey;
     }
     if (item.href === "/dashboard" ? pathname === item.href : pathname.startsWith(item.href)) {

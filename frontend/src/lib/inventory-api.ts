@@ -100,6 +100,7 @@ export async function getFinishedStock(params?: {
   warehouse?: string;
   category?: string;
   q?: string;
+  asOf?: string;
 }) {
   const { data } = await api.get<{
     items: FinishedStockItem[];

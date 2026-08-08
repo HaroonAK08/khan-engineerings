@@ -15,6 +15,9 @@ type SidebarNavProps = {
 
 function isItemActive(item: NavItem, pathname: string | null) {
   if (!pathname || item.ready === false) return false;
+  if (item.children?.length) {
+    return item.children.some((child) => isChildActive(child.href, pathname, child.exact));
+  }
   if (item.href === "/dashboard") return pathname === item.href;
   return pathname.startsWith(item.href);
 }

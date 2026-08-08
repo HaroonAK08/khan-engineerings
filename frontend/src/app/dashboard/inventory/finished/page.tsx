@@ -1,13 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { History, Loader2, Pencil, Plus } from "lucide-react";
 import { InventorySubnav } from "@/components/layout/inventory-subnav";
+import { DateRangeFilter } from "@/components/date-range-filter";
 import { ProductSearchSelect } from "@/components/products/product-search-select";
 import { apiError } from "@/lib/materials-api";
 import { todayInput } from "@/lib/date-range";
+import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 import {
   createAdjustment,
   getFinishedStock,
@@ -44,9 +46,37 @@ import {
 
 type FamilyFilter = "all" | "hub" | "drum";
 type StockDialogMode = "add" | "edit" | null;
+type DateMode = "range" | "asOf";
+
+const AS_OF_STORAGE_KEY = "ke-finished-as-of";
+const MODE_STORAGE_KEY = "ke-finished-date-mode";
+
+function readStoredAsOf() {
+  if (typeof window === "undefined") return todayInput();
+  try {
+    const stored = localStorage.getItem(AS_OF_STORAGE_KEY);
+    if (stored && /^\d{4}-\d{2}-\d{2}$/.test(stored)) return stored;
+  } catch {
+    // ignore
+  }
+  return todayInput();
+}
+
+function readStoredMode(): DateMode {
+  if (typeof window === "undefined") return "range";
+  try {
+    const stored = localStorage.getItem(MODE_STORAGE_KEY);
+    if (stored === "asOf" || stored === "range") return stored;
+  } catch {
+    // ignore
+  }
+  return "range";
+}
 
 export default function FinishedGoodsPage() {
   const { t } = useI18n();
+  const asOfId = useId();
+  const { dateTo, hydrated: rangeHydrated } = usePersistedDateRange();
   const [items, setItems] = useState<FinishedStockItem[]>([]);
   const [totalUnits, setTotalUnits] = useState(0);
   const [hubUnits, setHubUnits] = useState(0);
@@ -55,6 +85,9 @@ export default function FinishedGoodsPage() {
   const [warehouses, setWarehouses] = useState<CatalogItem[]>([]);
   const [q, setQ] = useState("");
   const [familyFilter, setFamilyFilter] = useState<FamilyFilter>("all");
+  const [mode, setModeState] = useState<DateMode>("range");
+  const [asOf, setAsOfState] = useState(todayInput);
+  const [modeHydrated, setModeHydrated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [dialogMode, setDialogMode] = useState<StockDialogMode>(null);
   const [editing, setEditing] = useState<FinishedStockItem | null>(null);
@@ -64,10 +97,38 @@ export default function FinishedGoodsPage() {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    setModeState(readStoredMode());
+    setAsOfState(readStoredAsOf());
+    setModeHydrated(true);
+  }, []);
+
+  const hydrated = rangeHydrated && modeHydrated;
+  const stockAsOf = mode === "asOf" ? asOf : dateTo || todayInput();
+
+  function setMode(next: DateMode) {
+    setModeState(next);
+    try {
+      localStorage.setItem(MODE_STORAGE_KEY, next);
+    } catch {
+      // ignore
+    }
+  }
+
+  function setAsOf(value: string) {
+    setAsOfState(value);
+    try {
+      localStorage.setItem(AS_OF_STORAGE_KEY, value);
+    } catch {
+      // ignore
+    }
+  }
+
   const load = useCallback(async () => {
+    if (!hydrated) return;
     setLoading(true);
     try {
-      const params: { q?: string } = {};
+      const params: { q?: string; asOf?: string } = { asOf: stockAsOf };
       if (q.trim()) params.q = q.trim();
       const [stock, productList, warehouseList] = await Promise.all([
         getFinishedStock(params),
@@ -85,7 +146,7 @@ export default function FinishedGoodsPage() {
     } finally {
       setLoading(false);
     }
-  }, [q, t]);
+  }, [hydrated, q, stockAsOf, t]);
 
   useEffect(() => {
     const timer = setTimeout(load, 200);
@@ -252,6 +313,57 @@ export default function FinishedGoodsPage() {
         </div>
       </div>
 
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant={mode === "range" ? "default" : "outline"}
+            onClick={() => setMode("range")}
+          >
+            {t("invReportsHub.modeRange")}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={mode === "asOf" ? "default" : "outline"}
+            onClick={() => setMode("asOf")}
+          >
+            {t("invReportsHub.modeAsOf")}
+          </Button>
+        </div>
+
+        {mode === "range" ? (
+          <div className="flex flex-wrap items-end gap-2">
+            <DateRangeFilter />
+            <p className="pb-2 text-xs text-muted-foreground">
+              {t("invReportsHub.stockAsOfHint", { date: stockAsOf })}
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-end gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={asOf === todayInput() ? "default" : "outline"}
+              onClick={() => setAsOf(todayInput())}
+            >
+              {t("common.today")}
+            </Button>
+            <div className="grid gap-1.5">
+              <Label htmlFor={asOfId}>{t("invReportsHub.asOf")}</Label>
+              <Input
+                id={asOfId}
+                type="date"
+                className="w-auto"
+                value={asOf}
+                onChange={(e) => setAsOf(e.target.value)}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {stats.map((stat) => {
           const active = familyFilter === stat.key;
@@ -277,7 +389,7 @@ export default function FinishedGoodsPage() {
                     {Math.round(stat.value)}
                   </p>
                   <p className="mt-1 text-[11px] text-muted-foreground">
-                    {t("finished.stat.units")}
+                    {t("invReportsHub.stockAsOfHint", { date: stockAsOf })}
                   </p>
                 </CardContent>
               </Card>
