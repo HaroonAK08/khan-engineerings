@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { BookOpen, Loader2, Plus, Search, Trash2 } from "lucide-react";
+import { BookOpen, ChevronRight, Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { apiError, formatDate, formatKg, formatMoney } from "@/lib/materials-api";
 import {
   createWorker,
@@ -64,6 +64,16 @@ function paymentWorkerId(e: BatchExpense) {
   return typeof e.worker === "string" ? e.worker : e.worker._id;
 }
 
+/** Drum payroll groups: Idrees / Amin / Ashraf / Shakeel → Khrad; everyone else → Molder */
+const DRUM_KHRAD_FIRST_NAMES = new Set(["idrees", "idris", "amin", "ashraf", "shakeel"]);
+
+type DrumGroupId = "khrad" | "molder";
+
+function isDrumKhradWorker(w: Worker) {
+  const first = w.name.trim().toLowerCase().split(/\s+/)[0] || "";
+  return DRUM_KHRAD_FIRST_NAMES.has(first);
+}
+
 export default function SalariesPage() {
   const { t, isUrdu } = useI18n();
   const router = useRouter();
@@ -98,6 +108,7 @@ export default function SalariesPage() {
   const [editJob, setEditJob] = useState("");
   const [editUnitLabel, setEditUnitLabel] = useState("");
   const [editScope, setEditScope] = useState<ExpenseScope>("common");
+  const [openDrumGroup, setOpenDrumGroup] = useState<DrumGroupId | null>(null);
 
   const scopeLabels = {
     hub: t("exp.scopeHub"),
@@ -180,6 +191,30 @@ export default function SalariesPage() {
         (w.job && w.job.toLowerCase().includes(q))
     );
   }, [scopedWorkers, search]);
+
+  const drumGroups = useMemo(() => {
+    if (scopeFilter !== "drum") return null;
+    const khrad = filteredWorkers.filter(isDrumKhradWorker);
+    const molder = filteredWorkers.filter((w) => !isDrumKhradWorker(w));
+    return [
+      {
+        id: "khrad" as const,
+        label: t("sal.groupKhrad"),
+        workers: khrad,
+        paid: khrad.reduce((s, w) => s + (paidByWorker.get(w._id) || 0), 0),
+      },
+      {
+        id: "molder" as const,
+        label: t("sal.groupMolder"),
+        workers: molder,
+        paid: molder.reduce((s, w) => s + (paidByWorker.get(w._id) || 0), 0),
+      },
+    ];
+  }, [scopeFilter, filteredWorkers, paidByWorker, t]);
+
+  useEffect(() => {
+    if (scopeFilter !== "drum") setOpenDrumGroup(null);
+  }, [scopeFilter]);
 
   function openPay(w: Worker) {
     setEditingId(null);
@@ -351,6 +386,206 @@ export default function SalariesPage() {
     } catch (err) {
       toast.error(apiError(err, "Could not remove worker"));
     }
+  }
+
+  function renderWorkerCard(w: Worker) {
+    const isPaying = payingId === w._id;
+    const isEditing = editingId === w._id;
+    return (
+      <Card
+        key={w._id}
+        className="cursor-pointer py-0 transition-colors hover:bg-muted/30"
+        onClick={() => router.push(`/dashboard/expenses/salaries/${w._id}`)}
+      >
+        <CardContent className="flex flex-col gap-3 px-3.5 py-3.5 sm:px-4 sm:py-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2.5">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <p
+                  className="truncate text-base font-medium tracking-tight"
+                  dir={isUrdu && w.nameUr?.trim() ? "rtl" : undefined}
+                >
+                  {displayWorkerName(w, isUrdu)}
+                </p>
+                <Badge
+                  variant="outline"
+                  className={cn("font-data text-[9px]", scopeChipClass(w.scope || "common"))}
+                >
+                  {scopeLabels[(w.scope as ExpenseScope) || "common"]}
+                </Badge>
+              </div>
+              {w.job ? (
+                <p className="mt-0.5 text-xs text-muted-foreground">{displayJob(w.job, t)}</p>
+              ) : null}
+              <p className="font-data mt-1 text-sm font-semibold tabular-nums">
+                {formatMoney(paidByWorker.get(w._id) || 0)}
+                <span className="ml-1.5 text-[10px] font-normal tracking-wide text-muted-foreground uppercase">
+                  {t("sal.paidPeriod")}
+                </span>
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2" onClick={(e) => e.stopPropagation()}>
+              {!isPaying && !isEditing && (
+                <Button type="button" size="sm" onClick={() => openPay(w)}>
+                  {t("sal.payNow")}
+                </Button>
+              )}
+              {!isEditing && (
+                <Button type="button" size="sm" variant="outline" onClick={() => openEdit(w)}>
+                  {t("sal.editWorker")}
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-muted-foreground"
+                onClick={() => void onDeactivateWorker(w)}
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            </div>
+          </div>
+
+          {isEditing && (
+            <div
+              className="rounded-xl border border-border/80 bg-muted/30 p-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <p className="mb-3 text-sm font-medium">{t("sal.editWorker")}</p>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="flex flex-col gap-1.5">
+                  <Label>{t("sal.name")}</Label>
+                  <Input
+                    placeholder={t("sal.phName")}
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>{t("sal.nameUr")}</Label>
+                  <UrduPhoneticInput
+                    placeholder={t("sal.phNameUr")}
+                    value={editNameUr}
+                    onChange={setEditNameUr}
+                  />
+                  {isUrdu && (
+                    <p className="text-[11px] text-muted-foreground">{t("common.urduTypeHint")}</p>
+                  )}
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>{t("sal.job")}</Label>
+                  <UrduPhoneticInput
+                    placeholder={t("sal.phJob")}
+                    value={editJob}
+                    onChange={setEditJob}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>{t("sal.unitName")}</Label>
+                  <Input
+                    value={editUnitLabel}
+                    onChange={(e) => setEditUnitLabel(e.target.value)}
+                    placeholder={t("sal.phUnit")}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-4">
+                  <Label>{t("exp.scope")}</Label>
+                  <ExpenseScopeChips
+                    value={editScope}
+                    onChange={(next) => {
+                      if (next !== "all") setEditScope(next);
+                    }}
+                    labels={scopeLabels}
+                  />
+                </div>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  className="gap-2"
+                  disabled={busyId === `edit-${w._id}`}
+                  onClick={() => void onSaveEdit(w)}
+                >
+                  {busyId === `edit-${w._id}` && <Loader2 className="size-4 animate-spin" />}
+                  {t("sal.saveChanges")}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setEditingId(null)}>
+                  {t("sal.cancel")}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {isPaying && (
+            <div
+              className="rounded-xl border border-border/80 bg-muted/30 p-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <span className="text-xs text-muted-foreground">{t("exp.scope")}:</span>
+                <span
+                  className={cn(
+                    "rounded border px-2 py-0.5 text-xs font-medium",
+                    scopeChipClass(w.scope || "common")
+                  )}
+                >
+                  {scopeLabels[(w.scope as ExpenseScope) || "common"]}
+                </span>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="flex flex-col gap-1.5">
+                  <Label>{t("sal.paymentAmount")}</Label>
+                  <Input
+                    type="number"
+                    step="1"
+                    value={payAmount}
+                    onChange={(e) => setPayAmount(e.target.value)}
+                    className="h-11 text-base"
+                    placeholder={t("sal.phAmount")}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>{t("sal.payDate")}</Label>
+                  <Input
+                    type="date"
+                    value={payDate}
+                    onChange={(e) => setPayDate(e.target.value)}
+                    className="h-11"
+                    required
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5 sm:col-span-3">
+                  <Label>{t("exp.noteOptional")}</Label>
+                  <UrduPhoneticInput
+                    value={payNote}
+                    onChange={setPayNote}
+                    className="h-11"
+                    placeholder={t("sal.notePh")}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="lg"
+                  className="min-w-[140px] gap-2"
+                  disabled={busyId === w._id}
+                  onClick={() => void confirmPay(w)}
+                >
+                  {busyId === w._id && <Loader2 className="size-4 animate-spin" />}
+                  {t("sal.confirmPay")}
+                </Button>
+                <Button type="button" size="lg" variant="outline" onClick={() => setPayingId(null)}>
+                  {t("sal.cancel")}
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
   }
 
   return (
@@ -605,234 +840,59 @@ export default function SalariesPage() {
                 {t("sal.noMatch", { query: search.trim() })}
               </CardContent>
             </Card>
-          ) : (
-            <div className="grid gap-2">
-              {filteredWorkers.map((w) => {
-                const isPaying = payingId === w._id;
-                const isEditing = editingId === w._id;
+          ) : drumGroups ? (
+            <div className="grid gap-3">
+              {drumGroups.map((group) => {
+                const open = openDrumGroup === group.id;
                 return (
-                  <Card
-                    key={w._id}
-                    className="cursor-pointer py-0 transition-colors hover:bg-muted/30"
-                    onClick={() => router.push(`/dashboard/expenses/salaries/${w._id}`)}
-                  >
-                    <CardContent className="flex flex-col gap-3 px-3.5 py-3.5 sm:px-4 sm:py-3.5">
-                      <div className="flex flex-wrap items-center justify-between gap-2.5">
+                  <Card key={group.id} className="py-0 overflow-hidden">
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left transition-colors hover:bg-muted/40"
+                      onClick={() =>
+                        setOpenDrumGroup((prev) => (prev === group.id ? null : group.id))
+                      }
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <ChevronRight
+                          className={cn(
+                            "size-4 shrink-0 text-muted-foreground transition-transform",
+                            open && "rotate-90"
+                          )}
+                        />
                         <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p
-                              className="truncate text-base font-medium tracking-tight"
-                              dir={isUrdu && w.nameUr?.trim() ? "rtl" : undefined}
-                            >
-                              {displayWorkerName(w, isUrdu)}
-                            </p>
-                            <Badge
-                              variant="outline"
-                              className={cn(
-                                "font-data text-[9px]",
-                                scopeChipClass(w.scope || "common")
-                              )}
-                            >
-                              {scopeLabels[(w.scope as ExpenseScope) || "common"]}
-                            </Badge>
-                          </div>
-                          {w.job ? (
-                            <p className="mt-0.5 text-xs text-muted-foreground">
-                              {displayJob(w.job, t)}
-                            </p>
-                          ) : null}
-                          <p className="font-data mt-1 text-sm font-semibold tabular-nums">
-                            {formatMoney(paidByWorker.get(w._id) || 0)}
-                            <span className="ml-1.5 text-[10px] font-normal tracking-wide text-muted-foreground uppercase">
-                              {t("sal.paidPeriod")}
-                            </span>
+                          <p className="text-nameplate text-base">{group.label}</p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {t("sal.groupWorkers", { count: group.workers.length })}
                           </p>
                         </div>
-                        <div
-                          className="flex flex-wrap gap-2"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {!isPaying && !isEditing && (
-                            <Button type="button" size="sm" onClick={() => openPay(w)}>
-                              {t("sal.payNow")}
-                            </Button>
-                          )}
-                          {!isEditing && (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => openEdit(w)}
-                            >
-                              {t("sal.editWorker")}
-                            </Button>
-                          )}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon-sm"
-                            className="text-muted-foreground"
-                            onClick={() => void onDeactivateWorker(w)}
-                          >
-                            <Trash2 className="size-4" />
-                          </Button>
-                        </div>
                       </div>
-
-                      {isEditing && (
-                        <div
-                          className="rounded-xl border border-border/80 bg-muted/30 p-4"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <p className="mb-3 text-sm font-medium">{t("sal.editWorker")}</p>
-                          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                            <div className="flex flex-col gap-1.5">
-                              <Label>{t("sal.name")}</Label>
-                              <Input
-                                placeholder={t("sal.phName")}
-                                value={editName}
-                                onChange={(e) => setEditName(e.target.value)}
-                              />
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                              <Label>{t("sal.nameUr")}</Label>
-                              <UrduPhoneticInput
-                                placeholder={t("sal.phNameUr")}
-                                value={editNameUr}
-                                onChange={setEditNameUr}
-                              />
-                              {isUrdu && (
-                                <p className="text-[11px] text-muted-foreground">
-                                  {t("common.urduTypeHint")}
-                                </p>
-                              )}
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                              <Label>{t("sal.job")}</Label>
-                              <UrduPhoneticInput
-                                placeholder={t("sal.phJob")}
-                                value={editJob}
-                                onChange={setEditJob}
-                              />
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                              <Label>{t("sal.unitName")}</Label>
-                              <Input
-                                value={editUnitLabel}
-                                onChange={(e) => setEditUnitLabel(e.target.value)}
-                                placeholder={t("sal.phUnit")}
-                              />
-                            </div>
-                            <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-4">
-                              <Label>{t("exp.scope")}</Label>
-                              <ExpenseScopeChips
-                                value={editScope}
-                                onChange={(next) => {
-                                  if (next !== "all") setEditScope(next);
-                                }}
-                                labels={scopeLabels}
-                              />
-                            </div>
-                          </div>
-                          <div className="mt-4 flex flex-wrap gap-2">
-                            <Button
-                              type="button"
-                              className="gap-2"
-                              disabled={busyId === `edit-${w._id}`}
-                              onClick={() => void onSaveEdit(w)}
-                            >
-                              {busyId === `edit-${w._id}` && (
-                                <Loader2 className="size-4 animate-spin" />
-                              )}
-                              {t("sal.saveChanges")}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => setEditingId(null)}
-                            >
-                              {t("sal.cancel")}
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-
-                      {isPaying && (
-                        <div
-                          className="rounded-xl border border-border/80 bg-muted/30 p-4"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <div className="mb-3 flex flex-wrap items-center gap-2">
-                            <span className="text-xs text-muted-foreground">{t("exp.scope")}:</span>
-                            <span
-                              className={cn(
-                                "rounded border px-2 py-0.5 text-xs font-medium",
-                                scopeChipClass(w.scope || "common")
-                              )}
-                            >
-                              {scopeLabels[(w.scope as ExpenseScope) || "common"]}
-                            </span>
-                          </div>
-                          <div className="grid gap-3 sm:grid-cols-3">
-                            <div className="flex flex-col gap-1.5">
-                              <Label>{t("sal.paymentAmount")}</Label>
-                              <Input
-                                type="number"
-                                step="1"
-                                value={payAmount}
-                                onChange={(e) => setPayAmount(e.target.value)}
-                                className="h-11 text-base"
-                                placeholder={t("sal.phAmount")}
-                              />
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                              <Label>{t("sal.payDate")}</Label>
-                              <Input
-                                type="date"
-                                value={payDate}
-                                onChange={(e) => setPayDate(e.target.value)}
-                                className="h-11"
-                                required
-                              />
-                            </div>
-                            <div className="flex flex-col gap-1.5 sm:col-span-3">
-                              <Label>{t("exp.noteOptional")}</Label>
-                              <UrduPhoneticInput
-                                value={payNote}
-                                onChange={setPayNote}
-                                className="h-11"
-                                placeholder={t("sal.notePh")}
-                              />
-                            </div>
-                          </div>
-
-                          <div className="mt-4 flex flex-wrap gap-2">
-                            <Button
-                              type="button"
-                              size="lg"
-                              className="min-w-[140px] gap-2"
-                              disabled={busyId === w._id}
-                              onClick={() => void confirmPay(w)}
-                            >
-                              {busyId === w._id && <Loader2 className="size-4 animate-spin" />}
-                              {t("sal.confirmPay")}
-                            </Button>
-                            <Button
-                              type="button"
-                              size="lg"
-                              variant="outline"
-                              onClick={() => setPayingId(null)}
-                            >
-                              {t("sal.cancel")}
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                    </CardContent>
+                      <div className="text-right">
+                        <p className="font-data text-lg font-semibold tabular-nums">
+                          {formatMoney(group.paid)}
+                        </p>
+                        <p className="text-[10px] tracking-wide text-muted-foreground uppercase">
+                          {t("sal.paidPeriod")}
+                        </p>
+                      </div>
+                    </button>
+                    {open && (
+                      <div className="border-t border-border/70 bg-muted/20 px-2 py-2 sm:px-3">
+                        {group.workers.length === 0 ? (
+                          <p className="px-2 py-6 text-center text-sm text-muted-foreground">
+                            {t("sal.groupEmpty")}
+                          </p>
+                        ) : (
+                          <div className="grid gap-2">{group.workers.map(renderWorkerCard)}</div>
+                        )}
+                      </div>
+                    )}
                   </Card>
                 );
               })}
             </div>
+          ) : (
+            <div className="grid gap-2">{filteredWorkers.map(renderWorkerCard)}</div>
           )}
         </section>
       )}
