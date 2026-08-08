@@ -58,6 +58,11 @@ export const FINANCE_CHILDREN: NavChild[] = [
     exact: true,
   },
   {
+    labelKey: "financeSubnav.partyMargin",
+    href: "/dashboard/finance/party-margin",
+    icon: Handshake,
+  },
+  {
     labelKey: "financeSubnav.monthly",
     href: "/dashboard/finance/monthly",
     icon: CalendarDays,

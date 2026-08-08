@@ -3,6 +3,7 @@ import type { BatchExpense } from "@/types/production";
 
 export type PayType = "weekly" | "monthly" | "per_unit";
 export type PayDay = "monday" | "thursday";
+export type ExpenseScope = "hub" | "drum" | "common";
 
 export type Worker = {
   _id: string;
@@ -15,12 +16,13 @@ export type Worker = {
   rate: number | null;
   unitLabel: string;
   payDays: PayDay[];
+  scope: ExpenseScope;
   job: string;
   notes: string;
   isActive: boolean;
 };
 
-export async function listWorkers(params?: { active?: string }) {
+export async function listWorkers(params?: { active?: string; scope?: ExpenseScope }) {
   const { data } = await api.get<{ workers: Worker[] }>("/workers", { params });
   return data.workers;
 }
@@ -37,6 +39,7 @@ export async function createWorker(body: {
   rate?: number | null;
   unitLabel?: string;
   payDays?: PayDay[];
+  scope?: ExpenseScope;
   job?: string;
   notes?: string;
 }) {
@@ -53,6 +56,7 @@ export async function updateWorker(
     rate: number | null;
     unitLabel: string;
     payDays: PayDay[];
+    scope: ExpenseScope;
     job: string;
     notes: string;
     isActive: boolean;
@@ -86,6 +90,7 @@ export async function listSalaryPayments(params?: {
   dateFrom?: string;
   dateTo?: string;
   workerId?: string;
+  scope?: ExpenseScope;
 }) {
   const { data } = await api.get<{ payments: BatchExpense[] }>("/workers/payments", {
     params,

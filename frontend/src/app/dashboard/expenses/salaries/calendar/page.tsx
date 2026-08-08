@@ -38,6 +38,13 @@ import {
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
+import {
+  matchesExpenseScope,
+  usePersistedExpenseScope,
+} from "@/hooks/use-persisted-expense-scope";
+import { scopeChipClass } from "@/components/expenses/expense-scope-chips";
+import type { ExpenseScope } from "@/lib/workers-api";
+import { cn } from "@/lib/utils";
 import { WorkerSearchSelect } from "@/components/workers/worker-search-select";
 
 function displayWorkerName(
@@ -59,6 +66,12 @@ function workerIdOf(p: BatchExpense) {
 export default function AllSalariesLedgerPage() {
   const { t, isUrdu } = useI18n();
 
+  const scopeLabels = {
+    hub: t("exp.scopeHub"),
+    drum: t("exp.scopeDrum"),
+    common: t("exp.scopeCommon"),
+  };
+
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [payments, setPayments] = useState<BatchExpense[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,6 +88,7 @@ export default function AllSalariesLedgerPage() {
     isAll,
     hydrated,
   } = usePersistedDateRange();
+  const { scope: scopeFilter } = usePersistedExpenseScope();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<"add" | "edit">("add");
@@ -129,7 +143,7 @@ export default function AllSalariesLedgerPage() {
   function openAddPayment() {
     setDialogMode("add");
     setEditingPayment(null);
-    setFormWorkerId(workers[0]?._id || "");
+    setFormWorkerId(scopedWorkers[0]?._id || "");
     setFormAmount("");
     setFormNote("");
     setFormDate(todayInput());
@@ -213,15 +227,21 @@ export default function AllSalariesLedgerPage() {
     }
   }
 
+  const scopedWorkers = useMemo(
+    () => workers.filter((w) => matchesExpenseScope(w.scope, scopeFilter)),
+    [workers, scopeFilter]
+  );
+
   const sortedPayments = useMemo(
     () =>
       payments
+        .filter((p) => matchesExpenseScope(p.scope, scopeFilter))
         .slice()
         .sort(
           (a, b) =>
             new Date(b.expenseDate).getTime() - new Date(a.expenseDate).getTime()
         ),
-    [payments]
+    [payments, scopeFilter]
   );
 
   const total = useMemo(
@@ -377,6 +397,14 @@ export default function AllSalariesLedgerPage() {
                         ) : (
                           <span dir={isUrName ? "rtl" : undefined}>{name}</span>
                         )}
+                        <span
+                          className={cn(
+                            "mt-1 inline-block rounded border px-1.5 py-0.5 text-[10px] font-medium",
+                            scopeChipClass(p.scope || "common")
+                          )}
+                        >
+                          {scopeLabels[(p.scope as ExpenseScope) || "common"]}
+                        </span>
                         {p.notes?.trim() ? (
                           <p className="truncate text-xs text-muted-foreground">
                             {p.notes.trim()}
@@ -444,7 +472,7 @@ export default function AllSalariesLedgerPage() {
               <div className="flex flex-col gap-1.5">
                 <Label>{t("salReports.worker")}</Label>
                 <WorkerSearchSelect
-                  workers={workers}
+                  workers={scopedWorkers}
                   value={formWorkerId}
                   onChange={setFormWorkerId}
                   placeholder={t("sal.pickWorker")}

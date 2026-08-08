@@ -1,6 +1,8 @@
 const mongoose = require("mongoose");
 const { STAGE_IDS, CATEGORY_IDS } = require("./expense.constants");
 
+const EXPENSE_SCOPES = ["hub", "drum", "common"];
+
 const batchExpenseSchema = new mongoose.Schema(
   {
     /** null = factory overhead (not tied to a batch) */
@@ -22,6 +24,13 @@ const batchExpenseSchema = new mongoose.Schema(
     quantity: { type: Number, min: 0, default: null },
     /** Unit for quantity — kg, pcs, L, etc. */
     quantityUnit: { type: String, trim: true, default: "kg" },
+    /** Hub-only / drum-only / common — used for per-kg overhead allocation */
+    scope: {
+      type: String,
+      enum: EXPENSE_SCOPES,
+      default: "common",
+      index: true,
+    },
     /** When salary was paid to a named worker */
     worker: {
       type: mongoose.Schema.Types.ObjectId,
@@ -50,3 +59,4 @@ const batchExpenseSchema = new mongoose.Schema(
 batchExpenseSchema.index({ batch: 1, stage: 1, category: 1 });
 
 module.exports = mongoose.model("BatchExpense", batchExpenseSchema);
+module.exports.EXPENSE_SCOPES = EXPENSE_SCOPES;

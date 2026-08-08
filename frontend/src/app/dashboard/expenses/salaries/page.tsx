@@ -13,6 +13,7 @@ import {
   listWorkers,
   payWorker,
   updateWorker,
+  type ExpenseScope,
   type Worker,
 } from "@/lib/workers-api";
 import type { BatchExpense } from "@/types/production";
@@ -24,6 +25,16 @@ import { Label } from "@/components/ui/label";
 import { useI18n } from "@/hooks/use-i18n";
 import { todayInput } from "@/lib/date-range";
 import { WorkerSearchSelect } from "@/components/workers/worker-search-select";
+import {
+  ExpenseScopeChips,
+  scopeChipClass,
+} from "@/components/expenses/expense-scope-chips";
+import {
+  matchesExpenseScope,
+  usePersistedExpenseScope,
+} from "@/hooks/use-persisted-expense-scope";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 function displayWorkerName(
   w: { name: string; nameUr?: string } | string | null | undefined,
@@ -60,6 +71,7 @@ export default function SalariesPage() {
   const [payNote, setPayNote] = useState("");
 
   const [search, setSearch] = useState("");
+  const { scope: scopeFilter, formDefault } = usePersistedExpenseScope();
   const [showAddWorker, setShowAddWorker] = useState(false);
   const [showAddPayment, setShowAddPayment] = useState(false);
   const [addPayWorkerId, setAddPayWorkerId] = useState("");
@@ -67,12 +79,20 @@ export default function SalariesPage() {
   const [newNameUr, setNewNameUr] = useState("");
   const [newJob, setNewJob] = useState("");
   const [newUnitLabel, setNewUnitLabel] = useState("hub");
+  const [newScope, setNewScope] = useState<ExpenseScope>("common");
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editNameUr, setEditNameUr] = useState("");
   const [editJob, setEditJob] = useState("");
   const [editUnitLabel, setEditUnitLabel] = useState("");
+  const [editScope, setEditScope] = useState<ExpenseScope>("common");
+
+  const scopeLabels = {
+    hub: t("exp.scopeHub"),
+    drum: t("exp.scopeDrum"),
+    common: t("exp.scopeCommon"),
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -96,20 +116,24 @@ export default function SalariesPage() {
   }, [load]);
 
   const periodTotal = useMemo(
-    () => payments.reduce((s, e) => s + e.amount, 0),
-    [payments]
+    () =>
+      payments
+        .filter((e) => matchesExpenseScope(e.scope, scopeFilter))
+        .reduce((s, e) => s + e.amount, 0),
+    [payments, scopeFilter]
   );
 
   const filteredWorkers = useMemo(() => {
+    let list = workers.filter((w) => matchesExpenseScope(w.scope, scopeFilter));
     const q = search.trim().toLowerCase();
-    if (!q) return workers;
-    return workers.filter(
+    if (!q) return list;
+    return list.filter(
       (w) =>
         w.name.toLowerCase().includes(q) ||
         (w.nameUr && w.nameUr.toLowerCase().includes(q)) ||
         (w.job && w.job.toLowerCase().includes(q))
     );
-  }, [workers, search]);
+  }, [workers, search, scopeFilter]);
 
   function openPay(w: Worker) {
     setEditingId(null);
@@ -130,6 +154,7 @@ export default function SalariesPage() {
     setEditNameUr(w.nameUr || "");
     setEditJob(w.job || "");
     setEditUnitLabel(w.unitLabel || "piece");
+    setEditScope((w.scope as ExpenseScope) || "common");
   }
 
   function openAddPaymentForm() {
@@ -148,6 +173,7 @@ export default function SalariesPage() {
     setEditingId(null);
     setShowAddPayment(false);
     setShowAddWorker(true);
+    setNewScope(formDefault);
   }
 
   async function onSaveEdit(w: Worker) {
@@ -163,6 +189,7 @@ export default function SalariesPage() {
         nameUr: editNameUr.trim(),
         job: editJob.trim(),
         unitLabel: editUnitLabel.trim() || "piece",
+        scope: editScope,
       });
       toast.success(t("sal.workerUpdated"));
       setEditingId(null);
@@ -253,11 +280,13 @@ export default function SalariesPage() {
         nameUr: newNameUr.trim(),
         job: newJob.trim(),
         unitLabel: newUnitLabel.trim() || "piece",
+        scope: newScope,
       });
       toast.success("Worker added");
       setNewName("");
       setNewNameUr("");
       setNewJob("");
+      setNewScope(formDefault);
       setShowAddWorker(false);
       await load();
     } catch (err) {
@@ -391,7 +420,7 @@ export default function SalariesPage() {
                 <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-4">
                   <Label>{t("salReports.worker")}</Label>
                   <WorkerSearchSelect
-                    workers={workers}
+                    workers={filteredWorkers}
                     value={addPayWorkerId}
                     onChange={setAddPayWorkerId}
                     placeholder={t("sal.pickWorker")}
@@ -484,6 +513,16 @@ export default function SalariesPage() {
                     placeholder={t("sal.phUnit")}
                   />
                 </div>
+                <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-4">
+                  <Label>{t("exp.scope")}</Label>
+                  <ExpenseScopeChips
+                    value={newScope}
+                    onChange={(next) => {
+                      if (next !== "all") setNewScope(next);
+                    }}
+                    labels={scopeLabels}
+                  />
+                </div>
                 <div className="flex items-end sm:col-span-2 lg:col-span-4">
                   <Button
                     type="button"
@@ -525,12 +564,23 @@ export default function SalariesPage() {
                     <CardContent className="flex flex-col gap-3 px-3.5 py-3.5 sm:px-4 sm:py-3.5">
                       <div className="flex flex-wrap items-center justify-between gap-2.5">
                         <div className="min-w-0">
-                          <p
-                            className="truncate text-base font-medium tracking-tight"
-                            dir={isUrdu && w.nameUr?.trim() ? "rtl" : undefined}
-                          >
-                            {displayWorkerName(w, isUrdu)}
-                          </p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p
+                              className="truncate text-base font-medium tracking-tight"
+                              dir={isUrdu && w.nameUr?.trim() ? "rtl" : undefined}
+                            >
+                              {displayWorkerName(w, isUrdu)}
+                            </p>
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "font-data text-[9px]",
+                                scopeChipClass(w.scope || "common")
+                              )}
+                            >
+                              {scopeLabels[(w.scope as ExpenseScope) || "common"]}
+                            </Badge>
+                          </div>
                           {w.job ? (
                             <p className="mt-0.5 text-xs text-muted-foreground">
                               {displayJob(w.job, t)}
@@ -612,6 +662,16 @@ export default function SalariesPage() {
                                 placeholder={t("sal.phUnit")}
                               />
                             </div>
+                            <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-4">
+                              <Label>{t("exp.scope")}</Label>
+                              <ExpenseScopeChips
+                                value={editScope}
+                                onChange={(next) => {
+                                  if (next !== "all") setEditScope(next);
+                                }}
+                                labels={scopeLabels}
+                              />
+                            </div>
                           </div>
                           <div className="mt-4 flex flex-wrap gap-2">
                             <Button
@@ -641,6 +701,17 @@ export default function SalariesPage() {
                           className="rounded-xl border border-border/80 bg-muted/30 p-4"
                           onClick={(e) => e.stopPropagation()}
                         >
+                          <div className="mb-3 flex flex-wrap items-center gap-2">
+                            <span className="text-xs text-muted-foreground">{t("exp.scope")}:</span>
+                            <span
+                              className={cn(
+                                "rounded border px-2 py-0.5 text-xs font-medium",
+                                scopeChipClass(w.scope || "common")
+                              )}
+                            >
+                              {scopeLabels[(w.scope as ExpenseScope) || "common"]}
+                            </span>
+                          </div>
                           <div className="grid gap-3 sm:grid-cols-3">
                             <div className="flex flex-col gap-1.5">
                               <Label>{t("sal.paymentAmount")}</Label>

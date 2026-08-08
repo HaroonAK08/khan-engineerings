@@ -14,6 +14,10 @@ import { UrduPhoneticInput } from "@/components/ui/urdu-phonetic-input";
 import { Label } from "@/components/ui/label";
 import { useI18n } from "@/hooks/use-i18n";
 import { todayInput } from "@/lib/date-range";
+import {
+  matchesExpenseScope,
+  usePersistedExpenseScope,
+} from "@/hooks/use-persisted-expense-scope";
 
 export default function TaxesExpensesPage() {
   const { t } = useI18n();
@@ -23,6 +27,7 @@ export default function TaxesExpensesPage() {
   const [amount, setAmount] = useState("");
   const [taxDate, setTaxDate] = useState(todayInput());
   const [note, setNote] = useState("");
+  const { scope: scopeFilter } = usePersistedExpenseScope();
 
   const load = useCallback(async () => {
     try {
@@ -38,7 +43,13 @@ export default function TaxesExpensesPage() {
     return () => clearTimeout(timer);
   }, [load]);
 
-  const total = useMemo(() => expenses.reduce((s, e) => s + e.amount, 0), [expenses]);
+  const total = useMemo(
+    () =>
+      expenses
+        .filter((e) => matchesExpenseScope(e.scope, scopeFilter, "taxes"))
+        .reduce((s, e) => s + e.amount, 0),
+    [expenses, scopeFilter]
+  );
 
   async function onSave() {
     const value = Number(amount);
@@ -57,6 +68,7 @@ export default function TaxesExpensesPage() {
         amount: value,
         expenseDate: taxDate,
         notes: note.trim() || undefined,
+        scope: "common" as const,
       };
       const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
         createFactoryExpense({ ...body, confirmDuplicate })
@@ -141,6 +153,10 @@ export default function TaxesExpensesPage() {
               onChange={setNote}
               className="h-11"
             />
+          </div>
+          <div className="flex flex-col gap-1.5 sm:col-span-4">
+            <Label>{t("exp.scope")}</Label>
+            <p className="text-sm text-muted-foreground">{t("exp.scopeAlwaysCommon")}</p>
           </div>
           <div className="flex flex-wrap gap-2 sm:col-span-4">
             <Button

@@ -12,6 +12,10 @@ const LINKS: Array<{ href: string; labelKey: MessageKey; exact?: boolean }> = [
     labelKey: "financeSubnav.productionMargin",
     exact: true,
   },
+  {
+    href: "/dashboard/finance/party-margin",
+    labelKey: "financeSubnav.partyMargin",
+  },
   { href: "/dashboard/finance/monthly", labelKey: "financeSubnav.monthly" },
 ];
 

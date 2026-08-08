@@ -11,11 +11,14 @@ import {
   getWorker,
   listSalaryPayments,
   payWorker,
+  type ExpenseScope,
   type Worker,
 } from "@/lib/workers-api";
 import type { BatchExpense } from "@/types/production";
 import { toDateInput, todayInput } from "@/lib/date-range";
 import { DateRangeFilter } from "@/components/date-range-filter";
+import { scopeChipClass } from "@/components/expenses/expense-scope-chips";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -65,6 +68,12 @@ export default function WorkerSalaryLedgerPage() {
   const params = useParams();
   const id = String(params.id);
   const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
+
+  const scopeLabels = {
+    hub: t("exp.scopeHub"),
+    drum: t("exp.scopeDrum"),
+    common: t("exp.scopeCommon"),
+  };
 
   const [worker, setWorker] = useState<Worker | null>(null);
   const [payments, setPayments] = useState<BatchExpense[]>([]);
@@ -321,7 +330,23 @@ export default function WorkerSalaryLedgerPage() {
                     <TableCell
                       dir={isUrdu && worker.nameUr?.trim() ? "rtl" : undefined}
                     >
-                      {workerName}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span>{workerName}</span>
+                        <span
+                          className={cn(
+                            "rounded border px-1.5 py-0.5 text-[10px] font-medium",
+                            scopeChipClass(p.scope || worker.scope || "common")
+                          )}
+                        >
+                          {
+                            scopeLabels[
+                              (p.scope as ExpenseScope) ||
+                                (worker.scope as ExpenseScope) ||
+                                "common"
+                            ]
+                          }
+                        </span>
+                      </div>
                       {p.notes?.trim() ? (
                         <p className="truncate text-xs text-muted-foreground">
                           {p.notes.trim()}

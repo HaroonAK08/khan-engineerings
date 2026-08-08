@@ -12,6 +12,7 @@ router.get("/customer-revenue", controller.customerRevenue);
 router.get("/supplier-expenses", controller.supplierExpenses);
 router.get("/product-profit", controller.productProfit);
 router.get("/production-margin", controller.productionMargin);
+router.get("/party-sales-margin", controller.partySalesMargin);
 router.get("/manufacturing", controller.manufacturing);
 router.get("/expense-breakdown", controller.expenses);
 

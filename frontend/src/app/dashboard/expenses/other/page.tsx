@@ -3,17 +3,31 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { History, Loader2, Paintbrush } from "lucide-react";
+import { History, Loader2, Paintbrush, Plus } from "lucide-react";
 import { createFactoryExpense, listFactoryExpenses } from "@/lib/expenses-api";
 import { apiError, formatMoney, withSameDayConfirm } from "@/lib/materials-api";
 import type { BatchExpense } from "@/types/production";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { UrduPhoneticInput } from "@/components/ui/urdu-phonetic-input";
 import { Label } from "@/components/ui/label";
 import { useI18n, type MessageKey } from "@/hooks/use-i18n";
 import { todayInput } from "@/lib/date-range";
+import { ExpenseScopeChips } from "@/components/expenses/expense-scope-chips";
+import type { ExpenseScope } from "@/lib/workers-api";
+import {
+  isAlwaysCommonExpenseCategory,
+  matchesExpenseScope,
+  usePersistedExpenseScope,
+} from "@/hooks/use-persisted-expense-scope";
 
 const OTHER_CATEGORIES: Array<{ id: string; labelKey: MessageKey }> = [
   { id: "paint", labelKey: "other.cat.paint" },
@@ -31,12 +45,51 @@ const OTHER_CATEGORIES: Array<{ id: string; labelKey: MessageKey }> = [
 ];
 
 const OTHER_IDS = new Set(OTHER_CATEGORIES.map((c) => c.id));
+const CUSTOM_CATEGORY_STORAGE_KEY = "ke.other-expense-categories";
+
+type CustomCategory = { id: string; label: string };
+
+function slugifyCategory(name: string) {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\u0600-\u06ff]+/gi, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 48);
+}
+
+function loadCustomCategories(): CustomCategory[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(CUSTOM_CATEGORY_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (row): row is CustomCategory =>
+          !!row &&
+          typeof row === "object" &&
+          typeof (row as CustomCategory).id === "string" &&
+          typeof (row as CustomCategory).label === "string" &&
+          (row as CustomCategory).label.trim().length > 0
+      )
+      .map((row) => ({ id: row.id, label: row.label.trim() }));
+  } catch {
+    return [];
+  }
+}
+
+function saveCustomCategories(rows: CustomCategory[]) {
+  window.localStorage.setItem(CUSTOM_CATEGORY_STORAGE_KEY, JSON.stringify(rows));
+}
 
 /** Categories that are usually amount-only (no purchased qty). */
 const AMOUNT_ONLY_CATEGORIES = new Set(["machine", "repairs", "tour_expenses", "other"]);
 
 const amountOnlyCategory = (id: string) => AMOUNT_ONLY_CATEGORIES.has(id);
 const categoryUsesQuantityByDefault = (id: string) => !amountOnlyCategory(id);
+const isCustomCategoryId = (id: string) => id.startsWith("custom:");
 
 export default function OtherExpensesPage() {
   const { t } = useI18n();
@@ -45,6 +98,9 @@ export default function OtherExpensesPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const [category, setCategory] = useState("paint");
+  const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
   const [trackQuantity, setTrackQuantity] = useState(true);
   const [priceMode, setPriceMode] = useState<"rate" | "total">("rate");
   const [quantity, setQuantity] = useState("");
@@ -54,9 +110,36 @@ export default function OtherExpensesPage() {
   const [expenseDate, setExpenseDate] = useState(todayInput());
   const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
+  const { scope: scopeFilter, formDefault } = usePersistedExpenseScope();
+  const [scope, setScope] = useState<ExpenseScope>(formDefault);
+
+  const scopeLabels = {
+    hub: t("exp.scopeHub"),
+    drum: t("exp.scopeDrum"),
+    common: t("exp.scopeCommon"),
+  };
+
+  const selectedCustom = useMemo(
+    () => (isCustomCategoryId(category) ? customCategories.find((c) => c.id === category) : null),
+    [category, customCategories]
+  );
+  const expenseCategoryId = selectedCustom ? "other" : category;
+  const alwaysCommon = isAlwaysCommonExpenseCategory(expenseCategoryId);
+  const saveScope = alwaysCommon ? "common" : scope;
+
+  useEffect(() => {
+    setCustomCategories(loadCustomCategories());
+  }, []);
 
   function selectCategory(id: string) {
     setCategory(id);
+    if (isCustomCategoryId(id)) {
+      const custom = customCategories.find((c) => c.id === id);
+      setTitle(custom?.label ?? "");
+      setTrackQuantity(true);
+      setPriceMode("rate");
+      return;
+    }
     if (id !== "other") setTitle("");
     setTrackQuantity(categoryUsesQuantityByDefault(id));
     if (id === "petrol" || id === "lpg_gas") {
@@ -70,6 +153,40 @@ export default function OtherExpensesPage() {
     } else {
       setPriceMode("rate");
     }
+  }
+
+  function onCreateCategory() {
+    const label = newCategoryName.trim();
+    if (!label) {
+      toast.error(t("other.createCategoryRequired"));
+      return;
+    }
+    const builtInMatch = OTHER_CATEGORIES.some(
+      (c) => t(c.labelKey).toLowerCase() === label.toLowerCase()
+    );
+    const customMatch = customCategories.some(
+      (c) => c.label.toLowerCase() === label.toLowerCase()
+    );
+    if (builtInMatch || customMatch) {
+      toast.error(t("other.createCategoryExists"));
+      return;
+    }
+    const slug = slugifyCategory(label) || `cat_${Date.now()}`;
+    const id = `custom:${slug}`;
+    if (customCategories.some((c) => c.id === id) || OTHER_IDS.has(slug)) {
+      toast.error(t("other.createCategoryExists"));
+      return;
+    }
+    const next = [...customCategories, { id, label }];
+    setCustomCategories(next);
+    saveCustomCategories(next);
+    setNewCategoryName("");
+    setCreateOpen(false);
+    setCategory(id);
+    setTitle(label);
+    setTrackQuantity(true);
+    setPriceMode("rate");
+    toast.success(t("other.createCategoryAdded"));
   }
 
   const calculatedTotal = useMemo(() => {
@@ -103,7 +220,18 @@ export default function OtherExpensesPage() {
     return () => clearTimeout(timer);
   }, [load]);
 
-  const total = useMemo(() => expenses.reduce((s, e) => s + e.amount, 0), [expenses]);
+  useEffect(() => {
+    if (alwaysCommon) setScope("common");
+    else setScope(formDefault);
+  }, [alwaysCommon, formDefault]);
+
+  const total = useMemo(
+    () =>
+      expenses
+        .filter((e) => matchesExpenseScope(e.scope, scopeFilter, e.category))
+        .reduce((s, e) => s + e.amount, 0),
+    [expenses, scopeFilter]
+  );
 
   async function onSave() {
     let value: number;
@@ -142,8 +270,9 @@ export default function OtherExpensesPage() {
         ? `@ ${rate.trim()}/${unit}`
         : "";
     const combinedNotes = [note.trim(), rateNote].filter(Boolean).join(" · ") || undefined;
-    const expenseTitle = category === "other" ? title.trim() : "";
-    if (category === "other" && !expenseTitle) {
+    const expenseTitle =
+      selectedCustom?.label.trim() || (expenseCategoryId === "other" ? title.trim() : "");
+    if (expenseCategoryId === "other" && !expenseTitle) {
       toast.error(t("other.nameRequired"));
       return;
     }
@@ -151,9 +280,10 @@ export default function OtherExpensesPage() {
     setBusyId(category);
     try {
       const body = {
-        category,
+        category: expenseCategoryId,
         amount: value,
         expenseDate,
+        scope: saveScope,
         ...(expenseTitle ? { title: expenseTitle } : {}),
         notes: combinedNotes,
         ...(trackQuantity && qty != null
@@ -169,11 +299,12 @@ export default function OtherExpensesPage() {
       setQuantityUnit("kg");
       setRate("");
       setAmount("");
-      setTitle("");
+      if (!selectedCustom) setTitle("");
       setNote("");
+      setScope(formDefault);
       setExpenseDate(todayInput());
-      setTrackQuantity(categoryUsesQuantityByDefault(category));
-      setPriceMode(categoryUsesQuantityByDefault(category) ? "rate" : "total");
+      setTrackQuantity(categoryUsesQuantityByDefault(expenseCategoryId));
+      setPriceMode(categoryUsesQuantityByDefault(expenseCategoryId) ? "rate" : "total");
       await load();
     } catch (err) {
       toast.error(apiError(err, "Save failed"));
@@ -218,7 +349,22 @@ export default function OtherExpensesPage() {
       <Card>
         <CardContent className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4 sm:p-5">
           <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-4">
-            <Label>{t("other.category")}</Label>
+            <div className="flex items-center justify-between gap-2">
+              <Label>{t("other.category")}</Label>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={() => {
+                  setNewCategoryName("");
+                  setCreateOpen(true);
+                }}
+              >
+                <Plus className="size-3.5" />
+                {t("other.createCategory")}
+              </Button>
+            </div>
             <div className="flex flex-wrap gap-2">
               {OTHER_CATEGORIES.map((c) => (
                 <Button
@@ -231,6 +377,17 @@ export default function OtherExpensesPage() {
                 >
                   {c.id === "paint" ? <Paintbrush className="size-3.5" /> : null}
                   {t(c.labelKey)}
+                </Button>
+              ))}
+              {customCategories.map((c) => (
+                <Button
+                  key={c.id}
+                  type="button"
+                  size="sm"
+                  variant={category === c.id ? "default" : "outline"}
+                  onClick={() => selectCategory(c.id)}
+                >
+                  {c.label}
                 </Button>
               ))}
             </div>
@@ -382,7 +539,7 @@ export default function OtherExpensesPage() {
               className="h-11"
             />
           </div>
-          {category === "other" ? (
+          {expenseCategoryId === "other" && !selectedCustom ? (
             <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-4">
               <Label>{t("other.expenseName")}</Label>
               <UrduPhoneticInput
@@ -402,6 +559,23 @@ export default function OtherExpensesPage() {
               className="h-11"
             />
           </div>
+          <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-4">
+            <Label>{t("exp.scope")}</Label>
+            {alwaysCommon ? (
+              <p className="text-sm text-muted-foreground">{t("exp.scopeAlwaysCommon")}</p>
+            ) : (
+              <>
+                <ExpenseScopeChips
+                  value={scope}
+                  onChange={(next) => {
+                    if (next !== "all") setScope(next);
+                  }}
+                  labels={scopeLabels}
+                />
+                <p className="text-xs text-muted-foreground">{t("exp.scopeHint")}</p>
+              </>
+            )}
+          </div>
           <div className="sm:col-span-2 lg:col-span-4">
             <Button
               type="button"
@@ -416,6 +590,33 @@ export default function OtherExpensesPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-nameplate text-base">
+              {t("other.createCategoryTitle")}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-1.5">
+            <Label>{t("other.createCategoryName")}</Label>
+            <UrduPhoneticInput
+              placeholder={t("other.phCreateCategory")}
+              value={newCategoryName}
+              onChange={setNewCategoryName}
+              className="h-11"
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
+              {t("cus.cancel")}
+            </Button>
+            <Button type="button" onClick={onCreateCategory}>
+              {t("other.createCategorySave")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

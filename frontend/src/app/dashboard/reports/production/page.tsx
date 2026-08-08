@@ -9,15 +9,16 @@ import { DateRangeFilter } from "@/components/date-range-filter";
 import { ReportsSubnav } from "@/components/layout/reports-subnav";
 import { ExportButtons } from "@/components/reports/export-buttons";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
-import { apiError, formatKg } from "@/lib/materials-api";
+import { apiError, formatKg, formatMoney } from "@/lib/materials-api";
 import { getProductionReport } from "@/lib/production-api";
 import type { ProductionReport } from "@/types/production";
 import { downloadReportExport } from "@/lib/reports-api";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -81,30 +82,55 @@ export default function ProductionReportsHubPage() {
     rows: NonNullable<ProductionReport["byProduct"]>
   ) {
     const title = family === "hub" ? t("prod.hub") : t("prod.drum");
-    const accent =
-      family === "hub"
-        ? "border-sky-500/30 bg-sky-500/5"
-        : "border-amber-500/30 bg-amber-500/5";
+    const isDrum = family === "drum";
+    const headerBg = isDrum ? "bg-amber-600" : "bg-sky-600";
+    const headerText = "text-white";
+    const totals = rows.reduce(
+      (acc, p) => {
+        acc.pieces += p.goodUnits || 0;
+        acc.materialKg += family === "hub" ? p.scrapKg ?? 0 : p.daigKg ?? 0;
+        acc.soldPrice += p.soldPrice ?? 0;
+        acc.unitsSold += p.unitsSold ?? 0;
+        return acc;
+      },
+      { pieces: 0, materialKg: 0, soldPrice: 0, unitsSold: 0 }
+    );
+    const avgSell =
+      totals.unitsSold > 0 ? totals.soldPrice / totals.unitsSold : 0;
 
     return (
-      <Card className={accent}>
-        <CardHeader>
-          <CardTitle className="text-nameplate text-sm">{title}</CardTitle>
-        </CardHeader>
-        <CardContent className="px-0">
+      <Card className="gap-0 overflow-visible py-0">
+        <div className={`sticky top-0 z-20 rounded-t-xl shadow-md ${headerBg} ${headerText}`}>
+          <div className="px-4 py-3 sm:px-5">
+            <h2 className="text-nameplate text-base tracking-[0.12em] uppercase sm:text-lg">
+              {title}
+            </h2>
+          </div>
+        </div>
+        <CardContent className="px-0 pt-0">
           {rows.length === 0 ? (
             <p className="px-6 py-8 text-center text-sm text-muted-foreground">
               {t("prodReports.noProdRange")}
             </p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("common.product")}</TableHead>
-                  <TableHead className="text-right">{t("prodReports.runs")}</TableHead>
-                  <TableHead className="text-right">{t("prodReports.pieces")}</TableHead>
-                  <TableHead className="text-right">{t("prod.scrap")}</TableHead>
-                  <TableHead className="text-right">{t("prod.daig")}</TableHead>
+            <Table containerClassName="overflow-visible">
+              <TableHeader className="sticky top-12 z-10 shadow-sm [&_tr]:border-b-0">
+                <TableRow className={`hover:bg-transparent ${headerBg}`}>
+                  <TableHead className={`${headerBg} ${headerText} font-semibold`}>
+                    {t("common.product")}
+                  </TableHead>
+                  <TableHead className={`${headerBg} ${headerText} text-right font-semibold`}>
+                    {t("prodReports.pieces")}
+                  </TableHead>
+                  <TableHead className={`${headerBg} ${headerText} text-right font-semibold`}>
+                    {family === "hub" ? t("prod.scrap") : t("prod.daig")}
+                  </TableHead>
+                  <TableHead className={`${headerBg} ${headerText} text-right font-semibold`}>
+                    {t("prodMargin.sellPerPiece")}
+                  </TableHead>
+                  <TableHead className={`${headerBg} ${headerText} text-right font-semibold`}>
+                    {t("prodMargin.sellValue")}
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -113,16 +139,15 @@ export default function ProductionReportsHubPage() {
                   return (
                     <TableRow
                       key={String(p.productId)}
-                      className="cursor-pointer hover:bg-muted/50"
+                      className={
+                        isDrum
+                          ? "cursor-pointer border-amber-500/10 bg-amber-500/5 hover:bg-amber-500/10"
+                          : "cursor-pointer border-sky-500/10 bg-sky-500/5 hover:bg-sky-500/10"
+                      }
                     >
                       <TableCell>
                         <Link href={href} className="block font-medium hover:underline">
                           {p.name}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="font-data text-right text-xs">
-                        <Link href={href} className="block">
-                          {p.batchCount}
                         </Link>
                       </TableCell>
                       <TableCell className="font-data text-right text-xs">
@@ -132,18 +157,44 @@ export default function ProductionReportsHubPage() {
                       </TableCell>
                       <TableCell className="font-data text-right text-xs">
                         <Link href={href} className="block">
-                          {formatKg(p.scrapKg ?? 0)}
+                          {formatKg(family === "hub" ? (p.scrapKg ?? 0) : (p.daigKg ?? 0))}
                         </Link>
                       </TableCell>
                       <TableCell className="font-data text-right text-xs">
                         <Link href={href} className="block">
-                          {formatKg(p.daigKg ?? 0)}
+                          {formatMoney(p.avgSellPerPiece ?? 0)}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="font-data text-right text-xs">
+                        <Link href={href} className="block">
+                          {formatMoney(p.soldPrice ?? 0)}
                         </Link>
                       </TableCell>
                     </TableRow>
                   );
                 })}
               </TableBody>
+              <TableFooter>
+                <TableRow
+                  className={
+                    isDrum
+                      ? "bg-amber-600/15 font-medium hover:bg-amber-600/15"
+                      : "bg-sky-600/15 font-medium hover:bg-sky-600/15"
+                  }
+                >
+                  <TableCell>{t("prodMargin.total")}</TableCell>
+                  <TableCell className="font-data text-right text-xs">{totals.pieces}</TableCell>
+                  <TableCell className="font-data text-right text-xs">
+                    {formatKg(totals.materialKg)}
+                  </TableCell>
+                  <TableCell className="font-data text-right text-xs">
+                    {formatMoney(avgSell)}
+                  </TableCell>
+                  <TableCell className="font-data text-right text-xs">
+                    {formatMoney(totals.soldPrice)}
+                  </TableCell>
+                </TableRow>
+              </TableFooter>
             </Table>
           )}
         </CardContent>

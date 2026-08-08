@@ -587,24 +587,31 @@ async function exportProduction(query, format, res) {
     return exportProductionProduct(query.product, query, format, res);
   }
   const report = await productionService.getReport(query);
-  const columns = ["Product", "Batches", "Good", "Rejected", "Scrap kg", "Daig kg"];
-  const toRow = (p) => [
+  const hubColumns = ["Product", "Pieces", "Scrap kg", "Avg sell / pc", "Sold price"];
+  const drumColumns = ["Product", "Pieces", "Daig kg", "Avg sell / pc", "Sold price"];
+  const toHubRow = (p) => [
     p.name,
-    p.batchCount,
     p.goodUnits,
-    p.rejectedUnits,
     p.scrapKg ?? 0,
+    p.avgSellPerPiece ?? 0,
+    p.soldPrice ?? 0,
+  ];
+  const toDrumRow = (p) => [
+    p.name,
+    p.goodUnits,
     p.daigKg ?? 0,
+    p.avgSellPerPiece ?? 0,
+    p.soldPrice ?? 0,
   ];
   const hubRows = (report.byProduct || [])
     .filter((p) => (p.family || "hub") === "hub")
-    .map(toRow);
+    .map(toHubRow);
   const drumRows = (report.byProduct || [])
     .filter((p) => p.family === "drum")
-    .map(toRow);
+    .map(toDrumRow);
   const sections = [
-    { heading: "Hub", columns, rows: hubRows.length ? hubRows : [["—", 0, 0, 0, 0, 0]] },
-    { heading: "Drum", columns, rows: drumRows.length ? drumRows : [["—", 0, 0, 0, 0, 0]] },
+    { heading: "Hub", columns: hubColumns, rows: hubRows.length ? hubRows : [["—", 0, 0, 0, 0]] },
+    { heading: "Drum", columns: drumColumns, rows: drumRows.length ? drumRows : [["—", 0, 0, 0, 0]] },
   ];
   const meta = {
     Period: periodLabel(query.dateFrom, query.dateTo),
@@ -615,6 +622,8 @@ async function exportProduction(query, format, res) {
     "Daig used (kg)": report.totals.byMaterial?.daig ?? report.totals.daigKg ?? 0,
     "Good units": report.totals.goodUnits,
     "Reject rate": `${report.totals.rejectRate}%`,
+    "Sold price": report.totals.soldPrice ?? 0,
+    "Units sold": report.totals.unitsSold ?? 0,
   };
   const title = "Production report";
   if (format === "pdf") {
@@ -1920,36 +1929,44 @@ async function collectModuleSection(kind, query) {
   if (kind === "production") {
     const report = await productionService.getReport(query);
     const t = report.totals || {};
-    const columns = ["Product", "Batches", "Good", "Rejected", "Net kg"];
-    const toRow = (p) => [
+    const hubColumns = ["Product", "Pieces", "Scrap kg", "Avg sell / pc", "Sold price"];
+    const drumColumns = ["Product", "Pieces", "Daig kg", "Avg sell / pc", "Sold price"];
+    const toHubRow = (p) => [
       p.name,
-      p.batchCount,
       p.goodUnits,
-      p.rejectedUnits,
-      p.netConsumedKg,
+      p.scrapKg ?? 0,
+      p.avgSellPerPiece ?? 0,
+      p.soldPrice ?? 0,
+    ];
+    const toDrumRow = (p) => [
+      p.name,
+      p.goodUnits,
+      p.daigKg ?? 0,
+      p.avgSellPerPiece ?? 0,
+      p.soldPrice ?? 0,
     ];
     const hubRows = (report.byProduct || [])
       .filter((p) => (p.family || "hub") === "hub")
-      .map(toRow);
+      .map(toHubRow);
     const drumRows = (report.byProduct || [])
       .filter((p) => p.family === "drum")
-      .map(toRow);
+      .map(toDrumRow);
     return {
       id: "production",
       sheetName: "Production",
       title: "Production",
       heading: "Production",
-      columns,
+      columns: hubColumns,
       rows: [...hubRows, ...drumRows],
       subsections: [
         {
           heading: "Hub",
-          columns,
+          columns: hubColumns,
           rows: hubRows.length ? hubRows : [["—", 0, 0, 0, 0]],
         },
         {
           heading: "Drum",
-          columns,
+          columns: drumColumns,
           rows: drumRows.length ? drumRows : [["—", 0, 0, 0, 0]],
         },
       ],
@@ -1959,6 +1976,8 @@ async function collectModuleSection(kind, query) {
         "Waste (kg)": t.wasteKg ?? 0,
         "Good units": t.goodUnits || 0,
         "Rejected units": t.rejectedUnits || t.brokenUnits || 0,
+        "Sold price": t.soldPrice || 0,
+        "Units sold": t.unitsSold || 0,
       },
       conclusion: [
         ["Batches", t.batchCount || 0],
@@ -1970,6 +1989,8 @@ async function collectModuleSection(kind, query) {
         ["Rejected units", t.rejectedUnits || t.brokenUnits || 0],
         ["Reject rate %", t.rejectRate ?? 0],
         ["Loss rate %", t.lossRate ?? 0],
+        ["Sold price", t.soldPrice || 0],
+        ["Units sold", t.unitsSold || 0],
       ],
     };
   }

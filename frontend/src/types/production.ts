@@ -107,6 +107,9 @@ export type ProductionReport = {
     scrapKg?: number;
     daigKg?: number;
     materialLossKg?: number;
+    unitsSold?: number;
+    avgSellPerPiece?: number;
+    soldPrice?: number;
   }>;
 };
 
@@ -148,6 +151,7 @@ export type BatchExpense = {
   expenseDate: string;
   title?: string;
   notes: string;
+  scope?: "hub" | "drum" | "common";
   worker?:
     | string
     | null
@@ -158,6 +162,7 @@ export type BatchExpense = {
         payType?: string;
         rate?: number;
         job?: string;
+        scope?: "hub" | "drum" | "common";
       };
   salesman?:
     | string

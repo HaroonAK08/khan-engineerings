@@ -184,6 +184,36 @@ function EditBuiltyForm() {
     [lines, products]
   );
 
+  const familySummary = useMemo(() => {
+    const hub = { qty: 0, amount: 0 };
+    const drum = { qty: 0, amount: 0 };
+    for (const line of lines) {
+      if (!line.product || !(Number(line.quantity) > 0)) continue;
+      const product = products.find((p) => p._id === line.product);
+      if (!product) continue;
+      const qty = Number(line.quantity) || 0;
+      const amount = lineTotal(products, line);
+      if (product.family === "drum") {
+        drum.qty += qty;
+        drum.amount += amount;
+      } else {
+        hub.qty += qty;
+        hub.amount += amount;
+      }
+    }
+    return {
+      hub: {
+        qty: hub.qty,
+        amount: Math.round(hub.amount * 100) / 100,
+      },
+      drum: {
+        qty: drum.qty,
+        amount: Math.round(drum.amount * 100) / 100,
+      },
+      totalQty: hub.qty + drum.qty,
+    };
+  }, [lines, products]);
+
   function updateLine(index: number, patch: Partial<Line>) {
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
   }
@@ -585,6 +615,36 @@ function EditBuiltyForm() {
             <p className="font-data text-right text-base">
               {t("orderNew.total")} <span className="text-xl">{formatMoney(total)}</span>
             </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-nameplate text-sm">{t("builtyNew.summary")}</CardTitle>
+            <CardDescription>{t("builtyNew.summaryDesc")}</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-lg border border-border p-3">
+              <p className="text-xs text-muted-foreground">{t("builtyNew.totalQty")}</p>
+              <p className="font-data mt-1 text-xl">{familySummary.totalQty}</p>
+              <p className="font-data mt-1 text-sm text-muted-foreground">
+                {formatMoney(total)}
+              </p>
+            </div>
+            <div className="rounded-lg border border-sky-500/30 bg-sky-500/5 p-3">
+              <p className="text-xs text-sky-700 dark:text-sky-300">{t("prod.hub")}</p>
+              <p className="font-data mt-1 text-xl">{familySummary.hub.qty}</p>
+              <p className="font-data mt-1 text-sm text-muted-foreground">
+                {formatMoney(familySummary.hub.amount)}
+              </p>
+            </div>
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+              <p className="text-xs text-amber-700 dark:text-amber-300">{t("prod.drum")}</p>
+              <p className="font-data mt-1 text-xl">{familySummary.drum.qty}</p>
+              <p className="font-data mt-1 text-sm text-muted-foreground">
+                {formatMoney(familySummary.drum.amount)}
+              </p>
+            </div>
           </CardContent>
         </Card>
 

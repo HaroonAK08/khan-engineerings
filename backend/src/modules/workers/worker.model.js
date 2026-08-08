@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 
 const PAY_TYPES = ["weekly", "monthly", "per_unit"];
 const PAY_DAYS = ["monday", "thursday"];
+const EXPENSE_SCOPES = ["hub", "drum", "common"];
 
 const workerSchema = new mongoose.Schema(
   {
@@ -21,6 +22,13 @@ const workerSchema = new mongoose.Schema(
       type: [{ type: String, enum: PAY_DAYS }],
       default: () => ["monday", "thursday"],
     },
+    /** Hub-only / drum-only / common — salary payments inherit this into expense.scope */
+    scope: {
+      type: String,
+      enum: EXPENSE_SCOPES,
+      default: "common",
+      index: true,
+    },
     job: { type: String, trim: true, default: "" },
     notes: { type: String, trim: true, default: "" },
     isActive: { type: Boolean, default: true, index: true },
@@ -33,3 +41,4 @@ workerSchema.index({ name: "text" });
 module.exports = mongoose.model("Worker", workerSchema);
 module.exports.PAY_TYPES = PAY_TYPES;
 module.exports.PAY_DAYS = PAY_DAYS;
+module.exports.EXPENSE_SCOPES = EXPENSE_SCOPES;

@@ -10,6 +10,7 @@ export async function listFactoryExpenses(params?: {
   dateFrom?: string;
   dateTo?: string;
   category?: string;
+  scope?: "hub" | "drum" | "common";
 }) {
   const { data } = await api.get<{ expenses: BatchExpense[] }>("/expenses", { params });
   return data.expenses;
@@ -24,6 +25,7 @@ export async function createFactoryExpense(body: {
   notes?: string;
   quantity?: number;
   quantityUnit?: string;
+  scope?: "hub" | "drum" | "common";
   confirmDuplicate?: boolean;
 }) {
   const { data } = await api.post<{ expense: BatchExpense }>("/expenses", body);
@@ -41,6 +43,7 @@ export async function updateFactoryExpense(
     stage: string;
     quantity: number | null;
     quantityUnit: string;
+    scope: "hub" | "drum" | "common";
   }>
 ) {
   const { data } = await api.patch<{ expense: BatchExpense }>(`/expenses/${id}`, body);

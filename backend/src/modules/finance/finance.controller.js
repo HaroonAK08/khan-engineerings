@@ -54,6 +54,15 @@ async function productionMargin(req, res, next) {
   }
 }
 
+async function partySalesMargin(req, res, next) {
+  try {
+    const report = await financeService.getPartySalesMargin(req.query);
+    res.json(report);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function manufacturing(req, res, next) {
   try {
     const report = await financeService.getManufacturingAnalysis(req.query);
@@ -106,6 +115,7 @@ module.exports = {
   supplierExpenses,
   productProfit,
   productionMargin,
+  partySalesMargin,
   manufacturing,
   expenses,
   listEntries,

@@ -17,10 +17,13 @@ export type Customer = {
   isActive: boolean;
 };
 
+export type PartyGroupChannel = "power_engineering" | "ik_engineering";
+
 export type PartyGroup = {
   _id: string;
   name: string;
   notes: string;
+  channel?: PartyGroupChannel;
   isActive: boolean;
   partyCount?: number;
   parties?: Array<{
@@ -224,7 +227,11 @@ export async function listCustomers(params?: { q?: string; active?: string; grou
   return data.customers;
 }
 
-export async function listPartyGroups(params?: { q?: string; active?: string }) {
+export async function listPartyGroups(params?: {
+  q?: string;
+  active?: string;
+  channel?: PartyGroupChannel;
+}) {
   const { data } = await api.get<{ groups: PartyGroup[] }>("/party-groups", { params });
   return data.groups;
 }
@@ -237,6 +244,7 @@ export async function getPartyGroup(id: string) {
 export async function createPartyGroup(body: {
   name: string;
   notes?: string;
+  channel?: PartyGroupChannel;
   partyIds?: string[];
   isActive?: boolean;
 }) {
@@ -249,6 +257,7 @@ export async function updatePartyGroup(
   body: {
     name?: string;
     notes?: string;
+    channel?: PartyGroupChannel;
     partyIds?: string[];
     isActive?: boolean;
   }

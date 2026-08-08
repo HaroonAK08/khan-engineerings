@@ -37,6 +37,17 @@ import {
 } from "@/components/ui/table";
 import { useI18n, type MessageKey } from "@/hooks/use-i18n";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
+import {
+  isAlwaysCommonExpenseCategory,
+  matchesExpenseScope,
+  usePersistedExpenseScope,
+} from "@/hooks/use-persisted-expense-scope";
+import {
+  ExpenseScopeChips,
+  scopeChipClass,
+} from "@/components/expenses/expense-scope-chips";
+import type { ExpenseScope } from "@/lib/workers-api";
+import { cn } from "@/lib/utils";
 
 export type ExpenseCategoryOption = {
   id: string;
@@ -51,6 +62,8 @@ type Props = {
   categories: string[] | ExpenseCategoryOption[];
   defaultCategory?: string;
   fallbackDetail: string;
+  /** When true, show units-consumed field (electricity). */
+  trackUnits?: boolean;
 };
 
 function isOptionList(
@@ -67,6 +80,7 @@ export function ExpenseCalendar({
   categories,
   defaultCategory,
   fallbackDetail,
+  trackUnits = false,
 }: Props) {
   const { t } = useI18n();
 
@@ -104,8 +118,17 @@ export function ExpenseCalendar({
   const [formTitle, setFormTitle] = useState("");
   const [formNote, setFormNote] = useState("");
   const [formDate, setFormDate] = useState("");
+  const { scope: scopeFilter, formDefault } = usePersistedExpenseScope();
+  const [formScope, setFormScope] = useState<ExpenseScope>(formDefault);
+  const [formUnits, setFormUnits] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  const scopeLabels = {
+    hub: t("exp.scopeHub"),
+    drum: t("exp.scopeDrum"),
+    common: t("exp.scopeCommon"),
+  };
 
   function categoryLabel(id: string) {
     if (isOptionList(categories)) {
@@ -158,6 +181,12 @@ export function ExpenseCalendar({
     setFormTitle("");
     setFormNote("");
     setFormDate(todayInput());
+    setFormScope(
+      isAlwaysCommonExpenseCategory(defaultCategory || categoryIds[0])
+        ? "common"
+        : formDefault
+    );
+    setFormUnits("");
     setDialogOpen(true);
   }
 
@@ -169,6 +198,8 @@ export function ExpenseCalendar({
     setFormTitle(e.title?.trim() || "");
     setFormNote(e.notes?.trim() || "");
     setFormDate(toDateInput(new Date(e.expenseDate)));
+    setFormScope((e.scope as ExpenseScope) || "common");
+    setFormUnits(e.quantity != null ? String(e.quantity) : "");
     setDialogOpen(true);
   }
 
@@ -184,15 +215,30 @@ export function ExpenseCalendar({
     }
     setSaving(true);
     try {
+      const unitsValue =
+        trackUnits && formUnits.trim() !== "" ? Number(formUnits) : null;
+      if (
+        trackUnits &&
+        formUnits.trim() !== "" &&
+        (!Number.isFinite(unitsValue) || (unitsValue as number) < 0)
+      ) {
+        toast.error(t("elec.unitsInvalid"));
+        setSaving(false);
+        return;
+      }
       if (dialogMode === "add") {
         const body = {
           category: formCategory,
           amount,
           expenseDate: formDate,
+          scope: isAlwaysCommonExpenseCategory(formCategory) ? "common" : formScope,
           ...(formCategory === "other" && formTitle.trim()
             ? { title: formTitle.trim() }
             : {}),
           notes: formNote.trim() || undefined,
+          ...(trackUnits && unitsValue != null
+            ? { quantity: unitsValue, quantityUnit: "units" }
+            : {}),
         };
         const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
           createFactoryExpense({ ...body, confirmDuplicate })
@@ -205,7 +251,13 @@ export function ExpenseCalendar({
           expenseDate: formDate,
           title: formCategory === "other" ? formTitle.trim() : "",
           notes: formNote.trim(),
+          scope: isAlwaysCommonExpenseCategory(formCategory) ? "common" : formScope,
           ...(multiCategory ? { category: formCategory } : {}),
+          ...(trackUnits
+            ? unitsValue != null
+              ? { quantity: unitsValue, quantityUnit: "units" }
+              : { quantity: null }
+            : {}),
         });
         toast.success(t("exp.entryUpdated"));
       }
@@ -248,12 +300,13 @@ export function ExpenseCalendar({
   const sorted = useMemo(
     () =>
       expenses
+        .filter((e) => matchesExpenseScope(e.scope, scopeFilter, e.category))
         .slice()
         .sort(
           (a, b) =>
             new Date(b.expenseDate).getTime() - new Date(a.expenseDate).getTime()
         ),
-    [expenses]
+    [expenses, scopeFilter]
   );
 
   const total = useMemo(() => sorted.reduce((s, e) => s + e.amount, 0), [sorted]);
@@ -377,6 +430,9 @@ export function ExpenseCalendar({
                 <TableRow>
                   <TableHead>{t("common.date")}</TableHead>
                   <TableHead>{t("exp.colDetail")}</TableHead>
+                  {trackUnits ? (
+                    <TableHead className="text-end">{t("elec.unitsConsumed")}</TableHead>
+                  ) : null}
                   <TableHead className="text-end">{t("exp.amount")}</TableHead>
                   <TableHead className="text-end">{t("exp.actions")}</TableHead>
                 </TableRow>
@@ -399,7 +455,17 @@ export function ExpenseCalendar({
                       {formatDate(e.expenseDate)}
                     </TableCell>
                     <TableCell>
-                      <span className="font-medium">{expenseLabel(e)}</span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium">{expenseLabel(e)}</span>
+                        <span
+                          className={cn(
+                            "rounded border px-1.5 py-0.5 text-[10px] font-medium",
+                            scopeChipClass(e.scope || "common")
+                          )}
+                        >
+                          {scopeLabels[(e.scope as ExpenseScope) || "common"]}
+                        </span>
+                      </div>
                       {multiCategory ||
                       (e.title?.trim() && e.title.trim() !== categoryLabel(e.category)) ||
                       (e.notes?.trim() && e.notes.trim() !== expenseLabel(e)) ? (
@@ -409,6 +475,11 @@ export function ExpenseCalendar({
                         </p>
                       ) : null}
                     </TableCell>
+                    {trackUnits ? (
+                      <TableCell className="font-data text-end text-xs whitespace-nowrap">
+                        {e.quantity != null ? Number(e.quantity).toLocaleString() : "—"}
+                      </TableCell>
+                    ) : null}
                     <TableCell className="font-data text-end font-medium whitespace-nowrap">
                       {formatMoney(e.amount)}
                     </TableCell>
@@ -444,7 +515,7 @@ export function ExpenseCalendar({
               </TableBody>
               <TableFooter>
                 <TableRow>
-                  <TableCell colSpan={2} className="font-semibold">
+                  <TableCell colSpan={trackUnits ? 3 : 2} className="font-semibold">
                     {t("exp.totalSpent")}
                   </TableCell>
                   <TableCell className="font-data text-end text-base font-semibold whitespace-nowrap">
@@ -495,6 +566,19 @@ export function ExpenseCalendar({
                 autoFocus
               />
             </div>
+            {trackUnits ? (
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("elec.unitsConsumed")}</Label>
+                <Input
+                  type="number"
+                  step="1"
+                  value={formUnits}
+                  onChange={(e) => setFormUnits(e.target.value)}
+                  className="h-11 text-base"
+                  placeholder={t("elec.phUnits")}
+                />
+              </div>
+            ) : null}
             <div className="flex flex-col gap-1.5">
               <Label>{t("common.date")}</Label>
               <Input
@@ -522,6 +606,23 @@ export function ExpenseCalendar({
                 onChange={setFormNote}
                 className="h-11"
               />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>{t("exp.scope")}</Label>
+              {isAlwaysCommonExpenseCategory(formCategory) ? (
+                <p className="text-sm text-muted-foreground">{t("exp.scopeAlwaysCommon")}</p>
+              ) : (
+                <>
+                  <ExpenseScopeChips
+                    value={formScope}
+                    onChange={(next) => {
+                      if (next !== "all") setFormScope(next);
+                    }}
+                    labels={scopeLabels}
+                  />
+                  <p className="text-xs text-muted-foreground">{t("exp.scopeHint")}</p>
+                </>
+              )}
             </div>
           </div>
 

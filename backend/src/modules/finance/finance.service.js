@@ -584,6 +584,7 @@ async function getAvgMaterialRates(from, to) {
 function emptyFamilyTotals() {
   return {
     pieces: 0,
+    finishedKg: 0,
     scrapKg: 0,
     daigKg: 0,
     wasteKg: 0,
@@ -593,6 +594,8 @@ function emptyFamilyTotals() {
     sellValue: 0,
     unitsSold: 0,
     profit: 0,
+    costPerKg: null,
+    overheadPerKg: null,
     marginPct: null,
   };
 }
@@ -746,7 +749,11 @@ async function getProductionMargin(query = {}) {
       row.name = prod.name || row.name;
       row.family = prod.family || row.family;
       row.catalogSellPrice = Number(prod.sellingPrice) || 0;
+      row.weightKg = Number(prod.weightKg) || 0;
+    } else {
+      row.weightKg = Number(row.weightKg) || 0;
     }
+    row.finishedKg = roundKg((row.weightKg || 0) * (row.pieces || 0));
   }
 
   // Actual builty sales this period (by product + by family).
@@ -821,22 +828,125 @@ async function getProductionMargin(query = {}) {
     { $match: dateMatch("expenseDate", from, to) },
     { $group: { _id: "$category", amount: { $sum: "$amount" } } },
   ]);
-  const overheadTotal = expenseByCategory.reduce((s, e) => s + (e.amount || 0), 0);
   const categoryAmountMap = Object.fromEntries(
     expenseByCategory.map((e) => [e._id, e.amount || 0])
   );
   const categoryLabel = Object.fromEntries(expenseCats.map((c) => [c.id, c.label]));
 
-  const totalPieces = [...byProductMap.values()].reduce((s, r) => s + r.pieces, 0);
+  const expenseByScopeCategory = await BatchExpense.aggregate([
+    { $match: dateMatch("expenseDate", from, to) },
+    {
+      $lookup: {
+        from: "workers",
+        localField: "worker",
+        foreignField: "_id",
+        as: "_worker",
+      },
+    },
+    {
+      $addFields: {
+        effectiveScope: {
+          $let: {
+            vars: {
+              expenseScope: "$scope",
+              workerScope: { $arrayElemAt: ["$_worker.scope", 0] },
+            },
+            in: {
+              $cond: [
+                {
+                  $in: [
+                    "$category",
+                    ["electricity", "taxes", "paint", "lpg_gas", "petrol", "tools", "machine", "repairs"],
+                  ],
+                },
+                "common",
+                {
+                  $cond: [
+                    { $in: ["$$expenseScope", ["hub", "drum", "common"]] },
+                    "$$expenseScope",
+                    {
+                      $cond: [
+                        { $in: ["$$workerScope", ["hub", "drum", "common"]] },
+                        "$$workerScope",
+                        "common",
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      },
+    },
+    {
+      $group: {
+        _id: {
+          scope: "$effectiveScope",
+          category: "$category",
+        },
+        amount: { $sum: "$amount" },
+      },
+    },
+  ]);
+  /** Hub vs drum electricity intensity when production kg is equal (60% / 40%). */
+  const ELECTRICITY_HUB_INTENSITY = 0.6;
+  const ELECTRICITY_DRUM_INTENSITY = 0.4;
+  const overheadPools = { hub: 0, drum: 0, common: 0 };
+  let electricityCommon = 0;
+  for (const row of expenseByScopeCategory) {
+    const scope =
+      row._id?.scope === "hub" || row._id?.scope === "drum" ? row._id.scope : "common";
+    const amount = row.amount || 0;
+    if (row._id?.category === "electricity" && scope === "common") {
+      electricityCommon = roundMoney(electricityCommon + amount);
+    } else {
+      overheadPools[scope] = roundMoney((overheadPools[scope] || 0) + amount);
+    }
+  }
+  const overheadTotal = roundMoney(
+    overheadPools.hub + overheadPools.drum + overheadPools.common + electricityCommon
+  );
 
-  const productRows = [...byProductMap.values()]
-    .filter((r) => r.pieces > 0)
+  const workingRows = [...byProductMap.values()].filter((r) => r.pieces > 0);
+  const hubFinishedKg = roundKg(
+    workingRows.filter((r) => (r.family || "hub") !== "drum").reduce((s, r) => s + (r.finishedKg || 0), 0)
+  );
+  const drumFinishedKg = roundKg(
+    workingRows.filter((r) => r.family === "drum").reduce((s, r) => s + (r.finishedKg || 0), 0)
+  );
+  const allFinishedKg = roundKg(hubFinishedKg + drumFinishedKg);
+  const electricityWeightTotal = workingRows.reduce((s, r) => {
+    const kg = r.finishedKg || 0;
+    const intensity =
+      r.family === "drum" ? ELECTRICITY_DRUM_INTENSITY : ELECTRICITY_HUB_INTENSITY;
+    return s + kg * intensity;
+  }, 0);
+
+  const totalPieces = workingRows.reduce((s, r) => s + r.pieces, 0);
+
+  const productRows = workingRows
     .map((row) => {
       const scrapCost = row.scrapKg * avgScrapRate;
       const daigCost = row.daigKg * avgDaigRate;
       const materialCost = scrapCost + daigCost;
-      const overhead =
-        totalPieces > 0 ? (row.pieces / totalPieces) * overheadTotal : 0;
+      const fam = row.family === "drum" ? "drum" : "hub";
+      const finishedKg = row.finishedKg || 0;
+      let overhead = 0;
+      if (fam === "hub" && hubFinishedKg > 0) {
+        overhead += (finishedKg / hubFinishedKg) * overheadPools.hub;
+      }
+      if (fam === "drum" && drumFinishedKg > 0) {
+        overhead += (finishedKg / drumFinishedKg) * overheadPools.drum;
+      }
+      if (allFinishedKg > 0) {
+        overhead += (finishedKg / allFinishedKg) * overheadPools.common;
+      }
+      if (electricityCommon > 0 && electricityWeightTotal > 0) {
+        const intensity =
+          fam === "drum" ? ELECTRICITY_DRUM_INTENSITY : ELECTRICITY_HUB_INTENSITY;
+        overhead += ((finishedKg * intensity) / electricityWeightTotal) * electricityCommon;
+      }
       const totalCost = materialCost + overhead;
 
       const period = periodSales[row.productId];
@@ -852,17 +962,20 @@ async function getProductionMargin(query = {}) {
       }
 
       sellPricePerPiece = roundMoney(sellPricePerPiece);
-      // Actual billed sales for this product in the period (not produced × avg).
       const sellValue = roundMoney(period?.revenue || 0);
       const profit = sellValue - totalCost;
       const costPerPiece = row.pieces > 0 ? totalCost / row.pieces : 0;
       const profitPerPiece = sellPricePerPiece - costPerPiece;
       const marginPct = sellValue > 0 ? (profit / sellValue) * 100 : null;
+      const costPerKg = finishedKg > 0 ? totalCost / finishedKg : null;
+      const overheadPerKg = finishedKg > 0 ? overhead / finishedKg : null;
       return {
         productId: row.productId,
         name: row.name,
         family: row.family,
         pieces: row.pieces,
+        weightKg: roundKg(row.weightKg || 0),
+        finishedKg: roundKg(finishedKg),
         scrapKg: roundKg(row.scrapKg),
         daigKg: roundKg(row.daigKg),
         wasteKg: roundKg(row.wasteKg),
@@ -874,6 +987,8 @@ async function getProductionMargin(query = {}) {
         overhead: roundMoney(overhead),
         totalCost: roundMoney(totalCost),
         costPerPiece: roundMoney(costPerPiece),
+        costPerKg: costPerKg != null ? roundMoney(costPerKg) : null,
+        overheadPerKg: overheadPerKg != null ? roundMoney(overheadPerKg) : null,
         sellPricePerPiece,
         sellPriceSource,
         unitsSoldPeriod,
@@ -890,6 +1005,7 @@ async function getProductionMargin(query = {}) {
     const fam = byFamily[row.family] ? row.family : "hub";
     const t = byFamily[fam];
     t.pieces += row.pieces;
+    t.finishedKg = roundKg(t.finishedKg + (row.finishedKg || 0));
     t.scrapKg = roundKg(t.scrapKg + row.scrapKg);
     t.daigKg = roundKg(t.daigKg + row.daigKg);
     t.wasteKg = roundKg(t.wasteKg + row.wasteKg);
@@ -903,6 +1019,22 @@ async function getProductionMargin(query = {}) {
   byFamily.drum.unitsSold = periodSalesAgg.drumUnits;
   byFamily.hub.profit = roundMoney(byFamily.hub.sellValue - byFamily.hub.totalCost);
   byFamily.drum.profit = roundMoney(byFamily.drum.sellValue - byFamily.drum.totalCost);
+  byFamily.hub.costPerKg =
+    byFamily.hub.finishedKg > 0
+      ? roundMoney(byFamily.hub.totalCost / byFamily.hub.finishedKg)
+      : null;
+  byFamily.drum.costPerKg =
+    byFamily.drum.finishedKg > 0
+      ? roundMoney(byFamily.drum.totalCost / byFamily.drum.finishedKg)
+      : null;
+  byFamily.hub.overheadPerKg =
+    byFamily.hub.finishedKg > 0
+      ? roundMoney(byFamily.hub.overhead / byFamily.hub.finishedKg)
+      : null;
+  byFamily.drum.overheadPerKg =
+    byFamily.drum.finishedKg > 0
+      ? roundMoney(byFamily.drum.overhead / byFamily.drum.finishedKg)
+      : null;
   for (const key of Object.keys(byFamily)) {
     const t = byFamily[key];
     t.marginPct = t.sellValue > 0 ? roundMoney((t.profit / t.sellValue) * 100) : null;
@@ -973,6 +1105,22 @@ async function getProductionMargin(query = {}) {
       builtyCount: periodSalesAgg.builtyCount,
       profit: totalProfit,
       marginPct: totalSellValue > 0 ? roundMoney((totalProfit / totalSellValue) * 100) : null,
+      hubFinishedKg,
+      drumFinishedKg,
+      hubCostPerKg: byFamily.hub.costPerKg,
+      drumCostPerKg: byFamily.drum.costPerKg,
+      hubOverheadPerKg: byFamily.hub.overheadPerKg,
+      drumOverheadPerKg: byFamily.drum.overheadPerKg,
+      overheadPools: {
+        hub: overheadPools.hub,
+        drum: overheadPools.drum,
+        common: overheadPools.common,
+        electricity: electricityCommon,
+      },
+      electricityIntensity: {
+        hub: ELECTRICITY_HUB_INTENSITY,
+        drum: ELECTRICITY_DRUM_INTENSITY,
+      },
     },
     purchasedVsUsed: {
       purchased: {
@@ -1001,6 +1149,566 @@ async function getProductionMargin(query = {}) {
   };
 }
 
+/** Groups that do NOT carry salesman commission + tour (user rule). */
+const NO_SALESMAN_GROUP_NAMES = new Set(["i k", "ik", "machi goth"]);
+
+const MAIN_CHANNELS = {
+  powerEngineering: {
+    id: "power_engineering",
+    name: "Power Engineering Salesmans",
+    salesmanChannel: true,
+  },
+  ikEngineering: {
+    id: "ik_engineering",
+    name: "IK Engineering",
+    salesmanChannel: false,
+    memberGroups: ["I K", "Machi Goth"],
+  },
+};
+
+function isSalesmanGroupName(name) {
+  const key = String(name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+  if (!key || key === "(no group)") return false;
+  return !NO_SALESMAN_GROUP_NAMES.has(key);
+}
+
+/**
+ * Party-wise sale vs manufacture P/L.
+ * Does not change production-margin behaviour.
+ * Factory mfg/kg = production cost/kg with commission+tour removed from common.
+ * Salesman groups add commission+tour / salesman-sold-kg on top.
+ */
+async function getPartySalesMargin(query = {}) {
+  const { from, to } = periodBounds(query);
+  const margin = await getProductionMargin(query);
+
+  const salesmanLoad = roundMoney(
+    (margin.expenseBreakdown || [])
+      .filter((e) => e.id === "salesman_commission" || e.id === "tour_expenses")
+      .reduce((s, e) => s + (e.amount || 0), 0)
+  );
+
+  const hubFinishedKg = margin.summary?.hubFinishedKg || 0;
+  const drumFinishedKg = margin.summary?.drumFinishedKg || 0;
+  const allFinishedKg = roundKg(hubFinishedKg + drumFinishedKg);
+  const commonSalesmanPerFinishedKg =
+    allFinishedKg > 0 ? roundMoney(salesmanLoad / allFinishedKg) : 0;
+
+  const hubFactoryCostPerKg =
+    margin.summary?.hubCostPerKg != null
+      ? roundMoney(margin.summary.hubCostPerKg - commonSalesmanPerFinishedKg)
+      : null;
+  const drumFactoryCostPerKg =
+    margin.summary?.drumCostPerKg != null
+      ? roundMoney(margin.summary.drumCostPerKg - commonSalesmanPerFinishedKg)
+      : null;
+
+  const Product = require("../products/product.model");
+  const products = await Product.find({}).select("name family weightKg").lean();
+  const productMap = new Map(products.map((p) => [String(p._id), p]));
+
+  const salesRows = await Builty.aggregate([
+    { $match: dateMatch("builtyDate", from, to) },
+    {
+      $lookup: {
+        from: "customers",
+        localField: "customer",
+        foreignField: "_id",
+        as: "customerDoc",
+      },
+    },
+    { $unwind: { path: "$customerDoc", preserveNullAndEmptyArrays: true } },
+    {
+      $lookup: {
+        from: "partygroups",
+        localField: "customerDoc.group",
+        foreignField: "_id",
+        as: "groupDoc",
+      },
+    },
+    { $unwind: { path: "$groupDoc", preserveNullAndEmptyArrays: true } },
+    { $unwind: "$items" },
+    {
+      $project: {
+        customerId: "$customer",
+        customerName: { $ifNull: ["$customerDoc.name", "Unknown party"] },
+        groupId: "$groupDoc._id",
+        groupName: { $ifNull: ["$groupDoc.name", "(no group)"] },
+        productId: "$items.product",
+        quantity: { $ifNull: ["$items.quantity", 0] },
+        lineTotal: { $ifNull: ["$items.lineTotal", 0] },
+        itemWeightKg: { $ifNull: ["$items.weightKg", 0] },
+      },
+    },
+  ]);
+
+  const partyMap = new Map();
+  let salesmanSoldKg = 0;
+
+  for (const row of salesRows) {
+    const pid = String(row.customerId || "unknown");
+    const product = productMap.get(String(row.productId)) || {};
+    const family = product.family === "drum" ? "drum" : "hub";
+    const weightKg = Number(row.itemWeightKg) || Number(product.weightKg) || 0;
+    const qty = Number(row.quantity) || 0;
+    const kg = weightKg * qty;
+    const amount = Number(row.lineTotal) || 0;
+    const groupName = row.groupName || "(no group)";
+    const salesmanChannel = isSalesmanGroupName(groupName);
+
+    if (!partyMap.has(pid)) {
+      partyMap.set(pid, {
+        partyId: pid,
+        partyName: row.customerName || "Unknown party",
+        groupId: row.groupId ? String(row.groupId) : null,
+        groupName,
+        salesmanChannel,
+        hubQty: 0,
+        drumQty: 0,
+        hubKg: 0,
+        drumKg: 0,
+        hubSale: 0,
+        drumSale: 0,
+      });
+    }
+    const p = partyMap.get(pid);
+    if (family === "drum") {
+      p.drumQty += qty;
+      p.drumKg += kg;
+      p.drumSale += amount;
+    } else {
+      p.hubQty += qty;
+      p.hubKg += kg;
+      p.hubSale += amount;
+    }
+  }
+
+  for (const p of partyMap.values()) {
+    if (p.salesmanChannel) {
+      salesmanSoldKg += p.hubKg + p.drumKg;
+    }
+  }
+  salesmanSoldKg = roundKg(salesmanSoldKg);
+  const salesmanPerSoldKg =
+    salesmanSoldKg > 0 ? roundMoney(salesmanLoad / salesmanSoldKg) : 0;
+
+  const hubMfgSalesman =
+    hubFactoryCostPerKg != null
+      ? roundMoney(hubFactoryCostPerKg + salesmanPerSoldKg)
+      : null;
+  const drumMfgSalesman =
+    drumFactoryCostPerKg != null
+      ? roundMoney(drumFactoryCostPerKg + salesmanPerSoldKg)
+      : null;
+
+  const parties = [...partyMap.values()]
+    .map((p) => {
+      const hubQty = Math.round(p.hubQty || 0);
+      const drumQty = Math.round(p.drumQty || 0);
+      const totalQty = hubQty + drumQty;
+      const hubKg = roundKg(p.hubKg);
+      const drumKg = roundKg(p.drumKg);
+      const totalKg = roundKg(hubKg + drumKg);
+      const hubSale = roundMoney(p.hubSale);
+      const drumSale = roundMoney(p.drumSale);
+      const totalSale = roundMoney(hubSale + drumSale);
+
+      const hubMfgPerKg = p.salesmanChannel ? hubMfgSalesman : hubFactoryCostPerKg;
+      const drumMfgPerKg = p.salesmanChannel ? drumMfgSalesman : drumFactoryCostPerKg;
+
+      const hubMfg = hubMfgPerKg != null ? roundMoney(hubKg * hubMfgPerKg) : 0;
+      const drumMfg = drumMfgPerKg != null ? roundMoney(drumKg * drumMfgPerKg) : 0;
+      const totalMfg = roundMoney(hubMfg + drumMfg);
+      const hubProfit = roundMoney(hubSale - hubMfg);
+      const drumProfit = roundMoney(drumSale - drumMfg);
+      const profit = roundMoney(hubProfit + drumProfit);
+
+      const hubSalePerKg = hubKg > 0 ? roundMoney(hubSale / hubKg) : null;
+      const drumSalePerKg = drumKg > 0 ? roundMoney(drumSale / drumKg) : null;
+      const avgSalePerKg = totalKg > 0 ? roundMoney(totalSale / totalKg) : null;
+      const avgMfgPerKg = totalKg > 0 ? roundMoney(totalMfg / totalKg) : null;
+      const hubProfitPerKg = hubKg > 0 ? roundMoney(hubProfit / hubKg) : null;
+      const drumProfitPerKg = drumKg > 0 ? roundMoney(drumProfit / drumKg) : null;
+      const profitPerKg = totalKg > 0 ? roundMoney(profit / totalKg) : null;
+
+      return {
+        partyId: p.partyId,
+        partyName: p.partyName,
+        groupId: p.groupId,
+        groupName: p.groupName,
+        salesmanChannel: p.salesmanChannel,
+        hubQty,
+        drumQty,
+        totalQty,
+        hubKg,
+        drumKg,
+        totalKg,
+        hubSale,
+        drumSale,
+        totalSale,
+        hubSalePerKg,
+        drumSalePerKg,
+        avgSalePerKg,
+        hubMfgPerKg,
+        drumMfgPerKg,
+        avgMfgPerKg,
+        hubMfg,
+        drumMfg,
+        totalMfg,
+        hubProfit,
+        drumProfit,
+        profit,
+        hubProfitPerKg,
+        drumProfitPerKg,
+        profitPerKg,
+      };
+    })
+    .filter((p) => p.totalKg > 0 || p.totalSale > 0)
+    .sort((a, b) => a.profit - b.profit);
+
+  const totals = parties.reduce(
+    (acc, p) => {
+      acc.hubQty += p.hubQty;
+      acc.drumQty += p.drumQty;
+      acc.totalQty += p.totalQty;
+      acc.hubKg += p.hubKg;
+      acc.drumKg += p.drumKg;
+      acc.totalKg += p.totalKg;
+      acc.hubSale += p.hubSale;
+      acc.drumSale += p.drumSale;
+      acc.totalSale += p.totalSale;
+      acc.hubMfg += p.hubMfg;
+      acc.drumMfg += p.drumMfg;
+      acc.totalMfg += p.totalMfg;
+      acc.hubProfit += p.hubProfit;
+      acc.drumProfit += p.drumProfit;
+      acc.profit += p.profit;
+      if (p.salesmanChannel) {
+        acc.salesman.hubQty += p.hubQty;
+        acc.salesman.drumQty += p.drumQty;
+        acc.salesman.totalQty += p.totalQty;
+        acc.salesman.hubKg += p.hubKg;
+        acc.salesman.drumKg += p.drumKg;
+        acc.salesman.totalKg += p.totalKg;
+        acc.salesman.hubSale += p.hubSale;
+        acc.salesman.drumSale += p.drumSale;
+        acc.salesman.totalSale += p.totalSale;
+        acc.salesman.hubMfg += p.hubMfg;
+        acc.salesman.drumMfg += p.drumMfg;
+        acc.salesman.totalMfg += p.totalMfg;
+        acc.salesman.hubProfit += p.hubProfit;
+        acc.salesman.drumProfit += p.drumProfit;
+        acc.salesman.profit += p.profit;
+      } else {
+        acc.direct.hubQty += p.hubQty;
+        acc.direct.drumQty += p.drumQty;
+        acc.direct.totalQty += p.totalQty;
+        acc.direct.hubKg += p.hubKg;
+        acc.direct.drumKg += p.drumKg;
+        acc.direct.totalKg += p.totalKg;
+        acc.direct.hubSale += p.hubSale;
+        acc.direct.drumSale += p.drumSale;
+        acc.direct.totalSale += p.totalSale;
+        acc.direct.hubMfg += p.hubMfg;
+        acc.direct.drumMfg += p.drumMfg;
+        acc.direct.totalMfg += p.totalMfg;
+        acc.direct.hubProfit += p.hubProfit;
+        acc.direct.drumProfit += p.drumProfit;
+        acc.direct.profit += p.profit;
+      }
+      return acc;
+    },
+    {
+      hubQty: 0,
+      drumQty: 0,
+      totalQty: 0,
+      hubKg: 0,
+      drumKg: 0,
+      totalKg: 0,
+      hubSale: 0,
+      drumSale: 0,
+      totalSale: 0,
+      hubMfg: 0,
+      drumMfg: 0,
+      totalMfg: 0,
+      hubProfit: 0,
+      drumProfit: 0,
+      profit: 0,
+      salesman: {
+        hubQty: 0,
+        drumQty: 0,
+        totalQty: 0,
+        hubKg: 0,
+        drumKg: 0,
+        totalKg: 0,
+        hubSale: 0,
+        drumSale: 0,
+        totalSale: 0,
+        hubMfg: 0,
+        drumMfg: 0,
+        totalMfg: 0,
+        hubProfit: 0,
+        drumProfit: 0,
+        profit: 0,
+      },
+      direct: {
+        hubQty: 0,
+        drumQty: 0,
+        totalQty: 0,
+        hubKg: 0,
+        drumKg: 0,
+        totalKg: 0,
+        hubSale: 0,
+        drumSale: 0,
+        totalSale: 0,
+        hubMfg: 0,
+        drumMfg: 0,
+        totalMfg: 0,
+        hubProfit: 0,
+        drumProfit: 0,
+        profit: 0,
+      },
+    }
+  );
+
+  for (const key of ["hubKg", "drumKg", "totalKg"]) {
+    totals[key] = roundKg(totals[key]);
+  }
+  totals.salesman.hubKg = roundKg(totals.salesman.hubKg);
+  totals.salesman.drumKg = roundKg(totals.salesman.drumKg);
+  totals.salesman.totalKg = roundKg(totals.salesman.totalKg);
+  totals.direct.hubKg = roundKg(totals.direct.hubKg);
+  totals.direct.drumKg = roundKg(totals.direct.drumKg);
+  totals.direct.totalKg = roundKg(totals.direct.totalKg);
+  for (const bucket of ["salesman", "direct", null]) {
+    const t = bucket ? totals[bucket] : totals;
+    t.hubQty = Math.round(t.hubQty || 0);
+    t.drumQty = Math.round(t.drumQty || 0);
+    t.totalQty = Math.round(t.totalQty || 0);
+  }
+  for (const key of [
+    "hubSale",
+    "drumSale",
+    "totalSale",
+    "hubMfg",
+    "drumMfg",
+    "totalMfg",
+    "hubProfit",
+    "drumProfit",
+    "profit",
+  ]) {
+    totals[key] = roundMoney(totals[key]);
+  }
+  for (const bucket of ["salesman", "direct"]) {
+    for (const key of [
+      "hubSale",
+      "drumSale",
+      "totalSale",
+      "hubMfg",
+      "drumMfg",
+      "totalMfg",
+      "hubProfit",
+      "drumProfit",
+      "profit",
+    ]) {
+      totals[bucket][key] = roundMoney(totals[bucket][key]);
+    }
+    totals[bucket].hubKg = roundKg(totals[bucket].hubKg);
+    totals[bucket].drumKg = roundKg(totals[bucket].drumKg);
+    totals[bucket].totalKg = roundKg(totals[bucket].totalKg);
+    totals[bucket].avgSalePerKg =
+      totals[bucket].totalKg > 0
+        ? roundMoney(totals[bucket].totalSale / totals[bucket].totalKg)
+        : null;
+    totals[bucket].avgMfgPerKg =
+      totals[bucket].totalKg > 0
+        ? roundMoney(totals[bucket].totalMfg / totals[bucket].totalKg)
+        : null;
+    totals[bucket].hubProfitPerKg =
+      totals[bucket].hubKg > 0
+        ? roundMoney(totals[bucket].hubProfit / totals[bucket].hubKg)
+        : null;
+    totals[bucket].drumProfitPerKg =
+      totals[bucket].drumKg > 0
+        ? roundMoney(totals[bucket].drumProfit / totals[bucket].drumKg)
+        : null;
+    totals[bucket].profitPerKg =
+      totals[bucket].totalKg > 0
+        ? roundMoney(totals[bucket].profit / totals[bucket].totalKg)
+        : null;
+  }
+  totals.avgSalePerKg =
+    totals.totalKg > 0 ? roundMoney(totals.totalSale / totals.totalKg) : null;
+  totals.avgMfgPerKg =
+    totals.totalKg > 0 ? roundMoney(totals.totalMfg / totals.totalKg) : null;
+  totals.hubProfitPerKg =
+    totals.hubKg > 0 ? roundMoney(totals.hubProfit / totals.hubKg) : null;
+  totals.drumProfitPerKg =
+    totals.drumKg > 0 ? roundMoney(totals.drumProfit / totals.drumKg) : null;
+  totals.profitPerKg =
+    totals.totalKg > 0 ? roundMoney(totals.profit / totals.totalKg) : null;
+
+  const byGroupMap = new Map();
+  for (const p of parties) {
+    const gid = p.groupId || p.groupName;
+    if (!byGroupMap.has(gid)) {
+      byGroupMap.set(gid, {
+        groupId: p.groupId,
+        groupName: p.groupName,
+        salesmanChannel: p.salesmanChannel,
+        hubQty: 0,
+        drumQty: 0,
+        totalQty: 0,
+        hubKg: 0,
+        drumKg: 0,
+        totalKg: 0,
+        hubSale: 0,
+        drumSale: 0,
+        totalSale: 0,
+        hubMfg: 0,
+        drumMfg: 0,
+        totalMfg: 0,
+        hubProfit: 0,
+        drumProfit: 0,
+        profit: 0,
+        partyCount: 0,
+      });
+    }
+    const g = byGroupMap.get(gid);
+    g.hubQty += p.hubQty;
+    g.drumQty += p.drumQty;
+    g.totalQty += p.totalQty;
+    g.hubKg += p.hubKg;
+    g.drumKg += p.drumKg;
+    g.totalKg += p.totalKg;
+    g.hubSale += p.hubSale;
+    g.drumSale += p.drumSale;
+    g.totalSale += p.totalSale;
+    g.hubMfg += p.hubMfg;
+    g.drumMfg += p.drumMfg;
+    g.totalMfg += p.totalMfg;
+    g.hubProfit += p.hubProfit;
+    g.drumProfit += p.drumProfit;
+    g.profit += p.profit;
+    g.partyCount += 1;
+  }
+
+  const groups = [...byGroupMap.values()]
+    .map((g) => ({
+      ...g,
+      hubQty: Math.round(g.hubQty),
+      drumQty: Math.round(g.drumQty),
+      totalQty: Math.round(g.totalQty),
+      hubKg: roundKg(g.hubKg),
+      drumKg: roundKg(g.drumKg),
+      totalKg: roundKg(g.totalKg),
+      hubSale: roundMoney(g.hubSale),
+      drumSale: roundMoney(g.drumSale),
+      totalSale: roundMoney(g.totalSale),
+      hubMfg: roundMoney(g.hubMfg),
+      drumMfg: roundMoney(g.drumMfg),
+      totalMfg: roundMoney(g.totalMfg),
+      hubProfit: roundMoney(g.hubProfit),
+      drumProfit: roundMoney(g.drumProfit),
+      profit: roundMoney(g.profit),
+      hubSalePerKg: g.hubKg > 0 ? roundMoney(g.hubSale / g.hubKg) : null,
+      drumSalePerKg: g.drumKg > 0 ? roundMoney(g.drumSale / g.drumKg) : null,
+      avgSalePerKg: g.totalKg > 0 ? roundMoney(g.totalSale / g.totalKg) : null,
+      hubMfgPerKg: g.salesmanChannel ? hubMfgSalesman : hubFactoryCostPerKg,
+      drumMfgPerKg: g.salesmanChannel ? drumMfgSalesman : drumFactoryCostPerKg,
+      avgMfgPerKg: g.totalKg > 0 ? roundMoney(g.totalMfg / g.totalKg) : null,
+      hubProfitPerKg: g.hubKg > 0 ? roundMoney(g.hubProfit / g.hubKg) : null,
+      drumProfitPerKg: g.drumKg > 0 ? roundMoney(g.drumProfit / g.drumKg) : null,
+      profitPerKg: g.totalKg > 0 ? roundMoney(g.profit / g.totalKg) : null,
+    }))
+    .sort((a, b) => a.profit - b.profit);
+
+  const elecBill = margin.summary?.overheadPools?.electricity || 0;
+  const hubW = hubFinishedKg * 0.6;
+  const drumW = drumFinishedKg * 0.4;
+  const elecW = hubW + drumW;
+  const elecHubShare = elecW > 0 ? (hubW / elecW) * elecBill : 0;
+  const elecDrumShare = elecW > 0 ? (drumW / elecW) * elecBill : 0;
+
+  const channelExpenseDocs = await BatchExpense.find({
+    ...dateMatch("expenseDate", from, to),
+    category: { $in: ["tour_expenses", "salesman_commission"] },
+  })
+    .populate("salesman", "name")
+    .sort({ expenseDate: -1, createdAt: -1 })
+    .lean();
+
+  const channelExpenses = channelExpenseDocs.map((e) => ({
+    _id: String(e._id),
+    category: e.category,
+    amount: roundMoney(e.amount || 0),
+    expenseDate: e.expenseDate,
+    notes: e.notes || "",
+    title: e.title || "",
+    salesmanId: e.salesman?._id ? String(e.salesman._id) : e.salesman ? String(e.salesman) : null,
+    salesmanName: e.salesman?.name || null,
+  }));
+
+  const tourTotal = roundMoney(
+    channelExpenses
+      .filter((e) => e.category === "tour_expenses")
+      .reduce((s, e) => s + e.amount, 0)
+  );
+  const salesmanPayTotal = roundMoney(
+    channelExpenses
+      .filter((e) => e.category === "salesman_commission")
+      .reduce((s, e) => s + e.amount, 0)
+  );
+
+  const powerGroups = groups.filter((g) => g.salesmanChannel);
+  const ikGroups = groups.filter((g) => !g.salesmanChannel);
+
+  return {
+    period: margin.period,
+    rates: {
+      hubFactoryCostPerKg,
+      drumFactoryCostPerKg,
+      hubMfgSalesman,
+      drumMfgSalesman,
+      salesmanPerSoldKg,
+      salesmanLoad,
+      salesmanSoldKg,
+      noSalesmanGroups: MAIN_CHANNELS.ikEngineering.memberGroups,
+    },
+    mainChannels: {
+      powerEngineering: {
+        ...MAIN_CHANNELS.powerEngineering,
+        memberGroups: powerGroups.map((g) => g.groupName),
+      },
+      ikEngineering: {
+        ...MAIN_CHANNELS.ikEngineering,
+        memberGroups: ikGroups.map((g) => g.groupName).length
+          ? ikGroups.map((g) => g.groupName)
+          : MAIN_CHANNELS.ikEngineering.memberGroups,
+      },
+    },
+    channelExpenses: {
+      items: channelExpenses,
+      tourTotal,
+      salesmanPayTotal,
+      total: roundMoney(tourTotal + salesmanPayTotal),
+    },
+    electricity: {
+      bill: roundMoney(elecBill),
+      hubShare: roundMoney(elecHubShare),
+      drumShare: roundMoney(elecDrumShare),
+      hubPerKg: hubFinishedKg > 0 ? roundMoney(elecHubShare / hubFinishedKg) : null,
+      drumPerKg: drumFinishedKg > 0 ? roundMoney(elecDrumShare / drumFinishedKg) : null,
+    },
+    totals,
+    groups,
+    parties,
+  };
+}
+
 module.exports = {
   createEntry,
   listEntries,
@@ -1013,5 +1721,6 @@ module.exports = {
   getManufacturingAnalysis,
   getExpenseBreakdown,
   getProductionMargin,
+  getPartySalesMargin,
   EXPENSE_CATEGORIES,
 };

@@ -14,6 +14,10 @@ import { UrduPhoneticInput } from "@/components/ui/urdu-phonetic-input";
 import { Label } from "@/components/ui/label";
 import { useI18n } from "@/hooks/use-i18n";
 import { todayInput } from "@/lib/date-range";
+import {
+  matchesExpenseScope,
+  usePersistedExpenseScope,
+} from "@/hooks/use-persisted-expense-scope";
 
 export default function ElectricityExpensesPage() {
   const { t } = useI18n();
@@ -21,8 +25,17 @@ export default function ElectricityExpensesPage() {
   const [busy, setBusy] = useState(false);
 
   const [amount, setAmount] = useState("");
+  const [units, setUnits] = useState("");
   const [billDate, setBillDate] = useState(todayInput());
   const [note, setNote] = useState("");
+  const { scope: scopeFilter } = usePersistedExpenseScope();
+
+  const unitRate = useMemo(() => {
+    const a = Number(amount);
+    const u = Number(units);
+    if (!Number.isFinite(a) || a <= 0 || !Number.isFinite(u) || u <= 0) return null;
+    return a / u;
+  }, [amount, units]);
 
   const load = useCallback(async () => {
     try {
@@ -38,7 +51,18 @@ export default function ElectricityExpensesPage() {
     return () => clearTimeout(timer);
   }, [load]);
 
-  const total = useMemo(() => expenses.reduce((s, e) => s + e.amount, 0), [expenses]);
+  const visibleExpenses = useMemo(
+    () =>
+      expenses.filter((e) =>
+        matchesExpenseScope(e.scope, scopeFilter, "electricity")
+      ),
+    [expenses, scopeFilter]
+  );
+
+  const total = useMemo(
+    () => visibleExpenses.reduce((s, e) => s + e.amount, 0),
+    [visibleExpenses]
+  );
 
   async function onSave() {
     const value = Number(amount);
@@ -50,6 +74,11 @@ export default function ElectricityExpensesPage() {
       toast.error("Pick the bill date");
       return;
     }
+    const unitsValue = units.trim() === "" ? null : Number(units);
+    if (unitsValue != null && (!Number.isFinite(unitsValue) || unitsValue < 0)) {
+      toast.error(t("elec.unitsInvalid"));
+      return;
+    }
     setBusy(true);
     try {
       const body = {
@@ -57,6 +86,10 @@ export default function ElectricityExpensesPage() {
         amount: value,
         expenseDate: billDate,
         notes: note.trim() || undefined,
+        scope: "common" as const,
+        ...(unitsValue != null
+          ? { quantity: unitsValue, quantityUnit: "units" }
+          : {}),
       };
       const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
         createFactoryExpense({ ...body, confirmDuplicate })
@@ -64,6 +97,7 @@ export default function ElectricityExpensesPage() {
       if (cancelled) return;
       toast.success("Electricity bill saved");
       setAmount("");
+      setUnits("");
       setNote("");
       setBillDate(todayInput());
       await load();
@@ -125,6 +159,17 @@ export default function ElectricityExpensesPage() {
             />
           </div>
           <div className="flex flex-col gap-1.5">
+            <Label>{t("elec.unitsConsumed")}</Label>
+            <Input
+              type="number"
+              step="1"
+              placeholder={t("elec.phUnits")}
+              value={units}
+              onChange={(e) => setUnits(e.target.value)}
+              className="h-11 text-base"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
             <Label>{t("elec.billDate")}</Label>
             <Input
               type="date"
@@ -133,7 +178,7 @@ export default function ElectricityExpensesPage() {
               className="h-11"
             />
           </div>
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1.5 sm:col-span-2">
             <Label>{t("exp.noteOptional")}</Label>
             <UrduPhoneticInput
               placeholder={t("elec.phNote")}
@@ -141,6 +186,17 @@ export default function ElectricityExpensesPage() {
               onChange={setNote}
               className="h-11"
             />
+          </div>
+          <div className="flex flex-col gap-1.5 sm:col-span-2">
+            <Label>{t("elec.unitRate")}</Label>
+            <p className="font-data flex h-11 items-center text-base text-muted-foreground">
+              {unitRate != null ? `${formatMoney(unitRate)} / ${t("elec.unit")}` : "—"}
+            </p>
+          </div>
+          <div className="flex flex-col gap-1.5 sm:col-span-4">
+            <Label>{t("exp.scope")}</Label>
+            <p className="text-sm text-muted-foreground">{t("exp.scopeAlwaysCommon")}</p>
+            <p className="text-xs text-muted-foreground">{t("elec.scopeHint")}</p>
           </div>
           <div className="flex flex-wrap gap-2 sm:col-span-4">
             <Button

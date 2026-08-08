@@ -115,6 +115,7 @@ async function pay(id, data) {
     expenseDate,
     notes,
     salesman: salesman._id,
+    scope: "common",
   });
 
   return { expense, salesman };

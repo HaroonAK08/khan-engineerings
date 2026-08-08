@@ -1,6 +1,8 @@
 const ProductionBatch = require("./production.model");
 const Product = require("../products/product.model");
 const Purchase = require("../purchases/purchase.model");
+const Builty = require("../builty/builty.model");
+const mongoose = require("mongoose");
 const {
   PRODUCT_FAMILY_IDS,
   INPUT_MATERIAL_TYPE_IDS,
@@ -1003,6 +1005,72 @@ async function getReport({ dateFrom, dateTo, family } = {}) {
   const lossRate =
     totalInputKg > 0 ? Math.round((wasteKg / totalInputKg) * 1000) / 10 : 0;
 
+  const productIds = [...byProductMap.keys()].filter((id) =>
+    mongoose.isValidObjectId(id)
+  );
+  const salesByProduct = {};
+  if (productIds.length) {
+    const salesMatch = {};
+    if (dateFrom || dateTo) {
+      salesMatch.builtyDate = {};
+      if (dateFrom) salesMatch.builtyDate.$gte = parseDate(dateFrom, "dateFrom");
+      if (dateTo) {
+        const end = parseDate(dateTo, "dateTo");
+        end.setHours(23, 59, 59, 999);
+        salesMatch.builtyDate.$lte = end;
+      }
+    }
+    const salesRows = await Builty.aggregate([
+      ...(Object.keys(salesMatch).length ? [{ $match: salesMatch }] : []),
+      { $unwind: "$items" },
+      {
+        $match: {
+          "items.product": {
+            $in: productIds.map((id) => new mongoose.Types.ObjectId(id)),
+          },
+          "items.quantity": { $gt: 0 },
+        },
+      },
+      {
+        $group: {
+          _id: "$items.product",
+          revenue: { $sum: "$items.lineTotal" },
+          units: { $sum: "$items.quantity" },
+        },
+      },
+    ]);
+    for (const row of salesRows) {
+      const id = String(row._id);
+      const units = row.units || 0;
+      const revenue = row.revenue || 0;
+      salesByProduct[id] = {
+        unitsSold: units,
+        soldPrice: roundMoney(revenue),
+        avgSellPerPiece: units > 0 ? roundMoney(revenue / units) : 0,
+      };
+    }
+  }
+
+  const byProduct = Array.from(byProductMap.values())
+    .map((row) => {
+      const sales = salesByProduct[row.productId] || {
+        unitsSold: 0,
+        soldPrice: 0,
+        avgSellPerPiece: 0,
+      };
+      return {
+        ...row,
+        unitsSold: sales.unitsSold,
+        avgSellPerPiece: sales.avgSellPerPiece,
+        soldPrice: sales.soldPrice,
+      };
+    })
+    .sort((a, b) => {
+      const fam = String(a.family || "hub").localeCompare(String(b.family || "hub"));
+      if (fam !== 0) return fam;
+      return a.name.localeCompare(b.name);
+    });
+
   return {
     totals: {
       batchCount,
@@ -1026,12 +1094,10 @@ async function getReport({ dateFrom, dateTo, family } = {}) {
         scrap: roundKg(scrapKg),
         daig: roundKg(daigKg),
       },
+      soldPrice: roundMoney(byProduct.reduce((s, p) => s + (p.soldPrice || 0), 0)),
+      unitsSold: byProduct.reduce((s, p) => s + (p.unitsSold || 0), 0),
     },
-    byProduct: Array.from(byProductMap.values()).sort((a, b) => {
-      const fam = String(a.family || "hub").localeCompare(String(b.family || "hub"));
-      if (fam !== 0) return fam;
-      return a.name.localeCompare(b.name);
-    }),
+    byProduct,
   };
 }
 

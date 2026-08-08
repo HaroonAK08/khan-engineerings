@@ -74,6 +74,26 @@ function validateExpenseBody(data, { requireStage = true } = {}) {
     typeof data.quantityUnit === "string" && data.quantityUnit.trim()
       ? data.quantityUnit.trim().slice(0, 24)
       : "kg";
+  let scope = "common";
+  if (data.scope != null && data.scope !== "") {
+    if (!["hub", "drum", "common"].includes(data.scope)) {
+      throw httpError("Scope must be hub, drum, or common", 400);
+    }
+    scope = data.scope;
+  }
+  const alwaysCommon = [
+    "electricity",
+    "taxes",
+    "paint",
+    "lpg_gas",
+    "petrol",
+    "tools",
+    "machine",
+    "repairs",
+  ];
+  if (alwaysCommon.includes(data.category)) {
+    scope = "common";
+  }
   return {
     stage: data.stage || undefined,
     category: data.category,
@@ -83,6 +103,7 @@ function validateExpenseBody(data, { requireStage = true } = {}) {
     notes: data.notes?.trim() || "",
     quantity,
     quantityUnit,
+    scope,
   };
 }
 
@@ -98,13 +119,22 @@ async function create(batchId, data) {
 }
 
 /** Factory overhead — labour, utilities, paint, etc. not tied to a production batch. */
-async function listOverhead({ dateFrom, dateTo, category } = {}) {
+async function listOverhead({ dateFrom, dateTo, category, scope } = {}) {
   const match = {
     $or: [{ batch: null }, { batch: { $exists: false } }],
   };
   if (category) {
     if (!CATEGORY_IDS.includes(category)) throw httpError("Invalid expense category", 400);
     match.category = category;
+  }
+  if (scope === "hub" || scope === "drum") {
+    match.scope = scope;
+  } else if (scope === "common") {
+    match.$and = [
+      {
+        $or: [{ scope: "common" }, { scope: null }, { scope: { $exists: false } }],
+      },
+    ];
   }
   if (dateFrom || dateTo) {
     match.expenseDate = {};
@@ -116,7 +146,7 @@ async function listOverhead({ dateFrom, dateTo, category } = {}) {
     }
   }
   return BatchExpense.find(match)
-    .populate("worker", "name nameUr payType rate job")
+    .populate("worker", "name nameUr payType rate job scope")
     .populate("salesman", "name phone")
     .sort({ expenseDate: -1, createdAt: -1 });
 }
@@ -154,6 +184,7 @@ async function createOverhead(data) {
     expenseDate: fields.expenseDate,
     title: fields.title,
     notes: fields.notes,
+    scope: fields.scope || "common",
   };
   if (fields.stage) doc.stage = fields.stage;
   if (fields.quantity != null) {
@@ -180,6 +211,7 @@ async function update(expenseId, data) {
     quantity: data.quantity !== undefined ? data.quantity : expense.quantity,
     quantityUnit:
       data.quantityUnit !== undefined ? data.quantityUnit : expense.quantityUnit,
+    scope: data.scope !== undefined ? data.scope : expense.scope || "common",
   };
   const requireStage = Boolean(expense.batch);
   const fields = validateExpenseBody(merged, { requireStage });
@@ -187,6 +219,7 @@ async function update(expenseId, data) {
   if (!fields.stage) expense.stage = undefined;
   if (fields.quantity == null) expense.quantity = null;
   expense.quantityUnit = fields.quantityUnit || expense.quantityUnit || "kg";
+  expense.scope = fields.scope || "common";
 
   if (data.units !== undefined) {
     if (data.units === null || data.units === "") {

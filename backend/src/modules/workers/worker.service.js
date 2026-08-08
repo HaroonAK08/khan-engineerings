@@ -1,5 +1,6 @@
 const Worker = require("./worker.model");
 const BatchExpense = require("../expenses/expense.model");
+const { EXPENSE_SCOPES } = require("./worker.model");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -22,10 +23,16 @@ function resolvePayType(value) {
   return null;
 }
 
-async function list({ active } = {}) {
+function resolveScope(value) {
+  if (value === "hub" || value === "drum" || value === "common") return value;
+  return null;
+}
+
+async function list({ active, scope } = {}) {
   const filter = {};
   if (active === "true") filter.isActive = true;
   if (active === "false") filter.isActive = false;
+  if (scope && EXPENSE_SCOPES.includes(scope)) filter.scope = scope;
   return Worker.find(filter).sort({ isActive: -1, name: 1 });
 }
 
@@ -78,6 +85,14 @@ function validateWorkerBody(data, { partial = false } = {}) {
     out.payDays = valid.length ? valid : ["monday", "thursday"];
   }
 
+  if (data.scope !== undefined) {
+    const scope = resolveScope(data.scope);
+    if (!scope) throw httpError("Scope must be hub, drum, or common", 400);
+    out.scope = scope;
+  } else if (!partial) {
+    out.scope = "common";
+  }
+
   if (data.job !== undefined) out.job = String(data.job || "").trim();
   if (data.notes !== undefined) out.notes = String(data.notes || "").trim();
   if (data.isActive !== undefined) out.isActive = Boolean(data.isActive);
@@ -89,14 +104,23 @@ async function create(data) {
   const fields = validateWorkerBody(data);
   if (!fields.unitLabel) fields.unitLabel = "piece";
   if (!fields.payDays) fields.payDays = ["monday", "thursday"];
+  if (!fields.scope) fields.scope = "common";
   return Worker.create(fields);
 }
 
 async function update(id, data) {
   const worker = await getOne(id);
   const fields = validateWorkerBody(data, { partial: true });
+  const prevScope = resolveScope(worker.scope) || "common";
   Object.assign(worker, fields);
   await worker.save();
+  const nextScope = resolveScope(worker.scope) || "common";
+  if (nextScope !== prevScope || data.scope !== undefined) {
+    await BatchExpense.updateMany(
+      { worker: worker._id, category: "fixed_salary" },
+      { $set: { scope: nextScope } }
+    );
+  }
   return worker;
 }
 
@@ -107,10 +131,6 @@ async function remove(id) {
   return worker;
 }
 
-/**
- * Record a salary payment → factory expense (batch null).
- * Only pay date + amount required; note optional.
- */
 async function pay(id, data) {
   const worker = await getOne(id);
   if (!worker.isActive) throw httpError("Worker is inactive", 400);
@@ -125,6 +145,7 @@ async function pay(id, data) {
 
   const note = data.notes?.trim() || "";
   const notes = note ? `${worker.name} · ${note}` : worker.name;
+  const scope = resolveScope(worker.scope) || "common";
 
   const expense = await BatchExpense.create({
     batch: null,
@@ -134,6 +155,7 @@ async function pay(id, data) {
     expenseDate,
     notes,
     worker: worker._id,
+    scope,
     units: null,
     payType: null,
   });
@@ -141,13 +163,24 @@ async function pay(id, data) {
   return { expense, worker };
 }
 
-async function listPayments({ dateFrom, dateTo, workerId } = {}) {
+async function listPayments({ dateFrom, dateTo, workerId, scope } = {}) {
   const match = {
     category: "fixed_salary",
     worker: { $ne: null },
     $or: [{ batch: null }, { batch: { $exists: false } }],
   };
   if (workerId) match.worker = workerId;
+  if (scope && EXPENSE_SCOPES.includes(scope)) {
+    if (scope === "common") {
+      match.$and = [
+        {
+          $or: [{ scope: "common" }, { scope: null }, { scope: { $exists: false } }],
+        },
+      ];
+    } else {
+      match.scope = scope;
+    }
+  }
   if (dateFrom || dateTo) {
     match.expenseDate = {};
     if (dateFrom) match.expenseDate.$gte = parseDate(dateFrom, "dateFrom");
@@ -158,7 +191,7 @@ async function listPayments({ dateFrom, dateTo, workerId } = {}) {
     }
   }
   return BatchExpense.find(match)
-    .populate("worker", "name nameUr payType rate job")
+    .populate("worker", "name nameUr payType rate job scope")
     .sort({ expenseDate: -1, createdAt: -1 });
 }
 

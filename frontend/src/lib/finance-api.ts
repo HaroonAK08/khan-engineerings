@@ -121,6 +121,7 @@ export async function getProductProfit(params?: { dateFrom?: string; dateTo?: st
 
 export type ProductionMarginFamily = {
   pieces: number;
+  finishedKg?: number;
   scrapKg: number;
   daigKg: number;
   wasteKg: number;
@@ -130,6 +131,8 @@ export type ProductionMarginFamily = {
   sellValue: number;
   unitsSold?: number;
   profit: number;
+  costPerKg?: number | null;
+  overheadPerKg?: number | null;
   marginPct: number | null;
 };
 
@@ -138,6 +141,8 @@ export type ProductionMarginProduct = {
   name: string;
   family: string;
   pieces: number;
+  weightKg?: number;
+  finishedKg?: number;
   scrapKg: number;
   daigKg: number;
   wasteKg: number;
@@ -149,6 +154,8 @@ export type ProductionMarginProduct = {
   overhead: number;
   totalCost: number;
   costPerPiece: number;
+  costPerKg?: number | null;
+  overheadPerKg?: number | null;
   sellPricePerPiece: number;
   sellPriceSource?: "period_sales" | "all_time_sales" | "catalog" | "none";
   unitsSoldPeriod?: number;
@@ -175,6 +182,19 @@ export type ProductionMarginReport = {
     hubUnits?: number;
     drumUnits?: number;
     builtyCount?: number;
+    hubFinishedKg?: number;
+    drumFinishedKg?: number;
+    hubCostPerKg?: number | null;
+    drumCostPerKg?: number | null;
+    hubOverheadPerKg?: number | null;
+    drumOverheadPerKg?: number | null;
+    overheadPools?: {
+      hub: number;
+      drum: number;
+      common: number;
+      electricity?: number;
+    };
+    electricityIntensity?: { hub: number; drum: number };
   };
   purchasedVsUsed: {
     purchased: {
@@ -209,6 +229,167 @@ export type ProductionMarginReport = {
 
 export async function getProductionMargin(params?: { dateFrom?: string; dateTo?: string }) {
   const { data } = await api.get<ProductionMarginReport>("/finance/production-margin", {
+    params,
+  });
+  return data;
+}
+
+export type PartySalesMarginParty = {
+  partyId: string;
+  partyName: string;
+  groupId: string | null;
+  groupName: string;
+  salesmanChannel: boolean;
+  hubQty: number;
+  drumQty: number;
+  totalQty: number;
+  hubKg: number;
+  drumKg: number;
+  totalKg: number;
+  hubSale: number;
+  drumSale: number;
+  totalSale: number;
+  hubSalePerKg: number | null;
+  drumSalePerKg: number | null;
+  avgSalePerKg: number | null;
+  hubMfgPerKg: number | null;
+  drumMfgPerKg: number | null;
+  avgMfgPerKg: number | null;
+  hubMfg: number;
+  drumMfg: number;
+  totalMfg: number;
+  hubProfit: number;
+  drumProfit: number;
+  profit: number;
+  hubProfitPerKg: number | null;
+  drumProfitPerKg: number | null;
+  profitPerKg: number | null;
+};
+
+export type PartySalesMarginGroup = PartySalesMarginParty & {
+  partyCount: number;
+};
+
+export type PartySalesMarginReport = {
+  period: { from: string; to: string };
+  rates: {
+    hubFactoryCostPerKg: number | null;
+    drumFactoryCostPerKg: number | null;
+    hubMfgSalesman: number | null;
+    drumMfgSalesman: number | null;
+    salesmanPerSoldKg: number;
+    salesmanLoad: number;
+    salesmanSoldKg: number;
+    noSalesmanGroups: string[];
+  };
+  electricity: {
+    bill: number;
+    hubShare: number;
+    drumShare: number;
+    hubPerKg: number | null;
+    drumPerKg: number | null;
+  };
+  totals: {
+    hubQty: number;
+    drumQty: number;
+    totalQty: number;
+    hubKg: number;
+    drumKg: number;
+    totalKg: number;
+    hubSale: number;
+    drumSale: number;
+    totalSale: number;
+    hubMfg: number;
+    drumMfg: number;
+    totalMfg: number;
+    hubProfit: number;
+    drumProfit: number;
+    profit: number;
+    avgSalePerKg: number | null;
+    avgMfgPerKg: number | null;
+    hubProfitPerKg: number | null;
+    drumProfitPerKg: number | null;
+    profitPerKg: number | null;
+    salesman: {
+      hubQty: number;
+      drumQty: number;
+      totalQty: number;
+      hubKg: number;
+      drumKg: number;
+      totalKg: number;
+      hubSale: number;
+      drumSale: number;
+      totalSale: number;
+      hubMfg: number;
+      drumMfg: number;
+      totalMfg: number;
+      hubProfit: number;
+      drumProfit: number;
+      profit: number;
+      avgSalePerKg: number | null;
+      avgMfgPerKg: number | null;
+      hubProfitPerKg: number | null;
+      drumProfitPerKg: number | null;
+      profitPerKg: number | null;
+    };
+    direct: {
+      hubQty: number;
+      drumQty: number;
+      totalQty: number;
+      hubKg: number;
+      drumKg: number;
+      totalKg: number;
+      hubSale: number;
+      drumSale: number;
+      totalSale: number;
+      hubMfg: number;
+      drumMfg: number;
+      totalMfg: number;
+      hubProfit: number;
+      drumProfit: number;
+      profit: number;
+      avgSalePerKg: number | null;
+      avgMfgPerKg: number | null;
+      hubProfitPerKg: number | null;
+      drumProfitPerKg: number | null;
+      profitPerKg: number | null;
+    };
+  };
+  groups: PartySalesMarginGroup[];
+  parties: PartySalesMarginParty[];
+  mainChannels?: {
+    powerEngineering: {
+      id: string;
+      name: string;
+      salesmanChannel: boolean;
+      memberGroups: string[];
+    };
+    ikEngineering: {
+      id: string;
+      name: string;
+      salesmanChannel: boolean;
+      memberGroups: string[];
+    };
+  };
+  channelExpenses?: {
+    items: Array<{
+      _id: string;
+      category: string;
+      amount: number;
+      expenseDate: string;
+      notes: string;
+      title: string;
+      salesmanId: string | null;
+      salesmanName: string | null;
+    }>;
+    tourTotal: number;
+    salesmanPayTotal: number;
+    total: number;
+  };
+};
+
+export async function getPartySalesMargin(params?: { dateFrom?: string; dateTo?: string }) {
+  const { data } = await api.get<PartySalesMarginReport>("/finance/party-sales-margin", {
     params,
   });
   return data;

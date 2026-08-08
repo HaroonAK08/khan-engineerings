@@ -14,6 +14,7 @@ export default function ElectricityHistoryPage() {
       categories={["electricity"]}
       defaultCategory="electricity"
       fallbackDetail={t("elec.title")}
+      trackUnits
     />
   );
 }

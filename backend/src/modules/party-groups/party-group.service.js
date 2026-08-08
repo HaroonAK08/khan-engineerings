@@ -3,6 +3,8 @@ const PartyGroup = require("./party-group.model");
 const Customer = require("../customers/customer.model");
 const CustomerLedgerEntry = require("../customers/customer-ledger.model");
 
+const IK_GROUP_NAMES = new Set(["i k", "ik", "machi goth"]);
+
 function httpError(message, statusCode) {
   const err = new Error(message);
   err.statusCode = statusCode;
@@ -24,6 +26,27 @@ function normalizeIds(ids) {
   ];
 }
 
+function inferChannelFromName(name) {
+  const key = String(name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+  return IK_GROUP_NAMES.has(key) ? "ik_engineering" : "power_engineering";
+}
+
+function normalizeChannel(value, fallbackName) {
+  if (value === "ik_engineering" || value === "power_engineering") return value;
+  return inferChannelFromName(fallbackName);
+}
+
+function withChannel(group) {
+  const plain = group.toObject ? group.toObject() : { ...group };
+  return {
+    ...plain,
+    channel: normalizeChannel(plain.channel, plain.name),
+  };
+}
+
 async function create(data) {
   const name = data.name?.trim();
   if (!name) throw httpError("Group name is required", 400);
@@ -31,9 +54,12 @@ async function create(data) {
   const existing = await PartyGroup.findOne({ name: new RegExp(`^${escapeRegex(name)}$`, "i") });
   if (existing) throw httpError("A group with this name already exists", 409);
 
+  const channel = normalizeChannel(data.channel, name);
+
   const group = await PartyGroup.create({
     name,
     notes: data.notes?.trim() || "",
+    channel,
     isActive: data.isActive !== undefined ? Boolean(data.isActive) : true,
   });
 
@@ -44,7 +70,7 @@ async function create(data) {
   return getWithMembers(group._id);
 }
 
-async function list({ q, active } = {}) {
+async function list({ q, active, channel } = {}) {
   const filter = {};
   if (active === "true" || active === true) filter.isActive = true;
   if (active === "false" || active === false) filter.isActive = false;
@@ -59,10 +85,19 @@ async function list({ q, active } = {}) {
   ]);
   const countMap = new Map(counts.map((c) => [String(c._id), c.count]));
 
-  return groups.map((g) => ({
-    ...g,
-    partyCount: countMap.get(String(g._id)) || 0,
-  }));
+  let rows = groups.map((g) => {
+    const row = withChannel(g);
+    return {
+      ...row,
+      partyCount: countMap.get(String(g._id)) || 0,
+    };
+  });
+
+  if (channel === "ik_engineering" || channel === "power_engineering") {
+    rows = rows.filter((g) => g.channel === channel);
+  }
+
+  return rows;
 }
 
 async function getById(id) {
@@ -112,7 +147,7 @@ async function getWithMembers(id) {
   }
 
   return {
-    ...group.toObject(),
+    ...withChannel(group),
     parties: parties.map((p) => ({
       ...p,
       balance: balanceMap.get(String(p._id)) || 0,
@@ -171,6 +206,11 @@ async function update(id, data) {
   }
   if (data.notes !== undefined) group.notes = data.notes.trim();
   if (data.isActive !== undefined) group.isActive = Boolean(data.isActive);
+  if (data.channel !== undefined) {
+    group.channel = normalizeChannel(data.channel, group.name);
+  } else if (!group.channel) {
+    group.channel = inferChannelFromName(group.name);
+  }
   await group.save();
 
   if (data.partyIds !== undefined) {
@@ -199,4 +239,6 @@ module.exports = {
   setMembers,
   update,
   remove,
+  inferChannelFromName,
+  normalizeChannel,
 };
