@@ -17,6 +17,7 @@ import {
   type Worker,
 } from "@/lib/workers-api";
 import { getProductionMargin } from "@/lib/finance-api";
+import { getPayrollPeriod, savePayrollPeriod } from "@/lib/settings-api";
 import type { BatchExpense } from "@/types/production";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -74,10 +75,41 @@ function isDrumKhradWorker(w: Worker) {
   return DRUM_KHRAD_FIRST_NAMES.has(first);
 }
 
+function accountingMonthKey(dateFrom: string, dateTo: string) {
+  if (!dateFrom || !dateTo) return null;
+  const a = dateFrom.slice(0, 7);
+  const b = dateTo.slice(0, 7);
+  return a === b ? a : null;
+}
+
+function currentMonthKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthBounds(monthKey: string) {
+  const [y, m] = monthKey.split("-").map(Number);
+  if (!y || !m) return { from: "", to: "" };
+  const last = new Date(y, m, 0).getDate();
+  return {
+    from: `${monthKey}-01`,
+    to: `${monthKey}-${String(last).padStart(2, "0")}`,
+  };
+}
+
+function monthLabel(monthKey: string) {
+  const [y, m] = monthKey.split("-").map(Number);
+  if (!y || !m) return monthKey;
+  return new Date(y, m - 1, 1).toLocaleString(undefined, {
+    month: "long",
+    year: "numeric",
+  });
+}
+
 export default function SalariesPage() {
   const { t, isUrdu } = useI18n();
   const router = useRouter();
-  const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
+  const { dateFrom, dateTo, hydrated, setRange } = usePersistedDateRange();
 
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [payments, setPayments] = useState<BatchExpense[]>([]);
@@ -109,6 +141,11 @@ export default function SalariesPage() {
   const [editUnitLabel, setEditUnitLabel] = useState("");
   const [editScope, setEditScope] = useState<ExpenseScope>("common");
   const [openDrumGroup, setOpenDrumGroup] = useState<DrumGroupId | null>(null);
+  const [payrollMonth, setPayrollMonth] = useState("");
+  const [payrollFrom, setPayrollFrom] = useState("");
+  const [payrollTo, setPayrollTo] = useState("");
+  const [payrollCustom, setPayrollCustom] = useState(false);
+  const [savingPayroll, setSavingPayroll] = useState(false);
 
   const scopeLabels = {
     hub: t("exp.scopeHub"),
@@ -120,24 +157,89 @@ export default function SalariesPage() {
     if (!hydrated) return;
     setLoading(true);
     try {
-      const [w, p, margin] = await Promise.all([
+      const month =
+        accountingMonthKey(dateFrom, dateTo) ||
+        (dateFrom ? dateFrom.slice(0, 7) : "") ||
+        currentMonthKey();
+
+      const [w, payRes, margin, savedPeriod] = await Promise.all([
         listWorkers({ active: "true" }),
         listSalaryPayments({
           dateFrom: dateFrom || undefined,
           dateTo: dateTo || undefined,
         }),
         getProductionMargin({ dateFrom, dateTo }),
+        month ? getPayrollPeriod(month) : Promise.resolve(null),
       ]);
       setWorkers(w);
-      setPayments(p);
+      setPayments(payRes.payments);
       setHubFinishedKg(margin.summary?.hubFinishedKg || 0);
       setDrumFinishedKg(margin.summary?.drumFinishedKg || 0);
+      setPayrollMonth(month);
+
+      const bounds = monthBounds(month);
+      setPayrollFrom(
+        savedPeriod?.paymentFrom ||
+          payRes.salaryPeriod?.paymentFrom ||
+          bounds.from ||
+          dateFrom ||
+          ""
+      );
+      setPayrollTo(
+        savedPeriod?.paymentTo ||
+          payRes.salaryPeriod?.paymentTo ||
+          bounds.to ||
+          dateTo ||
+          ""
+      );
+      setPayrollCustom(Boolean(savedPeriod) || Boolean(payRes.salaryPeriod?.custom));
     } catch (err) {
       toast.error(apiError(err, "Failed to load salaries"));
     } finally {
       setLoading(false);
     }
   }, [dateFrom, dateTo, hydrated]);
+
+  async function onPayrollMonthChange(month: string) {
+    setPayrollMonth(month);
+    if (!month) return;
+    const bounds = monthBounds(month);
+    setRange(bounds.from, bounds.to);
+  }
+
+  async function onSavePayrollPeriod() {
+    if (!payrollMonth) {
+      toast.error(t("sal.payrollNeedMonth"));
+      return;
+    }
+    if (!payrollFrom || !payrollTo) {
+      toast.error(t("sal.payrollNeedDates"));
+      return;
+    }
+    if (payrollTo < payrollFrom) {
+      toast.error(t("sal.payrollInvalidRange"));
+      return;
+    }
+    setSavingPayroll(true);
+    try {
+      await savePayrollPeriod({
+        month: payrollMonth,
+        paymentFrom: payrollFrom,
+        paymentTo: payrollTo,
+      });
+      const bounds = monthBounds(payrollMonth);
+      if (dateFrom !== bounds.from || dateTo !== bounds.to) {
+        setRange(bounds.from, bounds.to);
+      } else {
+        await load();
+      }
+      toast.success(t("sal.payrollSavedFor", { month: monthLabel(payrollMonth) }));
+    } catch (err) {
+      toast.error(apiError(err, t("sal.payrollSaveFailed")));
+    } finally {
+      setSavingPayroll(false);
+    }
+  }
 
   useEffect(() => {
     const t = setTimeout(() => void load(), 150);
@@ -636,6 +738,65 @@ export default function SalariesPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-nameplate text-sm">{t("sal.payrollTitle")}</CardTitle>
+          <CardDescription>
+            {payrollMonth
+              ? t("sal.payrollDesc", { month: monthLabel(payrollMonth) })
+              : t("sal.payrollDescPick")}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="payroll-month">{t("sal.payrollMonth")}</Label>
+            <Input
+              id="payroll-month"
+              type="month"
+              value={payrollMonth}
+              onChange={(e) => void onPayrollMonthChange(e.target.value)}
+              className="h-11 w-[11.5rem]"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="payroll-from">{t("sal.payrollFrom")}</Label>
+            <Input
+              id="payroll-from"
+              type="date"
+              value={payrollFrom}
+              onChange={(e) => setPayrollFrom(e.target.value)}
+              className="h-11 w-[11.5rem]"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="payroll-to">{t("sal.payrollTo")}</Label>
+            <Input
+              id="payroll-to"
+              type="date"
+              value={payrollTo}
+              onChange={(e) => setPayrollTo(e.target.value)}
+              className="h-11 w-[11.5rem]"
+            />
+          </div>
+          <Button
+            type="button"
+            className="gap-2"
+            disabled={savingPayroll || !payrollMonth}
+            onClick={() => void onSavePayrollPeriod()}
+          >
+            {savingPayroll && <Loader2 className="size-4 animate-spin" />}
+            {t("sal.payrollSave")}
+          </Button>
+          {payrollCustom ? (
+            <p className="text-xs text-muted-foreground sm:pb-2">
+              {t("sal.payrollActiveFor", { month: monthLabel(payrollMonth) })}
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground sm:pb-2">{t("sal.payrollDefault")}</p>
+          )}
+        </CardContent>
+      </Card>
 
       {loading ? (
         <div className="flex justify-center py-20">

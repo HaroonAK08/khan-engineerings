@@ -112,7 +112,7 @@ export default function AllSalariesLedgerPage() {
         }),
       ]);
       setWorkers(w);
-      setPayments(list);
+      setPayments(list.payments);
     } catch (err) {
       toast.error(apiError(err, t("sal.historyLoadFailed")));
       setPayments([]);
@@ -130,10 +130,12 @@ export default function AllSalariesLedgerPage() {
     if (!hydrated) return;
     try {
       setPayments(
-        await listSalaryPayments({
-          dateFrom: dateFrom || undefined,
-          dateTo: dateTo || undefined,
-        })
+        (
+          await listSalaryPayments({
+            dateFrom: dateFrom || undefined,
+            dateTo: dateTo || undefined,
+          })
+        ).payments
       );
     } catch (err) {
       toast.error(apiError(err, t("sal.historyLoadFailed")));

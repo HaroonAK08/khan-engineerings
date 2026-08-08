@@ -92,8 +92,14 @@ export async function listSalaryPayments(params?: {
   workerId?: string;
   scope?: ExpenseScope;
 }) {
-  const { data } = await api.get<{ payments: BatchExpense[] }>("/workers/payments", {
-    params,
-  });
-  return data.payments;
+  const { data } = await api.get<{
+    payments: BatchExpense[];
+    salaryPeriod?: {
+      custom: boolean;
+      month: string | null;
+      paymentFrom: string | null;
+      paymentTo: string | null;
+    } | null;
+  }>("/workers/payments", { params });
+  return data;
 }

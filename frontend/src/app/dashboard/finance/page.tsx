@@ -524,12 +524,18 @@ export default function ProductionMarginPage() {
                 label: t("prodMargin.scrapUsed"),
                 value: formatKg(summary.scrapKg),
                 hint: t("prodMargin.inclWaste"),
+                money: formatMoney(
+                  report.purchasedVsUsed?.used.scrapAmount ?? summary.scrapCost ?? 0
+                ),
                 accent: "bg-chart-4",
               },
               {
                 label: t("prodMargin.daigUsed"),
                 value: formatKg(summary.daigKg),
                 hint: t("prodMargin.inclWaste"),
+                money: formatMoney(
+                  report.purchasedVsUsed?.used.daigAmount ?? summary.daigCost ?? 0
+                ),
                 accent: "bg-chart-2",
               },
               {
@@ -612,59 +618,15 @@ export default function ProductionMarginPage() {
                   </p>
                   <p className="font-data mt-2 text-2xl font-medium">{stat.value}</p>
                   <p className="mt-1 text-xs text-muted-foreground">{stat.hint}</p>
+                  {"money" in stat && stat.money ? (
+                    <p className="font-data mt-0.5 text-sm font-medium tabular-nums">
+                      {stat.money}
+                    </p>
+                  ) : null}
                 </CardContent>
               </Card>
             ))}
           </div>
-
-          {summary.overheadPools && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-nameplate text-sm">
-                  {t("prodMargin.overheadByKg")}
-                </CardTitle>
-                <CardDescription>{t("prodMargin.electricityHint")}</CardDescription>
-              </CardHeader>
-              <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {(
-                  [
-                    {
-                      key: "hub" as const,
-                      label: t("prodMargin.overheadPoolHub"),
-                      accent: "border-sky-500/40 bg-sky-500/5",
-                    },
-                    {
-                      key: "drum" as const,
-                      label: t("prodMargin.overheadPoolDrum"),
-                      accent: "border-amber-500/40 bg-amber-500/5",
-                    },
-                    {
-                      key: "common" as const,
-                      label: t("prodMargin.overheadPoolCommon"),
-                      accent: "border-border bg-muted/40",
-                    },
-                    {
-                      key: "electricity" as const,
-                      label: t("prodMargin.overheadPoolElectricity"),
-                      accent: "border-chart-4/40 bg-chart-4/5",
-                    },
-                  ] as const
-                ).map((pool) => (
-                  <div
-                    key={pool.key}
-                    className={`rounded-lg border px-4 py-3 ${pool.accent}`}
-                  >
-                    <p className="font-data text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
-                      {pool.label}
-                    </p>
-                    <p className="font-data mt-1 text-lg">
-                      {formatMoney(summary.overheadPools?.[pool.key] ?? 0)}
-                    </p>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
 
           {report.channelManufacture ? (
             <div className="flex flex-col gap-3">
@@ -703,6 +665,10 @@ export default function ProductionMarginPage() {
                           {t("prodMargin.salesmanAddOnKg")}:{" "}
                           {formatMoney(channel.data.salesmanAddOnPerKg)} ·{" "}
                           {formatMoney(channel.data.salesmanLoad)}
+                          {"salesmanSoldKg" in channel.data &&
+                          channel.data.salesmanSoldKg
+                            ? ` · ${formatKg(channel.data.salesmanSoldKg)}`
+                            : ""}
                         </CardDescription>
                       ) : null}
                     </CardHeader>
@@ -733,26 +699,63 @@ export default function ProductionMarginPage() {
                                     : "—"}
                                 </span>
                               </div>
-                              <div className="flex justify-between gap-2">
-                                <span className="text-muted-foreground">
-                                  {t("prodMargin.mfgExpensesKg")}
-                                </span>
-                                <span className="font-data">
-                                  {line.mfgExpensesPerKg != null
-                                    ? formatMoney(line.mfgExpensesPerKg)
-                                    : "—"}
-                                </span>
-                              </div>
-                              <div className="flex justify-between gap-2">
-                                <span className="text-muted-foreground">
-                                  {t("prodMargin.salariesKg")}
-                                </span>
-                                <span className="font-data">
-                                  {line.salariesPerKg != null
-                                    ? formatMoney(line.salariesPerKg)
-                                    : "—"}
-                                </span>
-                              </div>
+
+                              {(line.expenseLines?.length || 0) > 0 ? (
+                                <>
+                                  <p className="font-data mt-1 text-[10px] tracking-[0.1em] text-muted-foreground uppercase">
+                                    {t("prodMargin.mfgExpensesKg")}
+                                  </p>
+                                  {line.expenseLines!.map((e) => (
+                                    <div
+                                      key={e.id}
+                                      className="flex justify-between gap-2 pl-2"
+                                    >
+                                      <span className="text-muted-foreground">{e.label}</span>
+                                      <span className="font-data">{formatMoney(e.perKg)}</span>
+                                    </div>
+                                  ))}
+                                </>
+                              ) : (
+                                <div className="flex justify-between gap-2">
+                                  <span className="text-muted-foreground">
+                                    {t("prodMargin.mfgExpensesKg")}
+                                  </span>
+                                  <span className="font-data">
+                                    {line.mfgExpensesPerKg != null
+                                      ? formatMoney(line.mfgExpensesPerKg)
+                                      : "—"}
+                                  </span>
+                                </div>
+                              )}
+
+                              {(line.salaryLines?.length || 0) > 0 ? (
+                                <>
+                                  <p className="font-data mt-1 text-[10px] tracking-[0.1em] text-muted-foreground uppercase">
+                                    {t("prodMargin.salariesKg")}
+                                  </p>
+                                  {line.salaryLines!.map((e) => (
+                                    <div
+                                      key={e.id}
+                                      className="flex justify-between gap-2 pl-2"
+                                    >
+                                      <span className="text-muted-foreground">{e.label}</span>
+                                      <span className="font-data">{formatMoney(e.perKg)}</span>
+                                    </div>
+                                  ))}
+                                </>
+                              ) : (
+                                <div className="flex justify-between gap-2">
+                                  <span className="text-muted-foreground">
+                                    {t("prodMargin.salariesKg")}
+                                  </span>
+                                  <span className="font-data">
+                                    {line.salariesPerKg != null
+                                      ? formatMoney(line.salariesPerKg)
+                                      : "—"}
+                                  </span>
+                                </div>
+                              )}
+
                               {channel.showAddOn ? (
                                 <div className="flex justify-between gap-2">
                                   <span className="text-muted-foreground">

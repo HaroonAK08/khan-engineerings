@@ -164,6 +164,7 @@ async function pay(id, data) {
 }
 
 async function listPayments({ dateFrom, dateTo, workerId, scope } = {}) {
+  const settingsService = require("../settings/settings.service");
   const match = {
     category: "fixed_salary",
     worker: { $ne: null },
@@ -181,18 +182,34 @@ async function listPayments({ dateFrom, dateTo, workerId, scope } = {}) {
       match.scope = scope;
     }
   }
+
+  let salaryPeriod = null;
   if (dateFrom || dateTo) {
-    match.expenseDate = {};
-    if (dateFrom) match.expenseDate.$gte = parseDate(dateFrom, "dateFrom");
-    if (dateTo) {
-      const end = parseDate(dateTo, "dateTo");
-      end.setHours(23, 59, 59, 999);
-      match.expenseDate.$lte = end;
-    }
+    const now = new Date();
+    const from = dateFrom
+      ? parseDate(dateFrom, "dateFrom")
+      : new Date(now.getFullYear(), now.getMonth(), 1);
+    let to = dateTo
+      ? parseDate(dateTo, "dateTo")
+      : new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    to.setHours(23, 59, 59, 999);
+    const bounds = await settingsService.resolveSalaryBounds(from, to);
+    match.expenseDate = { $gte: bounds.from, $lte: bounds.to };
+    salaryPeriod = {
+      from: bounds.from,
+      to: bounds.to,
+      custom: bounds.custom,
+      month: bounds.month,
+      paymentFrom: bounds.period?.paymentFrom || null,
+      paymentTo: bounds.period?.paymentTo || null,
+    };
   }
-  return BatchExpense.find(match)
+
+  const payments = await BatchExpense.find(match)
     .populate("worker", "name nameUr payType rate job scope")
     .sort({ expenseDate: -1, createdAt: -1 });
+
+  return { payments, salaryPeriod };
 }
 
 module.exports = {

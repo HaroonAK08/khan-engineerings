@@ -56,8 +56,8 @@ async function pay(req, res, next) {
 
 async function listPayments(req, res, next) {
   try {
-    const payments = await workerService.listPayments(req.query);
-    res.json({ payments });
+    const result = await workerService.listPayments(req.query);
+    res.json(result);
   } catch (err) {
     next(err);
   }

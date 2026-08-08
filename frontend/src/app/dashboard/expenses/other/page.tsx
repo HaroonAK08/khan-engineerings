@@ -40,7 +40,6 @@ const OTHER_CATEGORIES: Array<{ id: string; labelKey: MessageKey }> = [
   { id: "tools", labelKey: "other.cat.tools" },
   { id: "machine", labelKey: "other.cat.machine" },
   { id: "repairs", labelKey: "other.cat.repairs" },
-  { id: "tour_expenses", labelKey: "other.cat.tour" },
   { id: "other", labelKey: "other.cat.other" },
 ];
 
@@ -85,7 +84,7 @@ function saveCustomCategories(rows: CustomCategory[]) {
 }
 
 /** Categories that are usually amount-only (no purchased qty). */
-const AMOUNT_ONLY_CATEGORIES = new Set(["machine", "repairs", "tour_expenses", "other"]);
+const AMOUNT_ONLY_CATEGORIES = new Set(["machine", "repairs", "other"]);
 
 const amountOnlyCategory = (id: string) => AMOUNT_ONLY_CATEGORIES.has(id);
 const categoryUsesQuantityByDefault = (id: string) => !amountOnlyCategory(id);

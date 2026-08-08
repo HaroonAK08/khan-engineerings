@@ -239,8 +239,15 @@ export type ProductionMarginReport = {
       drum: ChannelManufactureLine;
       salesmanLoad: number;
       salesmanAddOnPerKg: number;
+      salesmanSoldKg?: number;
     };
   };
+};
+
+export type ChannelManufactureDetailLine = {
+  id: string;
+  label: string;
+  perKg: number;
 };
 
 export type ChannelManufactureLine = {
@@ -249,6 +256,8 @@ export type ChannelManufactureLine = {
   mfgExpensesPerKg: number | null;
   salesmanAddOnPerKg: number;
   totalPerKg: number | null;
+  salaryLines?: ChannelManufactureDetailLine[];
+  expenseLines?: ChannelManufactureDetailLine[];
 };
 
 export async function getProductionMargin(params?: { dateFrom?: string; dateTo?: string }) {

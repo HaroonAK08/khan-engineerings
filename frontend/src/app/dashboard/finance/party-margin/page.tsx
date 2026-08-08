@@ -8,6 +8,7 @@ import { DateRangeFilter } from "@/components/date-range-filter";
 import { apiError, formatDate, formatKg, formatMoney } from "@/lib/materials-api";
 import {
   getPartySalesMargin,
+  type PartySalesMarginGroup,
   type PartySalesMarginParty,
   type PartySalesMarginReport,
 } from "@/lib/finance-api";
@@ -36,7 +37,7 @@ const stickyPartyHead =
 
 const stickyGroupHead = (withParty: boolean) =>
   cn(
-    "sticky z-20 w-36 min-w-36 max-w-36 bg-slate-800 text-white shadow-[4px_0_8px_-4px_rgba(0,0,0,0.25)] dark:bg-slate-900",
+    "sticky z-20 w-40 min-w-40 max-w-40 overflow-hidden bg-slate-800 text-white shadow-[4px_0_8px_-4px_rgba(0,0,0,0.25)] dark:bg-slate-900",
     withParty ? "left-44" : "left-0"
   );
 
@@ -48,7 +49,7 @@ const stickyPartyCell = (loss: boolean) =>
 
 const stickyGroupCell = (withParty: boolean, loss: boolean, tint?: "profit" | "loss" | "none") =>
   cn(
-    "sticky z-10 w-36 min-w-36 max-w-36 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.15)]",
+    "sticky z-10 w-40 min-w-40 max-w-40 overflow-hidden shadow-[4px_0_8px_-4px_rgba(0,0,0,0.15)]",
     withParty ? "left-44" : "left-0",
     tint === "loss" || loss
       ? "bg-red-50 dark:bg-red-950"
@@ -61,7 +62,95 @@ function moneyOrDash(n: number | null | undefined) {
   return n == null ? "—" : formatMoney(n);
 }
 
-function PlCell({ value, perKg }: { value: number; perKg?: number | null }) {
+function roundMoneyLocal(n: number) {
+  return Math.round((n || 0) * 100) / 100;
+}
+
+function perKg(amount: number, kg: number) {
+  return kg > 0 ? roundMoneyLocal(amount / kg) : null;
+}
+
+function meanNullable(values: Array<number | null | undefined>) {
+  const nums = values.filter((v): v is number => v != null && Number.isFinite(v));
+  if (nums.length === 0) return null;
+  return roundMoneyLocal(nums.reduce((s, v) => s + v, 0) / nums.length);
+}
+
+function emptyGroupTotals(
+  label: string,
+  salesmanChannel: boolean
+): PartySalesMarginParty & { partyCount?: number } {
+  return {
+    partyId: "",
+    partyName: "",
+    groupId: null,
+    groupName: label,
+    salesmanChannel,
+    hubQty: 0,
+    drumQty: 0,
+    totalQty: 0,
+    hubKg: 0,
+    drumKg: 0,
+    totalKg: 0,
+    hubSale: 0,
+    drumSale: 0,
+    totalSale: 0,
+    hubSalePerKg: null,
+    drumSalePerKg: null,
+    avgSalePerKg: null,
+    hubMfgPerKg: null,
+    drumMfgPerKg: null,
+    avgMfgPerKg: null,
+    hubMfg: 0,
+    drumMfg: 0,
+    totalMfg: 0,
+    hubProfit: 0,
+    drumProfit: 0,
+    profit: 0,
+    hubProfitPerKg: null,
+    drumProfitPerKg: null,
+    profitPerKg: null,
+    partyCount: 0,
+  };
+}
+
+function sumChannelGroups(
+  groups: PartySalesMarginGroup[],
+  label: string
+): PartySalesMarginParty & { partyCount?: number } {
+  const salesmanChannel = groups[0]?.salesmanChannel ?? false;
+  const row = emptyGroupTotals(label, salesmanChannel);
+  for (const g of groups) {
+    row.hubQty += g.hubQty || 0;
+    row.drumQty += g.drumQty || 0;
+    row.totalQty += g.totalQty || 0;
+    row.hubKg += g.hubKg || 0;
+    row.drumKg += g.drumKg || 0;
+    row.totalKg += g.totalKg || 0;
+    row.hubSale += g.hubSale || 0;
+    row.drumSale += g.drumSale || 0;
+    row.totalSale += g.totalSale || 0;
+    row.hubMfg += g.hubMfg || 0;
+    row.drumMfg += g.drumMfg || 0;
+    row.totalMfg += g.totalMfg || 0;
+    row.hubProfit += g.hubProfit || 0;
+    row.drumProfit += g.drumProfit || 0;
+    row.profit += g.profit || 0;
+    row.partyCount = (row.partyCount || 0) + (g.partyCount || 0);
+  }
+  row.hubSalePerKg = perKg(row.hubSale, row.hubKg);
+  row.drumSalePerKg = perKg(row.drumSale, row.drumKg);
+  row.avgSalePerKg = perKg(row.totalSale, row.totalKg);
+  row.hubMfgPerKg = meanNullable(groups.map((g) => g.hubMfgPerKg));
+  row.drumMfgPerKg = meanNullable(groups.map((g) => g.drumMfgPerKg));
+  row.avgMfgPerKg = perKg(row.totalMfg, row.totalKg);
+  row.hubProfitPerKg = perKg(row.hubProfit, row.hubKg);
+  row.drumProfitPerKg = perKg(row.drumProfit, row.drumKg);
+  row.profitPerKg = perKg(row.profit, row.totalKg);
+  return row;
+}
+
+function PlCell({ value, perKg: perKgValue }: { value: number; perKg?: number | null }) {
   const loss = value < 0;
   return (
     <>
@@ -73,14 +162,14 @@ function PlCell({ value, perKg }: { value: number; perKg?: number | null }) {
       >
         {formatMoney(value)}
       </TableCell>
-      {perKg !== undefined ? (
+      {perKgValue !== undefined ? (
         <TableCell
           className={cn(
             "font-data text-right text-xs",
             loss ? "text-destructive" : "text-chart-3"
           )}
         >
-          {moneyOrDash(perKg)}
+          {moneyOrDash(perKgValue)}
         </TableCell>
       ) : null}
     </>
@@ -90,9 +179,11 @@ function PlCell({ value, perKg }: { value: number; perKg?: number | null }) {
 function RowCells({
   row,
   showParty,
+  strong,
 }: {
   row: PartySalesMarginParty & { partyCount?: number };
   showParty: boolean;
+  strong?: boolean;
 }) {
   const loss = row.profit < 0;
   const groupTint: "profit" | "loss" | "none" = loss ? "loss" : "profit";
@@ -102,12 +193,17 @@ function RowCells({
         <TableCell className={stickyPartyCell(loss)}>{row.partyName}</TableCell>
       ) : null}
       <TableCell className={stickyGroupCell(showParty, loss, groupTint)}>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span>{row.groupName}</span>
+        <div className="flex min-w-0 max-w-full items-center gap-1.5 overflow-hidden">
+          <span
+            className={cn("min-w-0 truncate", strong && "font-semibold")}
+            title={row.groupName}
+          >
+            {row.groupName}
+          </span>
           <Badge
             variant="secondary"
             className={cn(
-              "font-data text-[9px]",
+              "font-data shrink-0 text-[9px]",
               row.salesmanChannel
                 ? "border-amber-400/40 bg-amber-500/20 text-amber-900 dark:text-amber-100"
                 : "border-sky-400/40 bg-sky-500/20 text-sky-900 dark:text-sky-100"
@@ -116,28 +212,52 @@ function RowCells({
             {row.salesmanChannel ? "PE" : "IK"}
           </Badge>
           {row.partyCount != null ? (
-            <span className="text-xs text-muted-foreground">· {row.partyCount}</span>
+            <span className="shrink-0 text-xs text-muted-foreground">· {row.partyCount}</span>
           ) : null}
         </div>
       </TableCell>
-      <TableCell className="font-data text-right text-xs">{row.hubQty ?? 0}</TableCell>
-      <TableCell className="font-data text-right text-xs">{row.drumQty ?? 0}</TableCell>
-      <TableCell className="font-data text-right text-xs">{row.totalQty ?? 0}</TableCell>
-      <TableCell className="font-data text-right text-xs">{formatKg(row.hubKg)}</TableCell>
-      <TableCell className="font-data text-right text-xs">{formatKg(row.drumKg)}</TableCell>
-      <TableCell className="font-data text-right text-xs">{formatKg(row.totalKg)}</TableCell>
-      <TableCell className="font-data text-right text-xs">{formatMoney(row.hubSale)}</TableCell>
-      <TableCell className="font-data text-right text-xs">{formatMoney(row.drumSale)}</TableCell>
-      <TableCell className="font-data text-right text-xs">{formatMoney(row.totalSale)}</TableCell>
+      <TableCell className={cn("font-data text-right text-xs", strong && "font-semibold")}>
+        {row.hubQty ?? 0}
+      </TableCell>
+      <TableCell className={cn("font-data text-right text-xs", strong && "font-semibold")}>
+        {row.drumQty ?? 0}
+      </TableCell>
+      <TableCell className={cn("font-data text-right text-xs", strong && "font-semibold")}>
+        {row.totalQty ?? 0}
+      </TableCell>
+      <TableCell className={cn("font-data text-right text-xs", strong && "font-semibold")}>
+        {formatKg(row.hubKg)}
+      </TableCell>
+      <TableCell className={cn("font-data text-right text-xs", strong && "font-semibold")}>
+        {formatKg(row.drumKg)}
+      </TableCell>
+      <TableCell className={cn("font-data text-right text-xs", strong && "font-semibold")}>
+        {formatKg(row.totalKg)}
+      </TableCell>
+      <TableCell className={cn("font-data text-right text-xs", strong && "font-semibold")}>
+        {formatMoney(row.hubSale)}
+      </TableCell>
+      <TableCell className={cn("font-data text-right text-xs", strong && "font-semibold")}>
+        {formatMoney(row.drumSale)}
+      </TableCell>
+      <TableCell className={cn("font-data text-right text-xs", strong && "font-semibold")}>
+        {formatMoney(row.totalSale)}
+      </TableCell>
       <TableCell className="font-data text-right text-xs">{moneyOrDash(row.hubSalePerKg)}</TableCell>
       <TableCell className="font-data text-right text-xs">{moneyOrDash(row.drumSalePerKg)}</TableCell>
       <TableCell className="font-data text-right text-xs">{moneyOrDash(row.avgSalePerKg)}</TableCell>
       <TableCell className="font-data text-right text-xs">{moneyOrDash(row.hubMfgPerKg)}</TableCell>
       <TableCell className="font-data text-right text-xs">{moneyOrDash(row.drumMfgPerKg)}</TableCell>
       <TableCell className="font-data text-right text-xs">{moneyOrDash(row.avgMfgPerKg)}</TableCell>
-      <TableCell className="font-data text-right text-xs">{formatMoney(row.hubMfg)}</TableCell>
-      <TableCell className="font-data text-right text-xs">{formatMoney(row.drumMfg)}</TableCell>
-      <TableCell className="font-data text-right text-xs">{formatMoney(row.totalMfg)}</TableCell>
+      <TableCell className={cn("font-data text-right text-xs", strong && "font-semibold")}>
+        {formatMoney(row.hubMfg)}
+      </TableCell>
+      <TableCell className={cn("font-data text-right text-xs", strong && "font-semibold")}>
+        {formatMoney(row.drumMfg)}
+      </TableCell>
+      <TableCell className={cn("font-data text-right text-xs", strong && "font-semibold")}>
+        {formatMoney(row.totalMfg)}
+      </TableCell>
       <PlCell value={row.hubProfit} perKg={row.hubProfitPerKg} />
       <PlCell value={row.drumProfit} perKg={row.drumProfitPerKg} />
       <PlCell value={row.profit} perKg={row.profitPerKg} />
@@ -229,6 +349,18 @@ export default function PartySalesMarginPage() {
   const ikGroups = useMemo(
     () => (report?.groups || []).filter((g) => !g.salesmanChannel),
     [report]
+  );
+
+  const powerAll = useMemo(
+    () => (powerGroups.length ? sumChannelGroups(powerGroups, t("partyMargin.channelAllShort")) : null),
+    [powerGroups, t]
+  );
+  const ikMerged = useMemo(
+    () =>
+      ikGroups.length
+        ? sumChannelGroups(ikGroups, t("partyMargin.direct"))
+        : null,
+    [ikGroups, t]
   );
 
   const filteredTotals = useMemo(() => {
@@ -584,9 +716,19 @@ export default function PartySalesMarginPage() {
                           <RowCells row={g} showParty={false} />
                         </TableRow>
                       ))}
+                      {powerAll ? (
+                        <TableRow
+                          className={cn(
+                            "border-t border-amber-600/30",
+                            powerAll.profit < 0 ? "bg-amber-500/20" : "bg-amber-500/15"
+                          )}
+                        >
+                          <RowCells row={powerAll} showParty={false} strong />
+                        </TableRow>
+                      ) : null}
                     </>
                   ) : null}
-                  {ikGroups.length > 0 ? (
+                  {ikMerged ? (
                     <>
                       <TableRow className="hover:bg-sky-500/10">
                         <TableCell
@@ -599,14 +741,13 @@ export default function PartySalesMarginPage() {
                           </span>
                         </TableCell>
                       </TableRow>
-                      {ikGroups.map((g) => (
-                        <TableRow
-                          key={g.groupId || g.groupName}
-                          className={g.profit < 0 ? "bg-destructive/5" : "bg-chart-3/5"}
-                        >
-                          <RowCells row={g} showParty={false} />
-                        </TableRow>
-                      ))}
+                      <TableRow
+                        className={
+                          ikMerged.profit < 0 ? "bg-destructive/5" : "bg-chart-3/5"
+                        }
+                      >
+                        <RowCells row={ikMerged} showParty={false} strong />
+                      </TableRow>
                     </>
                   ) : null}
                 </TableBody>

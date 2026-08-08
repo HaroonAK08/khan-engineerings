@@ -69,7 +69,7 @@ export default function SalaryReportsPage() {
         dateTo: dateTo || undefined,
         workerId: workerId === "all" ? undefined : workerId,
       });
-      setPayments(list);
+      setPayments(list.payments);
     } catch (err) {
       toast.error(apiError(err, t("salReports.loadFailed")));
       setPayments([]);

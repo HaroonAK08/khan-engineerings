@@ -107,6 +107,14 @@ async function sumField(Model, match, amountField = "amount") {
 
 async function getOverview(query = {}) {
   const { from, to } = periodBounds(query);
+  const settingsService = require("../settings/settings.service");
+  const salaryBounds = await settingsService.resolveSalaryBounds(from, to);
+  const expenseMatch = settingsService.expenseMatchWithSalaryWindow(
+    from,
+    to,
+    salaryBounds.from,
+    salaryBounds.to
+  );
 
   const [
     customerRevenueCash,
@@ -126,7 +134,7 @@ async function getOverview(query = {}) {
       "amount"
     ),
     sumField(Purchase, dateMatch("purchaseDate", from, to), "totalAmount"),
-    sumField(BatchExpense, dateMatch("expenseDate", from, to), "amount"),
+    sumField(BatchExpense, expenseMatch, "amount"),
     sumField(FinanceEntry, { ...dateMatch("entryDate", from, to), type: "income" }, "amount"),
     sumField(FinanceEntry, { ...dateMatch("entryDate", from, to), type: "expense" }, "amount"),
     estimateMaterialCost(from, to),
@@ -602,6 +610,14 @@ function emptyFamilyTotals() {
 
 async function getProductionMargin(query = {}) {
   const { from, to } = periodBounds(query);
+  const settingsService = require("../settings/settings.service");
+  const salaryBounds = await settingsService.resolveSalaryBounds(from, to);
+  const expenseMatch = settingsService.expenseMatchWithSalaryWindow(
+    from,
+    to,
+    salaryBounds.from,
+    salaryBounds.to
+  );
   const Product = require("../products/product.model");
   const { EXPENSE_CATEGORIES: expenseCats } = require("../domain/mfg.constants");
 
@@ -825,7 +841,7 @@ async function getProductionMargin(query = {}) {
   const periodSales = periodSalesAgg.byProduct;
 
   const expenseByCategory = await BatchExpense.aggregate([
-    { $match: dateMatch("expenseDate", from, to) },
+    { $match: expenseMatch },
     { $group: { _id: "$category", amount: { $sum: "$amount" } } },
   ]);
   const categoryAmountMap = Object.fromEntries(
@@ -834,7 +850,7 @@ async function getProductionMargin(query = {}) {
   const categoryLabel = Object.fromEntries(expenseCats.map((c) => [c.id, c.label]));
 
   const expenseByScopeCategory = await BatchExpense.aggregate([
-    { $match: dateMatch("expenseDate", from, to) },
+    { $match: expenseMatch },
     {
       $lookup: {
         from: "workers",
@@ -1042,6 +1058,8 @@ async function getProductionMargin(query = {}) {
 
   const salaryPools = { hub: 0, drum: 0, common: 0 };
   const mfgExpensePools = { hub: 0, drum: 0, common: 0 };
+  /** category -> { hub, drum, common } for non-salary mfg expenses */
+  const mfgCategoryPools = {};
   let mfgElectricity = 0;
   let salesmanChannelLoad = 0;
   for (const row of expenseByScopeCategory) {
@@ -1062,6 +1080,83 @@ async function getProductionMargin(query = {}) {
       continue;
     }
     mfgExpensePools[scope] = roundMoney((mfgExpensePools[scope] || 0) + amount);
+    if (!mfgCategoryPools[category]) {
+      mfgCategoryPools[category] = { hub: 0, drum: 0, common: 0 };
+    }
+    mfgCategoryPools[category][scope] = roundMoney(
+      (mfgCategoryPools[category][scope] || 0) + amount
+    );
+  }
+
+  /** Drum salaries: Khrad (Idrees/Amin/Ashraf/Shakeel) vs Casting Labour (everyone else). */
+  const DRUM_KHRAD_FIRST_NAMES = new Set(["idrees", "idris", "amin", "ashraf", "shakeel"]);
+  function isDrumKhradWorkerName(name) {
+    const first = String(name || "")
+      .trim()
+      .toLowerCase()
+      .split(/\s+/)[0];
+    return DRUM_KHRAD_FIRST_NAMES.has(first);
+  }
+
+  const drumSalarySplit = await BatchExpense.aggregate([
+    {
+      $match: {
+        ...expenseMatch,
+        category: "fixed_salary",
+      },
+    },
+    {
+      $lookup: {
+        from: "workers",
+        localField: "worker",
+        foreignField: "_id",
+        as: "_worker",
+      },
+    },
+    {
+      $addFields: {
+        effectiveScope: {
+          $let: {
+            vars: {
+              expenseScope: "$scope",
+              workerScope: { $arrayElemAt: ["$_worker.scope", 0] },
+            },
+            in: {
+              $cond: [
+                { $in: ["$$expenseScope", ["hub", "drum", "common"]] },
+                "$$expenseScope",
+                {
+                  $cond: [
+                    { $in: ["$$workerScope", ["hub", "drum", "common"]] },
+                    "$$workerScope",
+                    "common",
+                  ],
+                },
+              ],
+            },
+          },
+        },
+        workerName: { $ifNull: [{ $arrayElemAt: ["$_worker.name", 0] }, ""] },
+      },
+    },
+    { $match: { effectiveScope: "drum" } },
+    {
+      $group: {
+        _id: "$workerName",
+        amount: { $sum: "$amount" },
+      },
+    },
+  ]);
+
+  let drumKhradSalary = 0;
+  let drumMolderSalary = 0;
+  for (const row of drumSalarySplit) {
+    const amount = row.amount || 0;
+    if (isDrumKhradWorkerName(row._id)) {
+      drumKhradSalary = roundMoney(drumKhradSalary + amount);
+    } else {
+      drumMolderSalary = roundMoney(drumMolderSalary + amount);
+    }
   }
 
   function allocateBucketPerKg(pools, electricityAmount) {
@@ -1086,6 +1181,12 @@ async function getProductionMargin(query = {}) {
     return out;
   }
 
+  function amountOnFamilyPerKg(amount, fam) {
+    const finishedKg = fam === "drum" ? drumFinishedKg : hubFinishedKg;
+    if (!(amount > 0) || finishedKg <= 0) return null;
+    return roundMoney(amount / finishedKg);
+  }
+
   const materialPerKg = {
     hub:
       byFamily.hub.finishedKg > 0
@@ -1098,14 +1199,109 @@ async function getProductionMargin(query = {}) {
   };
   const salariesPerKg = allocateBucketPerKg(salaryPools, 0);
   const mfgExpensesPerKg = allocateBucketPerKg(mfgExpensePools, mfgElectricity);
+  /** Same rule as Party sale vs cost: tour+salesman ÷ PE sold kg only. */
+  const salesmanSoldKg = await getSalesmanSoldKg(from, to);
   const salesmanAddOnPerKg =
-    allFinishedKg > 0 ? roundMoney(salesmanChannelLoad / allFinishedKg) : 0;
+    salesmanSoldKg > 0
+      ? roundMoney(salesmanChannelLoad / salesmanSoldKg)
+      : allFinishedKg > 0
+        ? roundMoney(salesmanChannelLoad / allFinishedKg)
+        : 0;
+
+  const hubSalaryPerKg = amountOnFamilyPerKg(salaryPools.hub, "hub");
+  const commonSalarySplit = allocateBucketPerKg(
+    { hub: 0, drum: 0, common: salaryPools.common },
+    0
+  );
+  const drumKhradPerKg = amountOnFamilyPerKg(drumKhradSalary, "drum");
+  const drumMolderPerKg = amountOnFamilyPerKg(drumMolderSalary, "drum");
+
+  const expenseLineDefs = [];
+  if (mfgElectricity > 0) {
+    const elec = allocateBucketPerKg({ hub: 0, drum: 0, common: 0 }, mfgElectricity);
+    expenseLineDefs.push({
+      id: "electricity",
+      label: categoryLabel.electricity || "Electricity",
+      hub: elec.hub,
+      drum: elec.drum,
+    });
+  }
+  const mergedCategoryPools = { ...mfgCategoryPools };
+  if (mergedCategoryPools.petrol) {
+    if (!mergedCategoryPools.other) {
+      mergedCategoryPools.other = { hub: 0, drum: 0, common: 0 };
+    }
+    for (const scope of ["hub", "drum", "common"]) {
+      mergedCategoryPools.other[scope] = roundMoney(
+        (mergedCategoryPools.other[scope] || 0) + (mergedCategoryPools.petrol[scope] || 0)
+      );
+    }
+    delete mergedCategoryPools.petrol;
+  }
+  for (const [category, pools] of Object.entries(mergedCategoryPools)) {
+    const total = (pools.hub || 0) + (pools.drum || 0) + (pools.common || 0);
+    if (!(total > 0)) continue;
+    const per = allocateBucketPerKg(pools, 0);
+    if (per.hub == null && per.drum == null) continue;
+    expenseLineDefs.push({
+      id: category,
+      label: categoryLabel[category] || category,
+      hub: per.hub,
+      drum: per.drum,
+    });
+  }
+  expenseLineDefs.sort((a, b) => a.label.localeCompare(b.label));
 
   function familyChannelLine(fam, withSalesmanAddOn) {
     const material = materialPerKg[fam];
     const salaries = salariesPerKg[fam];
     const mfgExpenses = mfgExpensesPerKg[fam];
     const addOn = withSalesmanAddOn ? salesmanAddOnPerKg : 0;
+
+    const salaryLines = [];
+    if (fam === "hub") {
+      if (hubSalaryPerKg != null) {
+        salaryLines.push({
+          id: "hub_salaries",
+          label: "Hub salaries",
+          perKg: hubSalaryPerKg,
+        });
+      }
+      if (commonSalarySplit.hub != null) {
+        salaryLines.push({
+          id: "common_salaries",
+          label: "Common salaries",
+          perKg: commonSalarySplit.hub,
+        });
+      }
+    } else {
+      if (drumKhradPerKg != null) {
+        salaryLines.push({ id: "khrad_salaries", label: "Khrad salaries", perKg: drumKhradPerKg });
+      }
+      if (drumMolderPerKg != null) {
+        salaryLines.push({
+          id: "casting_labour",
+          label: "Casting Labour",
+          perKg: drumMolderPerKg,
+        });
+      }
+      if (commonSalarySplit.drum != null) {
+        salaryLines.push({
+          id: "common_salaries",
+          label: "Common salaries",
+          perKg: commonSalarySplit.drum,
+        });
+      }
+    }
+
+    const expenseLines = expenseLineDefs
+      .map((e) => ({
+        id: e.id,
+        label: e.label,
+        perKg: fam === "hub" ? e.hub : e.drum,
+      }))
+      .filter((e) => e.perKg != null && e.perKg > 0);
+
     const parts = [material, salaries, mfgExpenses].filter((n) => n != null);
     if (!parts.length && !(withSalesmanAddOn && salesmanAddOnPerKg)) {
       return {
@@ -1113,6 +1309,8 @@ async function getProductionMargin(query = {}) {
         salariesPerKg: salaries,
         mfgExpensesPerKg: mfgExpenses,
         salesmanAddOnPerKg: withSalesmanAddOn ? salesmanAddOnPerKg : 0,
+        salaryLines,
+        expenseLines,
         totalPerKg: null,
       };
     }
@@ -1124,6 +1322,8 @@ async function getProductionMargin(query = {}) {
       salariesPerKg: salaries,
       mfgExpensesPerKg: mfgExpenses,
       salesmanAddOnPerKg: withSalesmanAddOn ? salesmanAddOnPerKg : 0,
+      salaryLines,
+      expenseLines,
       totalPerKg: base,
     };
   }
@@ -1137,11 +1337,12 @@ async function getProductionMargin(query = {}) {
     },
     powerEngineering: {
       id: "power_engineering",
-      name: "Power Engineering Salesmans",
+      name: "Power Engineering",
       hub: familyChannelLine("hub", true),
       drum: familyChannelLine("drum", true),
       salesmanLoad: salesmanChannelLoad,
       salesmanAddOnPerKg,
+      salesmanSoldKg,
     },
   };
 
@@ -1185,6 +1386,14 @@ async function getProductionMargin(query = {}) {
 
   return {
     period: { from, to },
+    salaryPeriod: {
+      from: salaryBounds.from,
+      to: salaryBounds.to,
+      custom: salaryBounds.custom,
+      month: salaryBounds.month,
+      paymentFrom: salaryBounds.period?.paymentFrom || null,
+      paymentTo: salaryBounds.period?.paymentTo || null,
+    },
     rates: {
       avgScrapRate: roundMoney(avgScrapRate),
       avgDaigRate: roundMoney(avgDaigRate),
@@ -1261,7 +1470,7 @@ const NO_SALESMAN_GROUP_NAMES = new Set(["i k", "ik", "machi goth"]);
 const MAIN_CHANNELS = {
   powerEngineering: {
     id: "power_engineering",
-    name: "Power Engineering Salesmans",
+    name: "Power Engineering",
     salesmanChannel: true,
   },
   ikEngineering: {
@@ -1279,6 +1488,54 @@ function isSalesmanGroupName(name) {
     .replace(/\s+/g, " ");
   if (!key || key === "(no group)") return false;
   return !NO_SALESMAN_GROUP_NAMES.has(key);
+}
+
+/** Sold kg on Power Engineering (salesman) channel parties in the period. */
+async function getSalesmanSoldKg(from, to) {
+  const Product = require("../products/product.model");
+  const products = await Product.find({}).select("family weightKg").lean();
+  const productMap = new Map(products.map((p) => [String(p._id), p]));
+
+  const salesRows = await Builty.aggregate([
+    { $match: dateMatch("builtyDate", from, to) },
+    {
+      $lookup: {
+        from: "customers",
+        localField: "customer",
+        foreignField: "_id",
+        as: "customerDoc",
+      },
+    },
+    { $unwind: { path: "$customerDoc", preserveNullAndEmptyArrays: true } },
+    {
+      $lookup: {
+        from: "partygroups",
+        localField: "customerDoc.group",
+        foreignField: "_id",
+        as: "groupDoc",
+      },
+    },
+    { $unwind: { path: "$groupDoc", preserveNullAndEmptyArrays: true } },
+    { $unwind: { path: "$items", preserveNullAndEmptyArrays: false } },
+    {
+      $project: {
+        groupName: { $ifNull: ["$groupDoc.name", "(no group)"] },
+        productId: "$items.product",
+        quantity: { $ifNull: ["$items.quantity", 0] },
+        itemWeightKg: { $ifNull: ["$items.weightKg", 0] },
+      },
+    },
+  ]);
+
+  let soldKg = 0;
+  for (const row of salesRows) {
+    if (!isSalesmanGroupName(row.groupName)) continue;
+    const product = productMap.get(String(row.productId)) || {};
+    const weightKg = Number(row.itemWeightKg) || Number(product.weightKg) || 0;
+    const qty = Number(row.quantity) || 0;
+    soldKg += weightKg * qty;
+  }
+  return roundKg(soldKg);
 }
 
 /**

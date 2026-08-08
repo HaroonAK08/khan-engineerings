@@ -14,7 +14,6 @@ const OTHER_CATEGORIES: Array<{ id: string; labelKey: MessageKey }> = [
   { id: "tools", labelKey: "other.cat.tools" },
   { id: "machine", labelKey: "other.cat.machine" },
   { id: "repairs", labelKey: "other.cat.repairs" },
-  { id: "tour_expenses", labelKey: "other.cat.tour" },
   { id: "other", labelKey: "other.cat.other" },
 ];
 
