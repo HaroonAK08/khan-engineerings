@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { BookOpen, Loader2, Plus, Search, Trash2 } from "lucide-react";
-import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
+import { apiError, formatDate, formatKg, formatMoney } from "@/lib/materials-api";
 import {
   createWorker,
   deactivateWorker,
@@ -16,6 +16,7 @@ import {
   type ExpenseScope,
   type Worker,
 } from "@/lib/workers-api";
+import { getProductionMargin } from "@/lib/finance-api";
 import type { BatchExpense } from "@/types/production";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +25,8 @@ import { UrduPhoneticInput } from "@/components/ui/urdu-phonetic-input";
 import { Label } from "@/components/ui/label";
 import { useI18n } from "@/hooks/use-i18n";
 import { todayInput } from "@/lib/date-range";
+import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
+import { DateRangeFilter } from "@/components/date-range-filter";
 import { WorkerSearchSelect } from "@/components/workers/worker-search-select";
 import {
   ExpenseScopeChips,
@@ -56,12 +59,20 @@ function displayJob(
   return job;
 }
 
+function paymentWorkerId(e: BatchExpense) {
+  if (!e.worker) return "";
+  return typeof e.worker === "string" ? e.worker : e.worker._id;
+}
+
 export default function SalariesPage() {
   const { t, isUrdu } = useI18n();
   const router = useRouter();
+  const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
 
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [payments, setPayments] = useState<BatchExpense[]>([]);
+  const [hubFinishedKg, setHubFinishedKg] = useState(0);
+  const [drumFinishedKg, setDrumFinishedKg] = useState(0);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -95,20 +106,27 @@ export default function SalariesPage() {
   };
 
   const load = useCallback(async () => {
+    if (!hydrated) return;
     setLoading(true);
     try {
-      const [w, p] = await Promise.all([
+      const [w, p, margin] = await Promise.all([
         listWorkers({ active: "true" }),
-        listSalaryPayments(),
+        listSalaryPayments({
+          dateFrom: dateFrom || undefined,
+          dateTo: dateTo || undefined,
+        }),
+        getProductionMargin({ dateFrom, dateTo }),
       ]);
       setWorkers(w);
       setPayments(p);
+      setHubFinishedKg(margin.summary?.hubFinishedKg || 0);
+      setDrumFinishedKg(margin.summary?.drumFinishedKg || 0);
     } catch (err) {
       toast.error(apiError(err, "Failed to load salaries"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [dateFrom, dateTo, hydrated]);
 
   useEffect(() => {
     const t = setTimeout(() => void load(), 150);
@@ -123,17 +141,45 @@ export default function SalariesPage() {
     [payments, scopeFilter]
   );
 
+  const paidByWorker = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const e of payments) {
+      if (!matchesExpenseScope(e.scope, scopeFilter)) continue;
+      const id = paymentWorkerId(e);
+      if (!id) continue;
+      map.set(id, (map.get(id) || 0) + (e.amount || 0));
+    }
+    return map;
+  }, [payments, scopeFilter]);
+
+  const scopedWorkers = useMemo(
+    () => workers.filter((w) => matchesExpenseScope(w.scope, scopeFilter)),
+    [workers, scopeFilter]
+  );
+
+  const producedKgCard = useMemo(() => {
+    if (scopeFilter === "hub") {
+      return { label: t("sal.hubProducedKg"), value: hubFinishedKg };
+    }
+    if (scopeFilter === "drum") {
+      return { label: t("sal.drumProducedKg"), value: drumFinishedKg };
+    }
+    return {
+      label: t("sal.totalProducedKg"),
+      value: hubFinishedKg + drumFinishedKg,
+    };
+  }, [scopeFilter, hubFinishedKg, drumFinishedKg, t]);
+
   const filteredWorkers = useMemo(() => {
-    let list = workers.filter((w) => matchesExpenseScope(w.scope, scopeFilter));
     const q = search.trim().toLowerCase();
-    if (!q) return list;
-    return list.filter(
+    if (!q) return scopedWorkers;
+    return scopedWorkers.filter(
       (w) =>
         w.name.toLowerCase().includes(q) ||
         (w.nameUr && w.nameUr.toLowerCase().includes(q)) ||
         (w.job && w.job.toLowerCase().includes(q))
     );
-  }, [workers, search, scopeFilter]);
+  }, [scopedWorkers, search]);
 
   function openPay(w: Worker) {
     setEditingId(null);
@@ -318,6 +364,7 @@ export default function SalariesPage() {
           <p className="mt-1 max-w-lg text-sm text-muted-foreground">{t("sal.desc")}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <DateRangeFilter />
           <Link
             href="/dashboard/expenses/salaries/calendar"
             className="inline-flex h-11 items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-4 text-sm font-semibold text-amber-300 shadow-md transition-colors hover:bg-slate-800 hover:text-amber-200 dark:border-slate-600 dark:bg-slate-950 dark:text-amber-300 dark:hover:bg-slate-900"
@@ -328,13 +375,13 @@ export default function SalariesPage() {
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-3">
         <Card className="py-0">
           <CardContent className="p-4">
             <p className="font-data text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
               {t("sal.activeWorkers")}
             </p>
-            <p className="font-data mt-1 text-xl">{workers.length}</p>
+            <p className="font-data mt-1 text-xl">{scopedWorkers.length}</p>
           </CardContent>
         </Card>
         <Card className="py-0">
@@ -343,6 +390,14 @@ export default function SalariesPage() {
               {t("sal.totalPaid")}
             </p>
             <p className="font-data mt-1 text-xl">{formatMoney(periodTotal)}</p>
+          </CardContent>
+        </Card>
+        <Card className="py-0">
+          <CardContent className="p-4">
+            <p className="font-data text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
+              {producedKgCard.label}
+            </p>
+            <p className="font-data mt-1 text-xl">{formatKg(producedKgCard.value)}</p>
           </CardContent>
         </Card>
       </div>
@@ -586,6 +641,12 @@ export default function SalariesPage() {
                               {displayJob(w.job, t)}
                             </p>
                           ) : null}
+                          <p className="font-data mt-1 text-sm font-semibold tabular-nums">
+                            {formatMoney(paidByWorker.get(w._id) || 0)}
+                            <span className="ml-1.5 text-[10px] font-normal tracking-wide text-muted-foreground uppercase">
+                              {t("sal.paidPeriod")}
+                            </span>
+                          </p>
                         </div>
                         <div
                           className="flex flex-wrap gap-2"

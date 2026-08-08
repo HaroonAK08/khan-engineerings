@@ -225,6 +225,30 @@ export type ProductionMarginReport = {
     amount: number;
     kind: "material" | "overhead";
   }>;
+  channelManufacture?: {
+    ikEngineering: {
+      id: string;
+      name: string;
+      hub: ChannelManufactureLine;
+      drum: ChannelManufactureLine;
+    };
+    powerEngineering: {
+      id: string;
+      name: string;
+      hub: ChannelManufactureLine;
+      drum: ChannelManufactureLine;
+      salesmanLoad: number;
+      salesmanAddOnPerKg: number;
+    };
+  };
+};
+
+export type ChannelManufactureLine = {
+  materialPerKg: number | null;
+  salariesPerKg: number | null;
+  mfgExpensesPerKg: number | null;
+  salesmanAddOnPerKg: number;
+  totalPerKg: number | null;
 };
 
 export async function getProductionMargin(params?: { dateFrom?: string; dateTo?: string }) {

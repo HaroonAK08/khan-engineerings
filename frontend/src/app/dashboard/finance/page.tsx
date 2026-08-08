@@ -666,6 +666,122 @@ export default function ProductionMarginPage() {
             </Card>
           )}
 
+          {report.channelManufacture ? (
+            <div className="flex flex-col gap-3">
+              <div>
+                <h2 className="text-nameplate text-sm">{t("prodMargin.channelMfgTitle")}</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {t("prodMargin.channelMfgDesc")}
+                </p>
+              </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                {(
+                  [
+                    {
+                      key: "ik" as const,
+                      title: t("prodMargin.channelIk"),
+                      data: report.channelManufacture.ikEngineering,
+                      accent: "border-sky-500/40",
+                      showAddOn: false,
+                    },
+                    {
+                      key: "power" as const,
+                      title: t("prodMargin.channelPower"),
+                      data: report.channelManufacture.powerEngineering,
+                      accent: "border-amber-500/40",
+                      showAddOn: true,
+                    },
+                  ] as const
+                ).map((channel) => (
+                  <Card key={channel.key} className={`border ${channel.accent}`}>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-nameplate text-sm">{channel.title}</CardTitle>
+                      {channel.showAddOn &&
+                      "salesmanLoad" in channel.data &&
+                      channel.data.salesmanLoad > 0 ? (
+                        <CardDescription>
+                          {t("prodMargin.salesmanAddOnKg")}:{" "}
+                          {formatMoney(channel.data.salesmanAddOnPerKg)} ·{" "}
+                          {formatMoney(channel.data.salesmanLoad)}
+                        </CardDescription>
+                      ) : null}
+                    </CardHeader>
+                    <CardContent className="grid gap-4 sm:grid-cols-2">
+                      {(
+                        [
+                          { fam: "hub" as const, label: t("prodMargin.hubLine") },
+                          { fam: "drum" as const, label: t("prodMargin.drumLine") },
+                        ] as const
+                      ).map((col) => {
+                        const line = channel.data[col.fam];
+                        return (
+                          <div
+                            key={col.fam}
+                            className="rounded-md border bg-muted/20 p-3 text-sm"
+                          >
+                            <p className="font-data mb-2 text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
+                              {col.label}
+                            </p>
+                            <div className="flex flex-col gap-1.5">
+                              <div className="flex justify-between gap-2">
+                                <span className="text-muted-foreground">
+                                  {t("prodMargin.rawMaterialKg")}
+                                </span>
+                                <span className="font-data">
+                                  {line.materialPerKg != null
+                                    ? formatMoney(line.materialPerKg)
+                                    : "—"}
+                                </span>
+                              </div>
+                              <div className="flex justify-between gap-2">
+                                <span className="text-muted-foreground">
+                                  {t("prodMargin.mfgExpensesKg")}
+                                </span>
+                                <span className="font-data">
+                                  {line.mfgExpensesPerKg != null
+                                    ? formatMoney(line.mfgExpensesPerKg)
+                                    : "—"}
+                                </span>
+                              </div>
+                              <div className="flex justify-between gap-2">
+                                <span className="text-muted-foreground">
+                                  {t("prodMargin.salariesKg")}
+                                </span>
+                                <span className="font-data">
+                                  {line.salariesPerKg != null
+                                    ? formatMoney(line.salariesPerKg)
+                                    : "—"}
+                                </span>
+                              </div>
+                              {channel.showAddOn ? (
+                                <div className="flex justify-between gap-2">
+                                  <span className="text-muted-foreground">
+                                    {t("prodMargin.salesmanAddOnKg")}
+                                  </span>
+                                  <span className="font-data">
+                                    {formatMoney(line.salesmanAddOnPerKg || 0)}
+                                  </span>
+                                </div>
+                              ) : null}
+                              <div className="mt-1 flex justify-between gap-2 border-t pt-1.5 font-semibold">
+                                <span>{t("prodMargin.totalMfgKg")}</span>
+                                <span className="font-data">
+                                  {line.totalPerKg != null
+                                    ? formatMoney(line.totalPerKg)
+                                    : "—"}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           <div className="grid gap-4 lg:grid-cols-2">
             <FamilyCard
               title={t("prodMargin.hubSummary")}

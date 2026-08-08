@@ -1040,6 +1040,111 @@ async function getProductionMargin(query = {}) {
     t.marginPct = t.sellValue > 0 ? roundMoney((t.profit / t.sellValue) * 100) : null;
   }
 
+  const salaryPools = { hub: 0, drum: 0, common: 0 };
+  const mfgExpensePools = { hub: 0, drum: 0, common: 0 };
+  let mfgElectricity = 0;
+  let salesmanChannelLoad = 0;
+  for (const row of expenseByScopeCategory) {
+    const scope =
+      row._id?.scope === "hub" || row._id?.scope === "drum" ? row._id.scope : "common";
+    const category = row._id?.category || "";
+    const amount = row.amount || 0;
+    if (category === "salesman_commission" || category === "tour_expenses") {
+      salesmanChannelLoad = roundMoney(salesmanChannelLoad + amount);
+      continue;
+    }
+    if (category === "fixed_salary") {
+      salaryPools[scope] = roundMoney((salaryPools[scope] || 0) + amount);
+      continue;
+    }
+    if (category === "electricity" && scope === "common") {
+      mfgElectricity = roundMoney(mfgElectricity + amount);
+      continue;
+    }
+    mfgExpensePools[scope] = roundMoney((mfgExpensePools[scope] || 0) + amount);
+  }
+
+  function allocateBucketPerKg(pools, electricityAmount) {
+    const out = { hub: null, drum: null };
+    for (const fam of ["hub", "drum"]) {
+      const finishedKg = fam === "drum" ? drumFinishedKg : hubFinishedKg;
+      if (finishedKg <= 0) {
+        out[fam] = null;
+        continue;
+      }
+      let amount = 0;
+      if (fam === "hub") amount += pools.hub || 0;
+      if (fam === "drum") amount += pools.drum || 0;
+      if (allFinishedKg > 0) amount += (finishedKg / allFinishedKg) * (pools.common || 0);
+      if (electricityAmount > 0 && electricityWeightTotal > 0) {
+        const intensity =
+          fam === "drum" ? ELECTRICITY_DRUM_INTENSITY : ELECTRICITY_HUB_INTENSITY;
+        amount += ((finishedKg * intensity) / electricityWeightTotal) * electricityAmount;
+      }
+      out[fam] = roundMoney(amount / finishedKg);
+    }
+    return out;
+  }
+
+  const materialPerKg = {
+    hub:
+      byFamily.hub.finishedKg > 0
+        ? roundMoney(byFamily.hub.materialCost / byFamily.hub.finishedKg)
+        : null,
+    drum:
+      byFamily.drum.finishedKg > 0
+        ? roundMoney(byFamily.drum.materialCost / byFamily.drum.finishedKg)
+        : null,
+  };
+  const salariesPerKg = allocateBucketPerKg(salaryPools, 0);
+  const mfgExpensesPerKg = allocateBucketPerKg(mfgExpensePools, mfgElectricity);
+  const salesmanAddOnPerKg =
+    allFinishedKg > 0 ? roundMoney(salesmanChannelLoad / allFinishedKg) : 0;
+
+  function familyChannelLine(fam, withSalesmanAddOn) {
+    const material = materialPerKg[fam];
+    const salaries = salariesPerKg[fam];
+    const mfgExpenses = mfgExpensesPerKg[fam];
+    const addOn = withSalesmanAddOn ? salesmanAddOnPerKg : 0;
+    const parts = [material, salaries, mfgExpenses].filter((n) => n != null);
+    if (!parts.length && !(withSalesmanAddOn && salesmanAddOnPerKg)) {
+      return {
+        materialPerKg: material,
+        salariesPerKg: salaries,
+        mfgExpensesPerKg: mfgExpenses,
+        salesmanAddOnPerKg: withSalesmanAddOn ? salesmanAddOnPerKg : 0,
+        totalPerKg: null,
+      };
+    }
+    const base = roundMoney(
+      (material || 0) + (salaries || 0) + (mfgExpenses || 0) + addOn
+    );
+    return {
+      materialPerKg: material,
+      salariesPerKg: salaries,
+      mfgExpensesPerKg: mfgExpenses,
+      salesmanAddOnPerKg: withSalesmanAddOn ? salesmanAddOnPerKg : 0,
+      totalPerKg: base,
+    };
+  }
+
+  const channelManufacture = {
+    ikEngineering: {
+      id: "ik_engineering",
+      name: "IK Engineering",
+      hub: familyChannelLine("hub", false),
+      drum: familyChannelLine("drum", false),
+    },
+    powerEngineering: {
+      id: "power_engineering",
+      name: "Power Engineering Salesmans",
+      hub: familyChannelLine("hub", true),
+      drum: familyChannelLine("drum", true),
+      salesmanLoad: salesmanChannelLoad,
+      salesmanAddOnPerKg,
+    },
+  };
+
   const totalScrapKg = roundKg(productRows.reduce((s, r) => s + r.scrapKg, 0));
   const totalDaigKg = roundKg(productRows.reduce((s, r) => s + r.daigKg, 0));
   const totalWasteKg = roundKg(productRows.reduce((s, r) => s + r.wasteKg, 0));
@@ -1146,6 +1251,7 @@ async function getProductionMargin(query = {}) {
     byFamily,
     products: productRows,
     expenseBreakdown,
+    channelManufacture,
   };
 }
 
