@@ -19,6 +19,7 @@ import {
   ScrollText,
   FolderKanban,
   CalendarDays,
+  Mic,
 } from "lucide-react";
 import type { MessageKey } from "@/lib/i18n/messages";
 
@@ -76,6 +77,7 @@ export const NAV_ITEMS: NavItem[] = [
     ready: true,
     children: FINANCE_CHILDREN,
   },
+  { labelKey: "nav.voice", href: "/dashboard/today", icon: Mic, ready: true },
   { labelKey: "nav.inventory", href: "/dashboard/inventory", icon: Boxes, ready: true },
   { labelKey: "nav.products", href: "/dashboard/products", icon: Package, ready: true },
   { labelKey: "nav.production", href: "/dashboard/production", icon: Factory, ready: true },

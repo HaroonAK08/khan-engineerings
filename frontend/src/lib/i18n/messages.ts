@@ -4,6 +4,7 @@ export type MessageKey = keyof typeof en;
 
 const en = {
   "nav.dashboard": "Dashboard",
+  "nav.voice": "Voice Entry",
   "nav.inventory": "Inventory",
   "nav.products": "Products",
   "nav.production": "Production",
@@ -1917,10 +1918,22 @@ const en = {
   "financeEntries.ledger": "Ledger",
   "financeEntries.ledgerDesc": "Feeds other income / other expenses on the P&L overview.",
   "financeEntries.noManualEntries": "No manual entries yet",
+
+  "voice.title": "Voice Entry",
+  "voice.subtitle":
+    "Speak to add entries, or open pages. For sizes say “TK 20 slash 50 kg” (or edit the transcript).",
+  "voice.unsupported":
+    "Voice entry needs Chrome or Edge with microphone access. You can still tap an example below to try the flow.",
+  "voice.listening": "Listening… tap mic to stop",
+  "voice.idle": "Tap the mic and speak",
+  "voice.examples": "Try an example",
+  "voice.speakTip":
+    "Tip: for names like TK 20 / 50 kg, say “slash” or “dash” between numbers — or fix it in the transcript box.",
 } as const;
 
 const ur: Record<MessageKey, string> = {
   "nav.dashboard": "ڈیش بورڈ",
+  "nav.voice": "وائس انٹری",
   "nav.inventory": "انوینٹری",
   "nav.products": "پروڈکٹس",
   "nav.production": "پیداوار",
@@ -3831,6 +3844,17 @@ const ur: Record<MessageKey, string> = {
   "financeEntries.ledger": "لیجر",
   "financeEntries.ledgerDesc": "پی اینڈ ایل جائزے میں دیگر آمدنی / دیگر اخراجات میں شامل ہوتا ہے۔",
   "financeEntries.noManualEntries": "ابھی کوئی دستی اندراج نہیں",
+
+  "voice.title": "وائس انٹری",
+  "voice.subtitle":
+    "اندراج بولیں یا صفحہ کھولیں۔ سائز کے لیے “TK 20 slash 50 kg” کہیں (یا ٹرانسکرپٹ درست کریں)۔",
+  "voice.unsupported":
+    "وائس انٹری کے لیے Chrome یا Edge اور مائیکروفون درکار ہے۔ مثال پر کلک کر کے بہرحال آزما سکتے ہیں۔",
+  "voice.listening": "سن رہا ہے… بند کرنے کے لیے مائیک دبائیں",
+  "voice.idle": "مائیک دبائیں اور بولیں",
+  "voice.examples": "مثال آزمائیں",
+  "voice.speakTip":
+    "ٹپ: TK 20 / 50 kg جیسے نام میں نمبروں کے بیچ “slash” یا “dash” کہیں — یا ٹرانسکرپٹ میں درست کریں۔",
 };
 
 export const messages: Record<Locale, Record<MessageKey, string>> = {
