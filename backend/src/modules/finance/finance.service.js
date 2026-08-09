@@ -10,6 +10,7 @@ const {
   isJavedWarma,
   classifyHubLabour,
   isDrumKhradWorkerName,
+  isCommonSalaryWorkerName,
   JAVED_HUB_SHARE,
   JAVED_DRUM_SHARE,
 } = require("./labour-groups");
@@ -998,6 +999,11 @@ async function getProductionMargin(query = {}) {
       drumKhradSalary = roundMoney(drumKhradSalary + toDrum);
       salaryPools.hub = roundMoney(salaryPools.hub + toHub);
       salaryPools.drum = roundMoney(salaryPools.drum + toDrum);
+      continue;
+    }
+
+    if (isCommonSalaryWorkerName(name)) {
+      salaryPools.common = roundMoney(salaryPools.common + amount);
       continue;
     }
 
@@ -2369,6 +2375,10 @@ async function collectEditableChargeLines(from, to) {
       const toDrum = roundMoney(amount - toHub);
       salaryPools.hub = roundMoney(salaryPools.hub + toHub);
       salaryPools.drum = roundMoney(salaryPools.drum + toDrum);
+      continue;
+    }
+    if (isCommonSalaryWorkerName(name)) {
+      salaryPools.common = roundMoney(salaryPools.common + amount);
       continue;
     }
     if (scope === "hub") {

@@ -120,7 +120,16 @@ function isHubCastingWorker(w: Worker) {
   return false;
 }
 
-function classifyHubLabour(w: Worker): LabourGroupId {
+/** Amir Khan + Tariq Khan → Common salaries (production margin). */
+function isCommonSalaryWorker(w: Worker) {
+  const first = workerFirst(w.name);
+  if (first === "tariq") return true;
+  if (first === "amir" && workerHasToken(w.name, "khan")) return true;
+  return false;
+}
+
+function classifyHubLabour(w: Worker): LabourGroupId | "common" {
+  if (isCommonSalaryWorker(w)) return "common";
   if (isHubKhradWorker(w)) return "khrad";
   if (isHubCastingWorker(w)) return "casting";
   return "others";
@@ -312,6 +321,10 @@ export default function SalariesPage() {
         total += (e.amount || 0) * share;
         continue;
       }
+      if (worker && isCommonSalaryWorker(worker)) {
+        if (scopeFilter === "common" || scopeFilter === "all") total += e.amount || 0;
+        continue;
+      }
       if (!matchesExpenseScope(e.scope, scopeFilter)) continue;
       total += e.amount || 0;
     }
@@ -331,6 +344,12 @@ export default function SalariesPage() {
         map.set(id, (map.get(id) || 0) + (e.amount || 0) * share);
         continue;
       }
+      if (worker && isCommonSalaryWorker(worker)) {
+        if (scopeFilter === "common" || scopeFilter === "all") {
+          map.set(id, (map.get(id) || 0) + (e.amount || 0));
+        }
+        continue;
+      }
       if (!matchesExpenseScope(e.scope, scopeFilter)) continue;
       map.set(id, (map.get(id) || 0) + (e.amount || 0));
     }
@@ -340,6 +359,9 @@ export default function SalariesPage() {
   const scopedWorkers = useMemo(() => {
     return workers.filter((w) => {
       if (isJavedWarma(w) && (scopeFilter === "hub" || scopeFilter === "drum")) return true;
+      if (isCommonSalaryWorker(w)) {
+        return scopeFilter === "common" || scopeFilter === "all";
+      }
       return matchesExpenseScope(w.scope, scopeFilter);
     });
   }, [workers, scopeFilter]);

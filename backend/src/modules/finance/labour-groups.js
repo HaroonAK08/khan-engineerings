@@ -33,7 +33,7 @@ function isHubKhradWorkerName(name) {
   return false;
 }
 
-/** Hub Casting: Amin 4man, Amir molder, Banaras, Ikram, Madad Ali/Tariq, Shahbaz. */
+/** Hub Casting: Amin 4man, Amir molder, Banaras, Ikram, Madad Ali, Shahbaz. */
 function isHubCastingWorkerName(name) {
   const n = normalizeName(name);
   const first = firstToken(n);
@@ -46,15 +46,25 @@ function isHubCastingWorkerName(name) {
   return false;
 }
 
+/** Forced into Common salaries (not Hub Other / Casting). Amir Khan, Tariq Khan. */
+function isCommonSalaryWorkerName(name) {
+  const first = firstToken(name);
+  if (first === "tariq") return true;
+  if (first === "amir" && hasToken(name, "khan")) return true;
+  return false;
+}
+
 /** Hub Others: Ali (standalone), plus any unmatched hub worker. */
 function isHubOthersNamedWorker(name) {
   const n = normalizeName(name);
+  if (isCommonSalaryWorkerName(n)) return false;
   if (n === "ali") return true;
   if (firstToken(n) === "ali" && !hasToken(n, "madad") && !hasToken(n, "tariq")) return true;
   return false;
 }
 
 function classifyHubLabour(name) {
+  if (isCommonSalaryWorkerName(name)) return "common";
   if (isHubKhradWorkerName(name)) return "khrad";
   if (isHubCastingWorkerName(name)) return "casting";
   if (isHubOthersNamedWorker(name)) return "others";
@@ -78,6 +88,7 @@ module.exports = {
   isHubKhradWorkerName,
   isHubCastingWorkerName,
   isHubOthersNamedWorker,
+  isCommonSalaryWorkerName,
   classifyHubLabour,
   isDrumKhradWorkerName,
   JAVED_HUB_SHARE,
