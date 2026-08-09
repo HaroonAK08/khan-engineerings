@@ -307,6 +307,7 @@ export async function resolveVoiceCommand(
   if (parsed.intent === "produce") {
     draft.wastePercent = 6;
     draft.materialType = parsed.materialType;
+    if (parsed.spokenDate) draft.productionDate = parsed.spokenDate;
   }
 
   if (

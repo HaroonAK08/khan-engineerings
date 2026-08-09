@@ -469,6 +469,18 @@ function parsePurchase(text: string): ParsedVoiceCommand {
   };
 }
 
+const MONTH_NAMES =
+  "january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sept|sep|october|oct|november|nov|december|dec";
+
+const SPOKEN_DATE_NAMED = new RegExp(
+  `\\b(?:on|dated|date)\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s+(${MONTH_NAMES})\\b`,
+  "i"
+);
+const SPOKEN_DATE_ISO =
+  /\b(?:on|dated|date)\s+(\d{4})-(\d{1,2})-(\d{1,2})\b/i;
+const SPOKEN_DATE_DMY =
+  /\b(?:on|dated|date)\s+(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2,4}))?\b/i;
+
 function parseSpokenDate(text: string): string | undefined {
   const months: Record<string, number> = {
     january: 1,
@@ -496,9 +508,7 @@ function parseSpokenDate(text: string): string | undefined {
     december: 12,
     dec: 12,
   };
-  const named = text.match(
-    /\b(?:on|dated|date)\s+(\d{1,2})(?:st|nd|rd|th)?\s+(january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sept|sep|october|oct|november|nov|december|dec)\b/i
-  );
+  const named = text.match(SPOKEN_DATE_NAMED);
   if (named) {
     const day = Number(named[1]);
     const month = months[named[2].toLowerCase()];
@@ -507,11 +517,11 @@ function parseSpokenDate(text: string): string | undefined {
       return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     }
   }
-  const iso = text.match(/\b(?:on|dated|date)\s+(\d{4})-(\d{1,2})-(\d{1,2})\b/i);
+  const iso = text.match(SPOKEN_DATE_ISO);
   if (iso) {
     return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
   }
-  const dmy = text.match(/\b(?:on|dated|date)\s+(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2,4}))?\b/i);
+  const dmy = text.match(SPOKEN_DATE_DMY);
   if (dmy) {
     const day = Number(dmy[1]);
     const month = Number(dmy[2]);
@@ -522,6 +532,15 @@ function parseSpokenDate(text: string): string | undefined {
     }
   }
   return undefined;
+}
+
+function stripSpokenDate(text: string) {
+  return text
+    .replace(SPOKEN_DATE_NAMED, " ")
+    .replace(SPOKEN_DATE_ISO, " ")
+    .replace(SPOKEN_DATE_DMY, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function parseBuilty(text: string): ParsedVoiceCommand {
@@ -555,12 +574,12 @@ function parseBuilty(text: string): ParsedVoiceCommand {
     customerQuery = nestedOf[1]
       .replace(/\b(customer|party|please)\b/gi, "")
       .trim();
-    let rest = nestedOf[2]
-      .replace(/\b(?:builty\s+)?(?:number|no\.?|num|#)\s*(?:is|=|:)?\s*[a-z0-9\-_/]+/gi, " ")
-      .replace(/\b(?:on|dated|date)\s+\d{1,2}(?:st|nd|rd|th)?\s+\w+/gi, " ")
-      .replace(/\b(?:on|dated|date)\s+\d{1,2}[\/\-.]\d{1,2}(?:[\/\-.]\d{2,4})?/gi, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+    let rest = stripSpokenDate(
+      nestedOf[2].replace(
+        /\b(?:builty\s+)?(?:number|no\.?|num|#)\s*(?:is|=|:)?\s*[a-z0-9\-_/]+/gi,
+        " "
+      )
+    );
 
     // China 44 kg 6 grams @ 250  OR  China 44 kg quantity 6 @ 250
     const withSizeAndQty = rest.match(
@@ -733,20 +752,22 @@ function parseSupplierPayment(text: string): ParsedVoiceCommand {
 function parseProduce(text: string): ParsedVoiceCommand {
   // "produce four drums of China 44 kg" → qty 4, product "china 44 kg"
   // "produce hub 4 quantity 50" → qty 50, product "hub 4"
+  // "produce four drums of China 44 kg on 6 August" → also sets spokenDate
+  const spokenDate = parseSpokenDate(text);
   const materialType: "scrap" | "daig" | undefined = /\bdrums?\b/.test(text)
     ? "daig"
     : /\bhubs?\b/.test(text)
       ? "scrap"
       : undefined;
 
-  let rest = text
-    .replace(
-      /\b(produced|producing|produce|production|make|made|banaya|banao|cast)\b/gi,
-      " "
-    )
-    .replace(/\b(please|add|kro|karo|kar do)\b/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  let rest = stripSpokenDate(
+    text
+      .replace(
+        /\b(produced|producing|produce|production|make|made|banaya|banao|cast)\b/gi,
+        " "
+      )
+      .replace(/\b(please|add|kro|karo|kar do)\b/gi, " ")
+  );
 
   const numberToken =
     "\\d+(?:\\.\\d+)?|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety";
@@ -895,6 +916,7 @@ function parseProduce(text: string): ParsedVoiceCommand {
     productQuery,
     quantity,
     materialType,
+    spokenDate,
     error,
   };
 }

@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { VOICE_EXAMPLES, parseVoiceCommand } from "@/lib/voice/parser";
 import { resolveVoiceCommand } from "@/lib/voice/resolve";
-import { isSpeechSupported, VoiceRecognizer, type SpeechLang } from "@/lib/voice/speech";
+import { isSpeechSupported, VoiceRecognizer } from "@/lib/voice/speech";
 import { isAcceptPhrase, isRejectPhrase } from "@/lib/voice/confirm-phrases";
 import type { ResolvedVoiceDraft } from "@/lib/voice/types";
 import { VoiceConfirmDialog } from "@/components/voice/voice-confirm-dialog";
@@ -54,7 +54,6 @@ export function VoiceEntryPanel({
 
   const [ready, setReady] = useState(false);
   const [listening, setListening] = useState(false);
-  const [lang, setLang] = useState<SpeechLang>("en-US");
   const [interim, setInterim] = useState("");
   const [transcript, setTranscript] = useState("");
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -78,17 +77,13 @@ export function VoiceEntryPanel({
 
     const voice = new VoiceRecognizer();
     recognizer.current = voice;
-    voice.setLang(lang);
+    voice.setLang("en-US");
 
     return () => {
       voice.stop(true);
       recognizer.current = null;
     };
   }, []);
-
-  useEffect(() => {
-    recognizer.current?.setLang(lang);
-  }, [lang]);
 
   useEffect(() => {
     confirmOpenRef.current = confirmOpen;
@@ -164,30 +159,39 @@ export function VoiceEntryPanel({
     }
   }, [goNavigate]);
 
-  const appendFinalSpeech = useCallback((text: string) => {
-    const cleaned = text.trim();
-    if (!cleaned) return;
+  const appendFinalSpeech = useCallback(
+    (text: string) => {
+      const cleaned = text.trim();
+      if (!cleaned) return;
 
-    if (confirmOpenRef.current) {
-      if (isAcceptPhrase(cleaned)) {
-        window.dispatchEvent(new CustomEvent("voice-confirm-accept"));
+      if (confirmOpenRef.current) {
+        if (isAcceptPhrase(cleaned)) {
+          window.dispatchEvent(new CustomEvent("voice-confirm-accept"));
+          return;
+        }
+        if (isRejectPhrase(cleaned)) {
+          setConfirmOpen(false);
+          setDraft(null);
+          return;
+        }
         return;
       }
-      if (isRejectPhrase(cleaned)) {
-        setConfirmOpen(false);
-        setDraft(null);
-        return;
-      }
-      return;
-    }
 
-    setTranscript((prev) => {
-      const next = prev ? `${prev} ${cleaned}`.replace(/\s+/g, " ").trim() : cleaned;
-      return next;
-    });
-    setInterim("");
-    setStatusError(null);
-  }, []);
+      const next = transcriptRef.current
+        ? `${transcriptRef.current} ${cleaned}`.replace(/\s+/g, " ").trim()
+        : cleaned;
+      setTranscript(next);
+      setInterim("");
+      setStatusError(null);
+
+      // "open …" / "go to …" → navigate immediately (no Review tap)
+      const parsed = parseVoiceCommand(next);
+      if (parsed.intent === "navigate" && !parsed.error) {
+        void reviewAndOpenConfirm(next);
+      }
+    },
+    [reviewAndOpenConfirm]
+  );
 
   useEffect(() => {
     const voice = recognizer.current;
@@ -353,7 +357,11 @@ export function VoiceEntryPanel({
     if (voice.isListening() || listening) {
       voice.stop();
       setListening(false);
-      flushInterimIntoTranscript();
+      const merged = flushInterimIntoTranscript();
+      const parsed = parseVoiceCommand(merged);
+      if (parsed.intent === "navigate" && !parsed.error) {
+        void reviewAndOpenConfirm(merged);
+      }
       return;
     }
     setStatusError(null);
@@ -418,25 +426,6 @@ export function VoiceEntryPanel({
                 ? "Review the transcript, then tap Review or Cancel"
                 : idleLabel}
         </p>
-
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant={lang === "en-US" ? "default" : "outline"}
-            onClick={() => setLang("en-US")}
-          >
-            EN
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={lang === "ur-PK" ? "default" : "outline"}
-            onClick={() => setLang("ur-PK")}
-          >
-            UR
-          </Button>
-        </div>
       </div>
 
       <div className="space-y-3 rounded-xl border bg-muted/30 px-4 py-3">
@@ -501,6 +490,10 @@ export function VoiceEntryPanel({
                 setInterim("");
                 setTranscript(example);
                 setStatusError(null);
+                const parsed = parseVoiceCommand(example);
+                if (parsed.intent === "navigate" && !parsed.error) {
+                  void reviewAndOpenConfirm(example);
+                }
               }}
             >
               {example}
