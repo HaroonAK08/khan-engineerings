@@ -51,6 +51,7 @@ import { useI18n } from "@/hooks/use-i18n";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 import { todayInput } from "@/lib/date-range";
 import { cn } from "@/lib/utils";
+import { channelColors } from "@/lib/channel-colors";
 import { DateRangeFilter } from "@/components/date-range-filter";
 
 const schema = z.object({
@@ -381,14 +382,14 @@ export function PartyGroupsPanel() {
       title: t("pgroup.mainPower"),
       hint: t("pgroup.mainPowerHint"),
       groups: powerGroups,
-      accent: "border-amber-500/40 hover:border-amber-500/70 hover:bg-amber-500/5",
+      accent: channelColors.power.hover,
     },
     {
       id: "ik_engineering",
       title: t("pgroup.mainIk"),
       hint: t("pgroup.mainIkHint"),
       groups: ikGroups,
-      accent: "border-sky-500/40 hover:border-sky-500/70 hover:bg-sky-500/5",
+      accent: channelColors.ik.hover,
     },
   ];
 

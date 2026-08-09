@@ -14,6 +14,7 @@ import {
   type ProductionMarginReport,
 } from "@/lib/finance-api";
 import { splitCastingKhrad } from "@/lib/casting-khrad";
+import { channelColors } from "@/lib/channel-colors";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { ChargesCalculator } from "@/components/finance/charges-calculator";
 import { Badge } from "@/components/ui/badge";
@@ -54,7 +55,7 @@ function FamilyCard({
 }) {
   const isDrum = variant === "drum";
   const cardFill = isDrum
-    ? "border-yellow-600/40 bg-yellow-500 text-yellow-950"
+    ? "border-yellow-400/50 bg-yellow-300 text-yellow-950"
     : "border-sky-700/40 bg-sky-600 text-white";
   const labelTone = isDrum
     ? "font-semibold text-yellow-950"
@@ -183,7 +184,7 @@ function FamilyProductTable({
 }) {
   const { t } = useI18n();
   const isDrum = family === "drum";
-  const headerBg = isDrum ? "bg-yellow-500" : "bg-sky-600";
+  const headerBg = isDrum ? "bg-yellow-300" : "bg-sky-600";
   const headerText = isDrum ? "text-yellow-950" : "text-white";
   const totals = rows.reduce(
     (acc, p) => {
@@ -584,7 +585,7 @@ export default function ProductionMarginPage() {
               hints?: string[];
               money?: string;
               accent: string;
-              fill?: "hub" | "drum";
+              fill?: "hub" | "drum" | "ik" | "power";
               boldLabel?: boolean;
               tone?: "profit" | "loss";
             };
@@ -594,19 +595,37 @@ export default function ProductionMarginPage() {
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                   {stats.map((stat) => {
                     const isDrumFill = stat.fill === "drum";
+                    const isIkFill = stat.fill === "ik";
+                    const isPowerFill = stat.fill === "power";
+                    const fillText = isDrumFill
+                      ? "text-yellow-950"
+                      : isIkFill
+                        ? channelColors.ik.text
+                        : isPowerFill
+                          ? channelColors.power.text
+                          : "text-white";
+                    const fillMuted = isDrumFill
+                      ? "text-yellow-950/80"
+                      : isIkFill
+                        ? channelColors.ik.muted
+                        : isPowerFill
+                          ? channelColors.power.muted
+                          : "text-white/90";
                     const cardFill =
                       stat.fill === "hub"
                         ? "border-sky-700/40 bg-sky-600 text-white"
                         : isDrumFill
-                          ? "border-yellow-600/40 bg-yellow-500 text-yellow-950"
-                          : stat.tone === "profit"
-                            ? "border-emerald-600/40 bg-emerald-600 text-white"
-                            : stat.tone === "loss"
-                              ? "border-red-600/40 bg-red-600 text-white"
-                              : "";
+                          ? "border-yellow-400/50 bg-yellow-300 text-yellow-950"
+                          : isIkFill
+                            ? channelColors.ik.fill
+                            : isPowerFill
+                              ? channelColors.power.fill
+                              : stat.tone === "profit"
+                                ? "border-emerald-600/40 bg-emerald-600 text-white"
+                                : stat.tone === "loss"
+                                  ? "border-red-600/40 bg-red-600 text-white"
+                                  : "";
                     const onFill = Boolean(cardFill);
-                    const fillText = isDrumFill ? "text-yellow-950" : "text-white";
-                    const fillMuted = isDrumFill ? "text-yellow-950/80" : "text-white/90";
                     return (
                       <Card
                         key={stat.label}
@@ -810,43 +829,6 @@ export default function ProductionMarginPage() {
 
             const hubStats: StatCard[] = [
               {
-                label: t("prodMargin.ikHubCostKg"),
-                value:
-                  report.channelManufacture?.ikEngineering.hub.totalPerKg != null
-                    ? formatMoney(report.channelManufacture.ikEngineering.hub.totalPerKg)
-                    : summary.hubCostPerKg != null
-                      ? formatMoney(summary.hubCostPerKg)
-                      : "—",
-                hint: `${formatKg(summary.hubFinishedKg ?? 0)} · ${t("prodMargin.ikCostHint")}`,
-                accent: "bg-sky-600",
-                fill: "hub",
-              },
-              {
-                label: t("prodMargin.ikHubSaleKg"),
-                value: salePerKg.ikHub != null ? formatMoney(salePerKg.ikHub) : "—",
-                hint: `${formatKg(partyTotals.direct.hubKg)} · ${t("prodMargin.channelIk")}`,
-                accent: "bg-sky-500",
-                fill: "hub",
-              },
-              {
-                label: t("prodMargin.peHubCostKg"),
-                value:
-                  report.channelManufacture?.powerEngineering.hub.totalPerKg != null
-                    ? formatMoney(report.channelManufacture.powerEngineering.hub.totalPerKg)
-                    : "—",
-                valueAddon: peSalesAddon,
-                hint: t("prodMargin.peCostHint"),
-                accent: "bg-sky-700",
-                fill: "hub",
-              },
-              {
-                label: t("prodMargin.peHubSaleKg"),
-                value: salePerKg.peHub != null ? formatMoney(salePerKg.peHub) : "—",
-                hint: `${formatKg(partyTotals.salesman.hubKg)} · ${t("prodMargin.channelPower")}`,
-                accent: "bg-sky-700",
-                fill: "hub",
-              },
-              {
                 label: t("prodMargin.castingCostKg"),
                 value:
                   hubSplit.castingPerKg != null ? formatMoney(hubSplit.castingPerKg) : "—",
@@ -862,6 +844,43 @@ export default function ProductionMarginPage() {
                 fill: "hub",
               },
               {
+                label: t("prodMargin.ikHubCostKg"),
+                value:
+                  report.channelManufacture?.ikEngineering.hub.totalPerKg != null
+                    ? formatMoney(report.channelManufacture.ikEngineering.hub.totalPerKg)
+                    : summary.hubCostPerKg != null
+                      ? formatMoney(summary.hubCostPerKg)
+                      : "—",
+                hint: `${formatKg(summary.hubFinishedKg ?? 0)} · ${t("prodMargin.ikCostHint")}`,
+                accent: channelColors.ik.accent,
+                fill: "ik",
+              },
+              {
+                label: t("prodMargin.ikHubSaleKg"),
+                value: salePerKg.ikHub != null ? formatMoney(salePerKg.ikHub) : "—",
+                hint: `${formatKg(partyTotals.direct.hubKg)} · ${t("prodMargin.channelIk")}`,
+                accent: channelColors.ik.accent,
+                fill: "ik",
+              },
+              {
+                label: t("prodMargin.peHubCostKg"),
+                value:
+                  report.channelManufacture?.powerEngineering.hub.totalPerKg != null
+                    ? formatMoney(report.channelManufacture.powerEngineering.hub.totalPerKg)
+                    : "—",
+                valueAddon: peSalesAddon,
+                hint: t("prodMargin.peCostHint"),
+                accent: channelColors.power.accent,
+                fill: "power",
+              },
+              {
+                label: t("prodMargin.peHubSaleKg"),
+                value: salePerKg.peHub != null ? formatMoney(salePerKg.peHub) : "—",
+                hint: `${formatKg(partyTotals.salesman.hubKg)} · ${t("prodMargin.channelPower")}`,
+                accent: channelColors.power.accent,
+                fill: "power",
+              },
+              {
                 label: t("prodMargin.hubSaleKg"),
                 value: salePerKg.hub != null ? formatMoney(salePerKg.hub) : "—",
                 hint: `${formatKg(partyTotals.hubKg)} · ${t("prodMargin.saleKgHint")}`,
@@ -872,6 +891,22 @@ export default function ProductionMarginPage() {
 
             const drumStats: StatCard[] = [
               {
+                label: t("prodMargin.castingCostKg"),
+                value:
+                  drumSplit.castingPerKg != null ? formatMoney(drumSplit.castingPerKg) : "—",
+                hint: t("prodMargin.drumCastingCostHint"),
+                accent: "bg-yellow-300",
+                fill: "drum",
+              },
+              {
+                label: t("prodMargin.khradCostKg"),
+                value:
+                  drumSplit.khradPerKg != null ? formatMoney(drumSplit.khradPerKg) : "—",
+                hint: t("prodMargin.khradCostHint"),
+                accent: "bg-yellow-300",
+                fill: "drum",
+              },
+              {
                 label: t("prodMargin.ikDrumCostKg"),
                 value:
                   report.channelManufacture?.ikEngineering.drum.totalPerKg != null
@@ -880,15 +915,15 @@ export default function ProductionMarginPage() {
                       ? formatMoney(summary.drumCostPerKg)
                       : "—",
                 hint: `${formatKg(summary.drumFinishedKg ?? 0)} · ${t("prodMargin.ikCostHint")}`,
-                accent: "bg-yellow-500",
-                fill: "drum",
+                accent: channelColors.ik.accent,
+                fill: "ik",
               },
               {
                 label: t("prodMargin.ikDrumSaleKg"),
                 value: salePerKg.ikDrum != null ? formatMoney(salePerKg.ikDrum) : "—",
                 hint: `${formatKg(partyTotals.direct.drumKg)} · ${t("prodMargin.channelIk")}`,
-                accent: "bg-yellow-500",
-                fill: "drum",
+                accent: channelColors.ik.accent,
+                fill: "ik",
               },
               {
                 label: t("prodMargin.peDrumCostKg"),
@@ -898,37 +933,21 @@ export default function ProductionMarginPage() {
                     : "—",
                 valueAddon: peSalesAddon,
                 hint: t("prodMargin.peCostHint"),
-                accent: "bg-yellow-600",
-                fill: "drum",
+                accent: channelColors.power.accent,
+                fill: "power",
               },
               {
                 label: t("prodMargin.peDrumSaleKg"),
                 value: salePerKg.peDrum != null ? formatMoney(salePerKg.peDrum) : "—",
                 hint: `${formatKg(partyTotals.salesman.drumKg)} · ${t("prodMargin.channelPower")}`,
-                accent: "bg-yellow-600",
-                fill: "drum",
-              },
-              {
-                label: t("prodMargin.castingCostKg"),
-                value:
-                  drumSplit.castingPerKg != null ? formatMoney(drumSplit.castingPerKg) : "—",
-                hint: t("prodMargin.drumCastingCostHint"),
-                accent: "bg-yellow-500",
-                fill: "drum",
-              },
-              {
-                label: t("prodMargin.khradCostKg"),
-                value:
-                  drumSplit.khradPerKg != null ? formatMoney(drumSplit.khradPerKg) : "—",
-                hint: t("prodMargin.khradCostHint"),
-                accent: "bg-yellow-500",
-                fill: "drum",
+                accent: channelColors.power.accent,
+                fill: "power",
               },
               {
                 label: t("prodMargin.drumSaleKg"),
                 value: salePerKg.drum != null ? formatMoney(salePerKg.drum) : "—",
                 hint: `${formatKg(partyTotals.drumKg)} · ${t("prodMargin.saleKgHint")}`,
-                accent: "bg-yellow-500",
+                accent: "bg-yellow-300",
                 fill: "drum",
               },
             ];
@@ -945,7 +964,7 @@ export default function ProductionMarginPage() {
                 </div>
 
                 <div className="flex flex-col gap-3">
-                  <h2 className="text-nameplate text-sm font-bold text-yellow-600 dark:text-yellow-400">
+                  <h2 className="text-nameplate text-sm font-bold text-yellow-500 dark:text-yellow-300">
                     {t("prodMargin.drum")}
                   </h2>
                   {renderStatCards(drumStats)}
@@ -981,7 +1000,7 @@ export default function ProductionMarginPage() {
                           const split = splitCastingKhrad(line, col.fam);
                           const isDrum = col.fam === "drum";
                           const panelFill = isDrum
-                            ? "border-yellow-600/40 bg-yellow-500 text-yellow-950"
+                            ? "border-yellow-400/50 bg-yellow-300 text-yellow-950"
                             : "border-sky-700/40 bg-sky-600 text-white";
                           const muted = isDrum
                             ? "font-medium text-yellow-950/85"
@@ -994,10 +1013,10 @@ export default function ProductionMarginPage() {
                             ? "font-extrabold text-yellow-950"
                             : "font-extrabold text-white";
                           const sectionTotal = isDrum
-                            ? "bg-yellow-950/15 text-yellow-950"
+                            ? "bg-yellow-950/10 text-yellow-950"
                             : "bg-white/15 text-white";
                           const grandTotal = isDrum
-                            ? "bg-yellow-950/25 text-yellow-950"
+                            ? "bg-yellow-950/20 text-yellow-950"
                             : "bg-white/25 text-white";
 
                           const renderSplitSection = (
@@ -1099,15 +1118,17 @@ export default function ProductionMarginPage() {
                     </Card>
 
                     <div className="grid gap-3 sm:grid-cols-3">
-                      <div className="rounded-md border border-sky-500/40 bg-muted/20 p-3 text-sm">
-                        <p className="text-nameplate text-sm">{t("prodMargin.channelIkMfg")}</p>
+                      <div className={cn("rounded-md border p-3 text-sm", channelColors.ik.soft)}>
+                        <p className={cn("text-nameplate text-sm", channelColors.ik.heading)}>
+                          {t("prodMargin.channelIkMfg")}
+                        </p>
                         <div className="mt-2 flex flex-col gap-1.5">
                           {families.map((col) => {
                             const totalPerKg = factory[col.fam].totalPerKg;
                             return (
                               <div key={col.fam} className="flex justify-between gap-2">
-                                <span className="text-muted-foreground">{col.label}</span>
-                                <span className="font-data">
+                                <span className={channelColors.ik.softText}>{col.label}</span>
+                                <span className={cn("font-data font-semibold", channelColors.ik.softText)}>
                                   {totalPerKg != null
                                     ? `${formatMoney(totalPerKg)} / kg`
                                     : "—"}
@@ -1118,13 +1139,15 @@ export default function ProductionMarginPage() {
                         </div>
                       </div>
 
-                      <div className="rounded-md border bg-muted/20 p-3 text-sm">
-                        <p className="text-nameplate text-sm">{t("prodMargin.salesmanAddOnKg")}</p>
-                        <p className="font-data mt-2 text-lg">
+                      <div className={cn("rounded-md border p-3 text-sm", channelColors.power.soft)}>
+                        <p className={cn("text-nameplate text-sm", channelColors.power.heading)}>
+                          {t("prodMargin.salesmanAddOnKg")}
+                        </p>
+                        <p className={cn("font-data mt-2 text-lg font-bold", channelColors.power.softText)}>
                           {formatMoney(power.salesmanAddOnPerKg)}
                         </p>
                         {power.salesmanLoad > 0 ? (
-                          <p className="mt-1 text-xs text-muted-foreground">
+                          <p className={cn("mt-1 text-xs", channelColors.power.softText)}>
                             {formatMoney(power.salesmanLoad)}
                             {power.salesmanSoldKg
                               ? ` · ${formatKg(power.salesmanSoldKg)}`
@@ -1133,15 +1156,22 @@ export default function ProductionMarginPage() {
                         ) : null}
                       </div>
 
-                      <div className="rounded-md border border-yellow-500/40 bg-muted/20 p-3 text-sm">
-                        <p className="text-nameplate text-sm">{t("prodMargin.channelPowerMfg")}</p>
+                      <div className={cn("rounded-md border p-3 text-sm", channelColors.power.soft)}>
+                        <p className={cn("text-nameplate text-sm", channelColors.power.heading)}>
+                          {t("prodMargin.channelPowerMfg")}
+                        </p>
                         <div className="mt-2 flex flex-col gap-1.5">
                           {families.map((col) => {
                             const totalPerKg = power[col.fam].totalPerKg;
                             return (
                               <div key={col.fam} className="flex justify-between gap-2">
-                                <span className="text-muted-foreground">{col.label}</span>
-                                <span className="font-data">
+                                <span className={channelColors.power.softText}>{col.label}</span>
+                                <span
+                                  className={cn(
+                                    "font-data font-semibold",
+                                    channelColors.power.softText
+                                  )}
+                                >
                                   {totalPerKg != null
                                     ? `${formatMoney(totalPerKg)} / kg`
                                     : "—"}

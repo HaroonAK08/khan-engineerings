@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
+import { channelColors } from "@/lib/channel-colors";
 import { cn } from "@/lib/utils";
 
 const headCell =
@@ -238,10 +239,8 @@ function RowCells({
           <Badge
             variant="secondary"
             className={cn(
-              "font-data shrink-0 border-white/40 bg-white/25 text-[9px] font-bold text-white",
-              row.salesmanChannel
-                ? "border-amber-200/60 bg-amber-300/35"
-                : "border-sky-200/60 bg-sky-300/35"
+              "font-data shrink-0 border text-[9px] font-bold",
+              row.salesmanChannel ? channelColors.power.badge : channelColors.ik.badge
             )}
           >
             {row.salesmanChannel ? "PE" : "IK"}
@@ -446,17 +445,18 @@ export default function PartySalesMarginPage() {
                 {
                   label: t("partyMargin.salesmanHub"),
                   value: moneyOrDash(rates.hubMfgSalesman),
-                  fill: "hub" as const,
+                  fill: "power" as const,
                 },
                 {
                   label: t("partyMargin.salesmanDrum"),
                   value: moneyOrDash(rates.drumMfgSalesman),
-                  fill: "drum" as const,
+                  fill: "power" as const,
                 },
                 {
                   label: t("partyMargin.salesmanLoad"),
                   value: formatMoney(rates.salesmanLoad),
                   hint: `${formatKg(rates.salesmanSoldKg)} · ${t("partyMargin.salesmanPerKg")} ${formatMoney(rates.salesmanPerSoldKg)}`,
+                  fill: "power" as const,
                 },
                 {
                   label: t("partyMargin.elecHub"),
@@ -494,12 +494,21 @@ export default function PartySalesMarginPage() {
                 value: string;
                 hint?: string;
                 hints?: string[];
-                fill?: "hub" | "drum";
+                fill?: "hub" | "drum" | "ik" | "power";
                 accent?: string;
                 boldLabel?: boolean;
               }>
             ).map((card) => {
               const isDrumFill = card.fill === "drum";
+              const isPowerFill = card.fill === "power";
+              const isIkFill = card.fill === "ik";
+              const fillText = isDrumFill
+                ? "text-yellow-950"
+                : isIkFill
+                  ? channelColors.ik.text
+                  : isPowerFill
+                    ? channelColors.power.text
+                    : "text-white";
               const filled =
                 card.accent?.includes("text-chart-3")
                   ? "border-emerald-600/40 bg-emerald-600 text-white"
@@ -508,9 +517,12 @@ export default function PartySalesMarginPage() {
                     : card.fill === "hub"
                       ? "border-sky-700/40 bg-sky-600 text-white"
                       : isDrumFill
-                        ? "border-yellow-600/40 bg-yellow-500 text-yellow-950"
-                        : "";
-              const fillText = isDrumFill ? "text-yellow-950" : "text-white";
+                        ? "border-yellow-400/50 bg-yellow-300 text-yellow-950"
+                        : isIkFill
+                          ? channelColors.ik.fill
+                          : isPowerFill
+                            ? channelColors.power.fill
+                            : "";
               const lines = card.hints?.length
                 ? card.hints
                 : card.hint
@@ -551,7 +563,11 @@ export default function PartySalesMarginPage() {
                         filled
                           ? isDrumFill
                             ? "text-yellow-950"
-                            : "text-white"
+                            : isIkFill
+                              ? channelColors.ik.text
+                              : isPowerFill
+                                ? channelColors.power.text
+                                : "text-white"
                           : "text-muted-foreground"
                       )}
                     >
@@ -565,10 +581,12 @@ export default function PartySalesMarginPage() {
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
-            <Card>
+            <Card className={cn("border", channelColors.power.soft)}>
               <CardHeader className="pb-2">
-                <CardTitle className="text-nameplate text-sm">{t("partyMargin.salesman")}</CardTitle>
-                <CardDescription>
+                <CardTitle className={cn("text-nameplate text-sm", channelColors.power.heading)}>
+                  {t("partyMargin.salesman")}
+                </CardTitle>
+                <CardDescription className={channelColors.power.softText}>
                   {(report.mainChannels?.powerEngineering.memberGroups.length
                     ? report.mainChannels.powerEngineering.memberGroups.join(", ")
                     : t("partyMargin.powerMembers")) +
@@ -577,41 +595,61 @@ export default function PartySalesMarginPage() {
               </CardHeader>
               <CardContent className="grid grid-cols-2 gap-3 text-sm">
                 <div>
-                  <p className="text-xs text-muted-foreground">{t("partyMargin.totalSale")}</p>
-                  <p className="font-data text-lg">{formatMoney(totals.salesman.totalSale)}</p>
+                  <p className={cn("text-xs", channelColors.power.softText)}>
+                    {t("partyMargin.totalSale")}
+                  </p>
+                  <p className={cn("font-data text-lg font-semibold", channelColors.power.softText)}>
+                    {formatMoney(totals.salesman.totalSale)}
+                  </p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">{t("partyMargin.totalMfg")}</p>
-                  <p className="font-data text-lg">{formatMoney(totals.salesman.totalMfg)}</p>
+                  <p className={cn("text-xs", channelColors.power.softText)}>
+                    {t("partyMargin.totalMfg")}
+                  </p>
+                  <p className={cn("font-data text-lg font-semibold", channelColors.power.softText)}>
+                    {formatMoney(totals.salesman.totalMfg)}
+                  </p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">{t("partyMargin.hubProfit")}</p>
+                  <p className={cn("text-xs", channelColors.power.softText)}>
+                    {t("partyMargin.hubProfit")}
+                  </p>
                   <p
                     className={cn(
-                      "font-data text-lg",
-                      totals.salesman.hubProfit < 0 ? "text-destructive" : "text-chart-3"
+                      "font-data text-lg font-semibold",
+                      totals.salesman.hubProfit < 0
+                        ? "text-destructive"
+                        : channelColors.power.softText
                     )}
                   >
                     {formatMoney(totals.salesman.hubProfit)}
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">{t("partyMargin.drumProfit")}</p>
+                  <p className={cn("text-xs", channelColors.power.softText)}>
+                    {t("partyMargin.drumProfit")}
+                  </p>
                   <p
                     className={cn(
-                      "font-data text-lg",
-                      totals.salesman.drumProfit < 0 ? "text-destructive" : "text-chart-3"
+                      "font-data text-lg font-semibold",
+                      totals.salesman.drumProfit < 0
+                        ? "text-destructive"
+                        : channelColors.power.softText
                     )}
                   >
                     {formatMoney(totals.salesman.drumProfit)}
                   </p>
                 </div>
                 <div className="col-span-2">
-                  <p className="text-xs text-muted-foreground">{t("partyMargin.profit")}</p>
+                  <p className={cn("text-xs", channelColors.power.softText)}>
+                    {t("partyMargin.profit")}
+                  </p>
                   <p
                     className={cn(
-                      "font-data text-2xl",
-                      totals.salesman.profit < 0 ? "text-destructive" : "text-chart-3"
+                      "font-data text-2xl font-bold",
+                      totals.salesman.profit < 0
+                        ? "text-destructive"
+                        : channelColors.power.softText
                     )}
                   >
                     {formatMoney(totals.salesman.profit)}
@@ -619,10 +657,12 @@ export default function PartySalesMarginPage() {
                 </div>
               </CardContent>
             </Card>
-            <Card>
+            <Card className={cn("border", channelColors.ik.soft)}>
               <CardHeader className="pb-2">
-                <CardTitle className="text-nameplate text-sm">{t("partyMargin.direct")}</CardTitle>
-                <CardDescription>
+                <CardTitle className={cn("text-nameplate text-sm", channelColors.ik.heading)}>
+                  {t("partyMargin.direct")}
+                </CardTitle>
+                <CardDescription className={channelColors.ik.softText}>
                   {(report.mainChannels?.ikEngineering.memberGroups.length
                     ? report.mainChannels.ikEngineering.memberGroups.join(", ")
                     : t("partyMargin.ikMembers")) +
@@ -631,41 +671,55 @@ export default function PartySalesMarginPage() {
               </CardHeader>
               <CardContent className="grid grid-cols-2 gap-3 text-sm">
                 <div>
-                  <p className="text-xs text-muted-foreground">{t("partyMargin.totalSale")}</p>
-                  <p className="font-data text-lg">{formatMoney(totals.direct.totalSale)}</p>
+                  <p className={cn("text-xs", channelColors.ik.softText)}>
+                    {t("partyMargin.totalSale")}
+                  </p>
+                  <p className={cn("font-data text-lg font-semibold", channelColors.ik.softText)}>
+                    {formatMoney(totals.direct.totalSale)}
+                  </p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">{t("partyMargin.totalMfg")}</p>
-                  <p className="font-data text-lg">{formatMoney(totals.direct.totalMfg)}</p>
+                  <p className={cn("text-xs", channelColors.ik.softText)}>
+                    {t("partyMargin.totalMfg")}
+                  </p>
+                  <p className={cn("font-data text-lg font-semibold", channelColors.ik.softText)}>
+                    {formatMoney(totals.direct.totalMfg)}
+                  </p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">{t("partyMargin.hubProfit")}</p>
+                  <p className={cn("text-xs", channelColors.ik.softText)}>
+                    {t("partyMargin.hubProfit")}
+                  </p>
                   <p
                     className={cn(
-                      "font-data text-lg",
-                      totals.direct.hubProfit < 0 ? "text-destructive" : "text-chart-3"
+                      "font-data text-lg font-semibold",
+                      totals.direct.hubProfit < 0 ? "text-destructive" : channelColors.ik.softText
                     )}
                   >
                     {formatMoney(totals.direct.hubProfit)}
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">{t("partyMargin.drumProfit")}</p>
+                  <p className={cn("text-xs", channelColors.ik.softText)}>
+                    {t("partyMargin.drumProfit")}
+                  </p>
                   <p
                     className={cn(
-                      "font-data text-lg",
-                      totals.direct.drumProfit < 0 ? "text-destructive" : "text-chart-3"
+                      "font-data text-lg font-semibold",
+                      totals.direct.drumProfit < 0 ? "text-destructive" : channelColors.ik.softText
                     )}
                   >
                     {formatMoney(totals.direct.drumProfit)}
                   </p>
                 </div>
                 <div className="col-span-2">
-                  <p className="text-xs text-muted-foreground">{t("partyMargin.profit")}</p>
+                  <p className={cn("text-xs", channelColors.ik.softText)}>
+                    {t("partyMargin.profit")}
+                  </p>
                   <p
                     className={cn(
-                      "font-data text-2xl",
-                      totals.direct.profit < 0 ? "text-destructive" : "text-chart-3"
+                      "font-data text-2xl font-bold",
+                      totals.direct.profit < 0 ? "text-destructive" : channelColors.ik.softText
                     )}
                   >
                     {formatMoney(totals.direct.profit)}

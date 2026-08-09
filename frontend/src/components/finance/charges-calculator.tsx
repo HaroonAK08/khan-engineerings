@@ -374,7 +374,7 @@ export function ChargesCalculator({
           ).map((card) => {
             const isDrum = card.fill === "drum";
             const fill = isDrum
-              ? "border-yellow-600/40 bg-yellow-500 text-yellow-950"
+              ? "border-yellow-400/50 bg-yellow-300 text-yellow-950"
               : "border-sky-700/40 bg-sky-600 text-white";
             const valueTone = isDrum ? "text-yellow-950" : "text-white";
             const delta =

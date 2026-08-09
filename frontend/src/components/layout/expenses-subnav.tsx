@@ -90,7 +90,7 @@ export function ExpensesSubnav() {
                   ? tab.id === "hub"
                     ? "bg-sky-600 text-white"
                     : tab.id === "drum"
-                      ? "bg-yellow-500 text-yellow-950"
+                      ? "bg-yellow-300 text-yellow-950"
                       : tab.id === "common"
                         ? "bg-slate-800 text-white"
                         : "bg-primary/15 text-foreground"

@@ -78,7 +78,7 @@ export function familyFilterChipClass(
   }
   if (family === "drum") {
     return cn(
-      "border-yellow-500 bg-yellow-500 text-yellow-950 hover:bg-yellow-500 hover:text-yellow-950 dark:border-yellow-400 dark:bg-yellow-400",
+      "border-yellow-400 bg-yellow-300 text-yellow-950 hover:bg-yellow-300 hover:text-yellow-950 dark:border-yellow-300 dark:bg-yellow-300",
       className
     );
   }

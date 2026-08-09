@@ -83,7 +83,7 @@ export default function ProductionReportsHubPage() {
   ) {
     const title = family === "hub" ? t("prod.hub") : t("prod.drum");
     const isDrum = family === "drum";
-    const headerBg = isDrum ? "bg-yellow-500" : "bg-sky-600";
+    const headerBg = isDrum ? "bg-yellow-300" : "bg-sky-600";
     const headerText = isDrum ? "text-yellow-950" : "text-white";
     const totals = rows.reduce(
       (acc, p) => {
