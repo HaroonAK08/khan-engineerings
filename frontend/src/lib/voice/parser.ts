@@ -574,7 +574,7 @@ function parseBuilty(text: string): ParsedVoiceCommand {
     customerQuery = nestedOf[1]
       .replace(/\b(customer|party|please)\b/gi, "")
       .trim();
-    let rest = stripSpokenDate(
+    const rest = stripSpokenDate(
       nestedOf[2].replace(
         /\b(?:builty\s+)?(?:number|no\.?|num|#)\s*(?:is|=|:)?\s*[a-z0-9\-_/]+/gi,
         " "
@@ -760,7 +760,7 @@ function parseProduce(text: string): ParsedVoiceCommand {
       ? "scrap"
       : undefined;
 
-  let rest = stripSpokenDate(
+  const rest = stripSpokenDate(
     text
       .replace(
         /\b(produced|producing|produce|production|make|made|banaya|banao|cast)\b/gi,
