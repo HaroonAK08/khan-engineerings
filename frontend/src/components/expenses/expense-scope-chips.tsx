@@ -14,8 +14,8 @@ export function scopeChipClass(scope: ExpenseScope | string | null | undefined, 
   }
   if (s === "drum") {
     return active
-      ? "border-amber-600 bg-amber-600 text-white"
-      : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+      ? "border-yellow-500 bg-yellow-500 text-yellow-950"
+      : "border-yellow-500/40 bg-yellow-400/15 text-yellow-800 dark:text-yellow-300";
   }
   return active
     ? "border-slate-700 bg-slate-800 text-white"

@@ -186,11 +186,11 @@ export default function ProductionPage() {
                     {hubOnHand}
                   </span>
                 </p>
-                <p className="flex items-center justify-between gap-3 rounded-md bg-amber-500/10 px-2 py-1">
-                  <span className="text-sm text-amber-900 dark:text-amber-300">
+                <p className="flex items-center justify-between gap-3 rounded-md bg-yellow-400/15 px-2 py-1">
+                  <span className="text-sm text-yellow-900 dark:text-yellow-300">
                     {t("prod.drumAvailable")}
                   </span>
-                  <span className="font-data text-xl font-medium text-amber-900 dark:text-amber-300">
+                  <span className="font-data text-xl font-medium text-yellow-900 dark:text-yellow-300">
                     {drumOnHand}
                   </span>
                 </p>

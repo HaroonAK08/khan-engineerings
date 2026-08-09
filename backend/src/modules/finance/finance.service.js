@@ -847,6 +847,23 @@ async function getProductionMargin(query = {}) {
   const periodSalesAgg = await salesInPeriod();
   const periodSales = periodSalesAgg.byProduct;
 
+  // Include products sold this period even if nothing was produced (otherwise sold totals miss them).
+  const soldOnlyIds = Object.keys(periodSales).filter((id) => id && !byProductMap.has(id));
+  if (soldOnlyIds.length) {
+    const soldOnlyProducts = await Product.find({ _id: { $in: soldOnlyIds } }).lean();
+    for (const prod of soldOnlyProducts) {
+      const pid = String(prod._id);
+      ensureRow(pid, prod.name, prod.family || "hub", prod.sellingPrice);
+      productMap[pid] = prod;
+      const row = byProductMap.get(pid);
+      row.catalogSellPrice = Number(prod.sellingPrice) || 0;
+      row.weightKg = Number(prod.weightKg) || 0;
+      row.finishedKg = 0;
+      row.family = prod.family || row.family || "hub";
+      row.name = prod.name || row.name;
+    }
+  }
+
   const expenseByCategory = await BatchExpense.aggregate([
     { $match: expenseMatch },
     { $group: { _id: "$category", amount: { $sum: "$amount" } } },
@@ -1031,31 +1048,32 @@ async function getProductionMargin(query = {}) {
     overheadPools.hub + overheadPools.drum + overheadPools.common + electricityCommon
   );
 
-  const workingRows = [...byProductMap.values()].filter((r) => r.pieces > 0);
+  // Produced rows drive cost allocation; sold-only rows are merged after for complete sold totals.
+  const producedRows = [...byProductMap.values()].filter((r) => r.pieces > 0);
   const hubFinishedKg = roundKg(
-    workingRows.filter((r) => (r.family || "hub") !== "drum").reduce((s, r) => s + (r.finishedKg || 0), 0)
+    producedRows.filter((r) => (r.family || "hub") !== "drum").reduce((s, r) => s + (r.finishedKg || 0), 0)
   );
   const drumFinishedKg = roundKg(
-    workingRows.filter((r) => r.family === "drum").reduce((s, r) => s + (r.finishedKg || 0), 0)
+    producedRows.filter((r) => r.family === "drum").reduce((s, r) => s + (r.finishedKg || 0), 0)
   );
   const allFinishedKg = roundKg(hubFinishedKg + drumFinishedKg);
-  const electricityWeightTotal = workingRows.reduce((s, r) => {
+  const electricityWeightTotal = producedRows.reduce((s, r) => {
     const kg = r.finishedKg || 0;
     const intensity =
       r.family === "drum" ? ELECTRICITY_DRUM_INTENSITY : ELECTRICITY_HUB_INTENSITY;
     return s + kg * intensity;
   }, 0);
 
-  const totalPieces = workingRows.reduce((s, r) => s + r.pieces, 0);
+  const totalPieces = producedRows.reduce((s, r) => s + r.pieces, 0);
 
-  const productRows = workingRows
-    .map((row) => {
-      const scrapCost = row.scrapKg * avgScrapRate;
-      const daigCost = row.daigKg * avgDaigRate;
-      const materialCost = scrapCost + daigCost;
-      const fam = row.family === "drum" ? "drum" : "hub";
-      const finishedKg = row.finishedKg || 0;
-      let overhead = 0;
+  function buildProductCostRow(row) {
+    const scrapCost = (row.scrapKg || 0) * avgScrapRate;
+    const daigCost = (row.daigKg || 0) * avgDaigRate;
+    const materialCost = scrapCost + daigCost;
+    const fam = row.family === "drum" ? "drum" : "hub";
+    const finishedKg = row.finishedKg || 0;
+    let overhead = 0;
+    if (finishedKg > 0) {
       if (fam === "hub" && hubFinishedKg > 0) {
         overhead += (finishedKg / hubFinishedKg) * overheadPools.hub;
       }
@@ -1070,58 +1088,64 @@ async function getProductionMargin(query = {}) {
           fam === "drum" ? ELECTRICITY_DRUM_INTENSITY : ELECTRICITY_HUB_INTENSITY;
         overhead += ((finishedKg * intensity) / electricityWeightTotal) * electricityCommon;
       }
-      const totalCost = materialCost + overhead;
+    }
+    const totalCost = materialCost + overhead;
 
-      const period = periodSales[row.productId];
-      const unitsSoldPeriod = period?.units || 0;
-      let sellPricePerPiece = 0;
-      let sellPriceSource = "none";
-      if (unitsSoldPeriod > 0) {
-        sellPricePerPiece = period.avgSellPerPiece;
-        sellPriceSource = "period_sales";
-      } else if (row.catalogSellPrice > 0) {
-        sellPricePerPiece = row.catalogSellPrice;
-        sellPriceSource = "catalog";
-      }
+    const period = periodSales[row.productId];
+    const unitsSoldPeriod = period?.units || 0;
+    let sellPricePerPiece = 0;
+    let sellPriceSource = "none";
+    if (unitsSoldPeriod > 0) {
+      sellPricePerPiece = period.avgSellPerPiece;
+      sellPriceSource = "period_sales";
+    } else if (row.catalogSellPrice > 0) {
+      sellPricePerPiece = row.catalogSellPrice;
+      sellPriceSource = "catalog";
+    }
 
-      sellPricePerPiece = roundMoney(sellPricePerPiece);
-      const sellValue = roundMoney(period?.revenue || 0);
-      const profit = sellValue - totalCost;
-      const costPerPiece = row.pieces > 0 ? totalCost / row.pieces : 0;
-      const profitPerPiece = sellPricePerPiece - costPerPiece;
-      const marginPct = sellValue > 0 ? (profit / sellValue) * 100 : null;
-      const costPerKg = finishedKg > 0 ? totalCost / finishedKg : null;
-      const overheadPerKg = finishedKg > 0 ? overhead / finishedKg : null;
-      return {
-        productId: row.productId,
-        name: row.name,
-        family: row.family,
-        pieces: row.pieces,
-        weightKg: roundKg(row.weightKg || 0),
-        finishedKg: roundKg(finishedKg),
-        scrapKg: roundKg(row.scrapKg),
-        daigKg: roundKg(row.daigKg),
-        wasteKg: roundKg(row.wasteKg),
-        avgScrapRate: roundMoney(avgScrapRate),
-        avgDaigRate: roundMoney(avgDaigRate),
-        scrapCost: roundMoney(scrapCost),
-        daigCost: roundMoney(daigCost),
-        materialCost: roundMoney(materialCost),
-        overhead: roundMoney(overhead),
-        totalCost: roundMoney(totalCost),
-        costPerPiece: roundMoney(costPerPiece),
-        costPerKg: costPerKg != null ? roundMoney(costPerKg) : null,
-        overheadPerKg: overheadPerKg != null ? roundMoney(overheadPerKg) : null,
-        sellPricePerPiece,
-        sellPriceSource,
-        unitsSoldPeriod,
-        sellValue,
-        profit: roundMoney(profit),
-        profitPerPiece: roundMoney(profitPerPiece),
-        marginPct: marginPct != null ? roundMoney(marginPct) : null,
-      };
-    })
-    .sort((a, b) => b.profit - a.profit);
+    sellPricePerPiece = roundMoney(sellPricePerPiece);
+    const sellValue = roundMoney(period?.revenue || 0);
+    const costPerPiece = row.pieces > 0 ? totalCost / row.pieces : 0;
+    const costPerKg = finishedKg > 0 ? totalCost / finishedKg : null;
+    const overheadPerKg = finishedKg > 0 ? overhead / finishedKg : null;
+    return {
+      productId: row.productId,
+      name: row.name,
+      family: row.family,
+      pieces: row.pieces || 0,
+      weightKg: roundKg(row.weightKg || 0),
+      finishedKg: roundKg(finishedKg),
+      scrapKg: roundKg(row.scrapKg || 0),
+      daigKg: roundKg(row.daigKg || 0),
+      wasteKg: roundKg(row.wasteKg || 0),
+      avgScrapRate: roundMoney(avgScrapRate),
+      avgDaigRate: roundMoney(avgDaigRate),
+      scrapCost: roundMoney(scrapCost),
+      daigCost: roundMoney(daigCost),
+      materialCost: roundMoney(materialCost),
+      overhead: roundMoney(overhead),
+      totalCost: roundMoney(totalCost),
+      costPerPiece: roundMoney(costPerPiece),
+      costPerKg: costPerKg != null ? roundMoney(costPerKg) : null,
+      overheadPerKg: overheadPerKg != null ? roundMoney(overheadPerKg) : null,
+      sellPricePerPiece,
+      sellPriceSource,
+      unitsSoldPeriod,
+      sellValue,
+      // Filled after family cost/kg is known (sold COGS, not full production cost).
+      profit: 0,
+      profitPerPiece: roundMoney(sellPricePerPiece - costPerPiece),
+      marginPct: null,
+      soldCogs: 0,
+    };
+  }
+
+  const productRows = [
+    ...producedRows.map(buildProductCostRow),
+    ...[...byProductMap.values()]
+      .filter((r) => !(r.pieces > 0) && (periodSales[r.productId]?.units || 0) > 0)
+      .map(buildProductCostRow),
+  ];
 
   const byFamily = { hub: emptyFamilyTotals(), drum: emptyFamilyTotals() };
   for (const row of productRows) {
@@ -1140,8 +1164,6 @@ async function getProductionMargin(query = {}) {
   byFamily.drum.sellValue = periodSalesAgg.drumSales;
   byFamily.hub.unitsSold = periodSalesAgg.hubUnits;
   byFamily.drum.unitsSold = periodSalesAgg.drumUnits;
-  byFamily.hub.profit = roundMoney(byFamily.hub.sellValue - byFamily.hub.totalCost);
-  byFamily.drum.profit = roundMoney(byFamily.drum.sellValue - byFamily.drum.totalCost);
   byFamily.hub.costPerKg =
     byFamily.hub.finishedKg > 0
       ? roundMoney(byFamily.hub.totalCost / byFamily.hub.finishedKg)
@@ -1158,6 +1180,46 @@ async function getProductionMargin(query = {}) {
     byFamily.drum.finishedKg > 0
       ? roundMoney(byFamily.drum.overhead / byFamily.drum.finishedKg)
       : null;
+
+  // P/L on sold goods: sold revenue − (units sold × unit mfg cost). Unsold production is not a period loss.
+  for (const row of productRows) {
+    const fam = row.family === "drum" ? "drum" : "hub";
+    const familyCostPerKg = byFamily[fam].costPerKg;
+    const saleOnly = !(row.pieces > 0);
+    row.saleOnly = saleOnly;
+
+    let unitMfgCost = row.costPerPiece || 0;
+    if (saleOnly) {
+      // Impute unit cost from family rate for P/L only — do not fake production kg metrics.
+      unitMfgCost =
+        familyCostPerKg != null && row.weightKg > 0
+          ? familyCostPerKg * row.weightKg
+          : 0;
+      row.costPerPiece = roundMoney(unitMfgCost);
+      row.costPerKg = null;
+      row.overheadPerKg = null;
+    }
+
+    const soldCogs = roundMoney((row.unitsSoldPeriod || 0) * unitMfgCost);
+    const profit = roundMoney(row.sellValue - soldCogs);
+    row.soldCogs = soldCogs;
+    row.profit = profit;
+    row.profitPerPiece = roundMoney(row.sellPricePerPiece - unitMfgCost);
+    row.marginPct =
+      row.sellValue > 0 ? roundMoney((profit / row.sellValue) * 100) : null;
+  }
+  // Produced first (best P/L), then sold-without-production this period.
+  productRows.sort((a, b) => {
+    if (!!a.saleOnly !== !!b.saleOnly) return a.saleOnly ? 1 : -1;
+    return b.profit - a.profit;
+  });
+
+  byFamily.hub.profit = roundMoney(
+    productRows.filter((r) => (r.family || "hub") !== "drum").reduce((s, r) => s + r.profit, 0)
+  );
+  byFamily.drum.profit = roundMoney(
+    productRows.filter((r) => r.family === "drum").reduce((s, r) => s + r.profit, 0)
+  );
   for (const key of Object.keys(byFamily)) {
     const t = byFamily[key];
     t.marginPct = t.sellValue > 0 ? roundMoney((t.profit / t.sellValue) * 100) : null;
@@ -1405,7 +1467,7 @@ async function getProductionMargin(query = {}) {
   const totalOverhead = roundMoney(overheadTotal);
   const totalProductionCost = roundMoney(totalMaterialCost + totalOverhead);
   const totalSellValue = periodSalesAgg.totalSales;
-  const totalProfit = roundMoney(totalSellValue - totalProductionCost);
+  const totalProfit = roundMoney(productRows.reduce((s, r) => s + (r.profit || 0), 0));
 
   const expenseBreakdown = [
     { id: "scrap_cost", label: "Scrap Cost", amount: totalScrapCost, kind: "material" },
@@ -1427,7 +1489,18 @@ async function getProductionMargin(query = {}) {
         kind: "overhead",
       }))
       .filter((c) => c.amount > 0),
-  ].filter((e) => e.amount > 0);
+  ]
+    .filter((e) => e.amount > 0)
+    .map((e) => {
+      let divisorKg = allFinishedKg;
+      if (e.id === "scrap_cost") divisorKg = totalScrapKg;
+      else if (e.id === "daig_cost") divisorKg = totalDaigKg;
+      return {
+        ...e,
+        amountPerKg:
+          divisorKg > 0 ? roundMoney(e.amount / divisorKg) : null,
+      };
+    });
 
   const purchasedScrap = purchasedByType.scrap;
   const purchasedDaig = purchasedByType.daig;
@@ -2122,6 +2195,673 @@ async function getPartySalesMargin(query = {}) {
   };
 }
 
+const FORCED_COMMON_EXPENSE = new Set([
+  "electricity",
+  "taxes",
+  "paint",
+  "lpg_gas",
+  "petrol",
+  "tools",
+  "machine",
+  "repairs",
+]);
+
+function toDateInput(d) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function previousMonthWindow(from, dateFromStr) {
+  // Prefer YYYY-MM-DD from the query so "previous month" is calendar-stable across timezones.
+  const raw =
+    typeof dateFromStr === "string" && /^\d{4}-\d{2}-\d{2}/.test(dateFromStr)
+      ? dateFromStr.slice(0, 10)
+      : toDateInput(from);
+  const [yStr, mStr] = raw.split("-");
+  const y = Number(yStr);
+  const m = Number(mStr); // 1-12
+  const prevY = m === 1 ? y - 1 : y;
+  const prevM = m === 1 ? 12 : m - 1;
+  const prevFrom = new Date(prevY, prevM - 1, 1, 0, 0, 0, 0);
+  const prevTo = new Date(prevY, prevM, 0, 23, 59, 59, 999);
+  return { from: prevFrom, to: prevTo };
+}
+
+async function collectEditableChargeLines(from, to) {
+  const settingsService = require("../settings/settings.service");
+  const { EXPENSE_CATEGORIES: expenseCats } = require("../domain/mfg.constants");
+  const categoryLabel = Object.fromEntries(expenseCats.map((c) => [c.id, c.label]));
+  const salaryBounds = await settingsService.resolveSalaryBounds(from, to);
+  const expenseMatch = settingsService.expenseMatchWithSalaryWindow(
+    from,
+    to,
+    salaryBounds.from,
+    salaryBounds.to
+  );
+
+  const expenseByScopeCategory = await BatchExpense.aggregate([
+    { $match: expenseMatch },
+    {
+      $lookup: {
+        from: "workers",
+        localField: "worker",
+        foreignField: "_id",
+        as: "_worker",
+      },
+    },
+    {
+      $addFields: {
+        effectiveScope: {
+          $let: {
+            vars: {
+              expenseScope: "$scope",
+              workerScope: { $arrayElemAt: ["$_worker.scope", 0] },
+            },
+            in: {
+              $cond: [
+                {
+                  $in: [
+                    "$category",
+                    [
+                      "electricity",
+                      "taxes",
+                      "paint",
+                      "lpg_gas",
+                      "petrol",
+                      "tools",
+                      "machine",
+                      "repairs",
+                    ],
+                  ],
+                },
+                "common",
+                {
+                  $cond: [
+                    { $in: ["$$expenseScope", ["hub", "drum", "common"]] },
+                    "$$expenseScope",
+                    {
+                      $cond: [
+                        { $in: ["$$workerScope", ["hub", "drum", "common"]] },
+                        "$$workerScope",
+                        "common",
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      },
+    },
+    {
+      $group: {
+        _id: {
+          scope: "$effectiveScope",
+          category: "$category",
+        },
+        amount: { $sum: "$amount" },
+      },
+    },
+  ]);
+
+  const salaryPools = { hub: 0, drum: 0, common: 0 };
+  const salaryByWorker = await BatchExpense.aggregate([
+    {
+      $match: {
+        ...expenseMatch,
+        category: "fixed_salary",
+      },
+    },
+    {
+      $lookup: {
+        from: "workers",
+        localField: "worker",
+        foreignField: "_id",
+        as: "_worker",
+      },
+    },
+    {
+      $addFields: {
+        effectiveScope: {
+          $let: {
+            vars: {
+              expenseScope: "$scope",
+              workerScope: { $arrayElemAt: ["$_worker.scope", 0] },
+            },
+            in: {
+              $cond: [
+                { $in: ["$$expenseScope", ["hub", "drum", "common"]] },
+                "$$expenseScope",
+                {
+                  $cond: [
+                    { $in: ["$$workerScope", ["hub", "drum", "common"]] },
+                    "$$workerScope",
+                    "common",
+                  ],
+                },
+              ],
+            },
+          },
+        },
+        workerName: { $ifNull: [{ $arrayElemAt: ["$_worker.name", 0] }, ""] },
+      },
+    },
+    {
+      $group: {
+        _id: { name: "$workerName", scope: "$effectiveScope" },
+        amount: { $sum: "$amount" },
+      },
+    },
+  ]);
+
+  for (const row of salaryByWorker) {
+    const amount = row.amount || 0;
+    if (!(amount > 0)) continue;
+    const name = row._id?.name || "";
+    const scope =
+      row._id?.scope === "hub" || row._id?.scope === "drum" ? row._id.scope : "common";
+
+    if (isJavedWarma(name)) {
+      const toHub = roundMoney(amount * JAVED_HUB_SHARE);
+      const toDrum = roundMoney(amount - toHub);
+      salaryPools.hub = roundMoney(salaryPools.hub + toHub);
+      salaryPools.drum = roundMoney(salaryPools.drum + toDrum);
+      continue;
+    }
+    if (scope === "hub") {
+      salaryPools.hub = roundMoney(salaryPools.hub + amount);
+      continue;
+    }
+    if (scope === "drum") {
+      salaryPools.drum = roundMoney(salaryPools.drum + amount);
+      continue;
+    }
+    salaryPools.common = roundMoney(salaryPools.common + amount);
+  }
+
+  let electricity = 0;
+  let salesmanLoad = 0;
+  const categoryPools = {};
+  for (const row of expenseByScopeCategory) {
+    const scope =
+      row._id?.scope === "hub" || row._id?.scope === "drum" ? row._id.scope : "common";
+    const category = row._id?.category || "";
+    const amount = row.amount || 0;
+    if (!(amount > 0)) continue;
+    if (category === "fixed_salary") continue;
+    if (category === "salesman_commission" || category === "tour_expenses") {
+      salesmanLoad = roundMoney(salesmanLoad + amount);
+      continue;
+    }
+    if (category === "electricity") {
+      electricity = roundMoney(electricity + amount);
+      continue;
+    }
+    const key = category === "petrol" ? "other" : category;
+    if (!categoryPools[key]) categoryPools[key] = { hub: 0, drum: 0, common: 0 };
+    const bucket = FORCED_COMMON_EXPENSE.has(category) ? "common" : scope;
+    categoryPools[key][bucket] = roundMoney((categoryPools[key][bucket] || 0) + amount);
+  }
+
+  const lines = [];
+  if (salaryPools.hub > 0) {
+    lines.push({
+      id: "salary_hub",
+      label: "Hub salaries",
+      amount: salaryPools.hub,
+      allocation: "hub",
+    });
+  }
+  if (salaryPools.drum > 0) {
+    lines.push({
+      id: "salary_drum",
+      label: "Drum salaries",
+      amount: salaryPools.drum,
+      allocation: "drum",
+    });
+  }
+  if (salaryPools.common > 0) {
+    lines.push({
+      id: "salary_common",
+      label: "Common salaries",
+      amount: salaryPools.common,
+      allocation: "common",
+    });
+  }
+  if (electricity > 0) {
+    lines.push({
+      id: "electricity",
+      label: categoryLabel.electricity || "Electricity",
+      amount: electricity,
+      allocation: "electricity",
+    });
+  }
+  for (const [category, pools] of Object.entries(categoryPools)) {
+    const total = roundMoney((pools.hub || 0) + (pools.drum || 0) + (pools.common || 0));
+    if (!(total > 0)) continue;
+    let allocation = "common";
+    if ((pools.hub || 0) > 0 && !(pools.drum || 0) && !(pools.common || 0)) allocation = "hub";
+    else if ((pools.drum || 0) > 0 && !(pools.hub || 0) && !(pools.common || 0)) {
+      allocation = "drum";
+    }
+    lines.push({
+      id: category,
+      label: categoryLabel[category] || category,
+      amount: total,
+      allocation,
+    });
+  }
+  if (salesmanLoad > 0) {
+    lines.push({
+      id: "tour_salesman",
+      label: "Tour + salesman",
+      amount: salesmanLoad,
+      allocation: "salesman",
+    });
+  }
+
+  lines.sort((a, b) => a.label.localeCompare(b.label));
+  return lines;
+}
+
+function materialPerKgFromMargin(margin, family) {
+  const fam = margin?.byFamily?.[family];
+  const cost = Number(fam?.materialCost) || 0;
+  const kg = Number(fam?.finishedKg) || 0;
+  if (!(cost > 0) || !(kg > 0)) return null;
+  return roundMoney(cost / kg);
+}
+
+/** Raw material lines as totals against current finished kg (rate × current kg). */
+function materialChargeLinesForCurrentKg(seedMargin, fallbackMargin, hubKg, drumKg) {
+  const lines = [];
+  for (const fam of ["hub", "drum"]) {
+    const currentKg = fam === "drum" ? drumKg : hubKg;
+    const seedRate = materialPerKgFromMargin(seedMargin, fam);
+    const fallbackRate = materialPerKgFromMargin(fallbackMargin, fam);
+    const rate = seedRate != null && seedRate > 0 ? seedRate : fallbackRate;
+    const amount =
+      rate != null && currentKg > 0
+        ? roundMoney(rate * currentKg)
+        : roundMoney(fallbackMargin?.byFamily?.[fam]?.materialCost || 0);
+    if (!(amount > 0) && !(rate > 0)) continue;
+    lines.push({
+      id: fam === "drum" ? "material_drum" : "material_hub",
+      label: fam === "drum" ? "Raw material (Drum)" : "Raw material (Hub)",
+      amount: amount > 0 ? amount : roundMoney((rate || 0) * currentKg),
+      allocation: fam === "drum" ? "material_drum" : "material_hub",
+    });
+  }
+  return lines;
+}
+
+function materialChargeLinesFromMargin(margin) {
+  return materialChargeLinesForCurrentKg(
+    margin,
+    margin,
+    margin?.byFamily?.hub?.finishedKg || 0,
+    margin?.byFamily?.drum?.finishedKg || 0
+  );
+}
+
+function mergeChargeLineCatalog(actualLines, previousLines) {
+  const always = [
+    { id: "material_hub", label: "Raw material (Hub)", allocation: "material_hub" },
+    { id: "material_drum", label: "Raw material (Drum)", allocation: "material_drum" },
+    { id: "salary_hub", label: "Hub salaries", allocation: "hub" },
+    { id: "salary_drum", label: "Drum salaries", allocation: "drum" },
+    { id: "salary_common", label: "Common salaries", allocation: "common" },
+    { id: "electricity", label: "Electricity", allocation: "electricity" },
+    { id: "tour_salesman", label: "Tour + salesman", allocation: "salesman" },
+  ];
+  const map = new Map();
+  for (const line of [...always, ...actualLines, ...previousLines]) {
+    if (!map.has(line.id)) {
+      map.set(line.id, {
+        id: line.id,
+        label: line.label,
+        allocation: line.allocation,
+        amount: 0,
+      });
+    } else {
+      const row = map.get(line.id);
+      row.label = line.label || row.label;
+      row.allocation = line.allocation || row.allocation;
+    }
+  }
+  const previousById = new Map(previousLines.map((l) => [l.id, l]));
+  const actualById = new Map(actualLines.map((l) => [l.id, l]));
+  let usedPrevious = 0;
+  let usedActual = 0;
+  for (const [id, row] of map.entries()) {
+    const prev = previousById.get(id);
+    const act = actualById.get(id);
+    const prevAmount = roundMoney(prev?.amount || 0);
+    const actAmount = roundMoney(act?.amount || 0);
+    const isMaterial = id === "material_hub" || id === "material_drum";
+    // Material always prefers this period's actual rate (never junk previous-month rates).
+    if (isMaterial) {
+      if (actAmount > 0) {
+        row.amount = actAmount;
+        usedActual += 1;
+      } else if (prevAmount > 0) {
+        row.amount = prevAmount;
+        usedPrevious += 1;
+      } else {
+        row.amount = 0;
+      }
+    } else if (prevAmount > 0) {
+      row.amount = prevAmount;
+      usedPrevious += 1;
+    } else if (actAmount > 0) {
+      row.amount = actAmount;
+      usedActual += 1;
+    } else {
+      row.amount = 0;
+    }
+    if (prev?.label) row.label = prev.label;
+    else if (act?.label) row.label = act.label;
+    if (prev?.allocation) row.allocation = prev.allocation;
+    else if (act?.allocation) row.allocation = act.allocation;
+  }
+  return {
+    lines: sortChargeLines([...map.values()]),
+    seedSource: usedPrevious > 0 && usedActual === 0 ? "previous" : usedPrevious > 0 ? "previous" : "actual",
+  };
+}
+
+/** Hub material → Drum material → Electricity → everything else (A–Z). */
+function sortChargeLines(lines) {
+  const rank = (id) => {
+    if (id === "material_hub") return 0;
+    if (id === "material_drum") return 1;
+    if (id === "electricity") return 2;
+    return 3;
+  };
+  return [...lines].sort((a, b) => {
+    const ra = rank(a.id);
+    const rb = rank(b.id);
+    if (ra !== rb) return ra - rb;
+    return a.label.localeCompare(b.label);
+  });
+}
+
+function computeRatesFromChargeLines({
+  lines,
+  hubFinishedKg,
+  drumFinishedKg,
+  materialHubPerKg,
+  materialDrumPerKg,
+  salesmanSoldKg,
+}) {
+  const hubKg = hubFinishedKg || 0;
+  const drumKg = drumFinishedKg || 0;
+  const allKg = roundKg(hubKg + drumKg);
+  const ELECTRICITY_HUB_INTENSITY = 0.6;
+  const ELECTRICITY_DRUM_INTENSITY = 0.4;
+  const electricityWeightTotal =
+    hubKg * ELECTRICITY_HUB_INTENSITY + drumKg * ELECTRICITY_DRUM_INTENSITY;
+
+  let hubOverhead = 0;
+  let drumOverhead = 0;
+  let materialHubAmount = null;
+  let materialDrumAmount = null;
+  let salesmanLoad = 0;
+  const breakdown = [];
+
+  for (const line of lines) {
+    const amount = roundMoney(Number(line.amount) || 0);
+    if (!(amount > 0) && line.allocation !== "salesman") continue;
+
+    if (line.allocation === "salesman") {
+      salesmanLoad = roundMoney(salesmanLoad + amount);
+      breakdown.push({
+        id: line.id,
+        label: line.label,
+        amount,
+        hubPerKg: null,
+        drumPerKg: null,
+      });
+      continue;
+    }
+
+    if (line.allocation === "material_hub") {
+      materialHubAmount = amount;
+      breakdown.push({
+        id: line.id,
+        label: line.label,
+        amount,
+        hubPerKg: hubKg > 0 ? roundMoney(amount / hubKg) : null,
+        drumPerKg: null,
+      });
+      continue;
+    }
+
+    if (line.allocation === "material_drum") {
+      materialDrumAmount = amount;
+      breakdown.push({
+        id: line.id,
+        label: line.label,
+        amount,
+        hubPerKg: null,
+        drumPerKg: drumKg > 0 ? roundMoney(amount / drumKg) : null,
+      });
+      continue;
+    }
+
+    let hubShare = 0;
+    let drumShare = 0;
+    if (line.allocation === "hub") {
+      hubShare = amount;
+    } else if (line.allocation === "drum") {
+      drumShare = amount;
+    } else if (line.allocation === "electricity") {
+      if (electricityWeightTotal > 0) {
+        hubShare = ((hubKg * ELECTRICITY_HUB_INTENSITY) / electricityWeightTotal) * amount;
+        drumShare = ((drumKg * ELECTRICITY_DRUM_INTENSITY) / electricityWeightTotal) * amount;
+      }
+    } else {
+      if (allKg > 0) {
+        hubShare = (hubKg / allKg) * amount;
+        drumShare = (drumKg / allKg) * amount;
+      }
+    }
+
+    hubOverhead += hubShare;
+    drumOverhead += drumShare;
+    breakdown.push({
+      id: line.id,
+      label: line.label,
+      amount,
+      hubPerKg: hubKg > 0 ? roundMoney(hubShare / hubKg) : null,
+      drumPerKg: drumKg > 0 ? roundMoney(drumShare / drumKg) : null,
+    });
+  }
+
+  const matHubPerKg =
+    materialHubAmount != null
+      ? hubKg > 0
+        ? roundMoney(materialHubAmount / hubKg)
+        : null
+      : materialHubPerKg != null
+        ? roundMoney(materialHubPerKg)
+        : null;
+  const matDrumPerKg =
+    materialDrumAmount != null
+      ? drumKg > 0
+        ? roundMoney(materialDrumAmount / drumKg)
+        : null
+      : materialDrumPerKg != null
+        ? roundMoney(materialDrumPerKg)
+        : null;
+
+  const factoryHubPerKg =
+    hubKg > 0 ? roundMoney((matHubPerKg || 0) + hubOverhead / hubKg) : null;
+  const factoryDrumPerKg =
+    drumKg > 0 ? roundMoney((matDrumPerKg || 0) + drumOverhead / drumKg) : null;
+  const salesmanAddOnPerKg =
+    salesmanLoad > 0
+      ? salesmanSoldKg > 0
+        ? roundMoney(salesmanLoad / salesmanSoldKg)
+        : allKg > 0
+          ? roundMoney(salesmanLoad / allKg)
+          : 0
+      : 0;
+  const peHubPerKg =
+    factoryHubPerKg != null ? roundMoney(factoryHubPerKg + salesmanAddOnPerKg) : null;
+  const peDrumPerKg =
+    factoryDrumPerKg != null ? roundMoney(factoryDrumPerKg + salesmanAddOnPerKg) : null;
+
+  const materialHubTotal =
+    materialHubAmount != null
+      ? materialHubAmount
+      : matHubPerKg != null
+        ? matHubPerKg * hubKg
+        : 0;
+  const materialDrumTotal =
+    materialDrumAmount != null
+      ? materialDrumAmount
+      : matDrumPerKg != null
+        ? matDrumPerKg * drumKg
+        : 0;
+
+  const overallFactoryPerKg =
+    allKg > 0
+      ? roundMoney((materialHubTotal + materialDrumTotal + hubOverhead + drumOverhead) / allKg)
+      : null;
+
+  return {
+    materialHubPerKg: matHubPerKg,
+    materialDrumPerKg: matDrumPerKg,
+    factoryHubPerKg,
+    factoryDrumPerKg,
+    overallPerKg: overallFactoryPerKg,
+    salesmanLoad: roundMoney(salesmanLoad),
+    salesmanAddOnPerKg,
+    peHubPerKg,
+    peDrumPerKg,
+    breakdown,
+  };
+}
+
+async function getChargesCalculator(query = {}) {
+  const { from, to } = periodBounds(query);
+  const prev = previousMonthWindow(from, query.dateFrom);
+  const margin = await getProductionMargin(query);
+  const hubFinishedKg = margin.byFamily?.hub?.finishedKg || 0;
+  const drumFinishedKg = margin.byFamily?.drum?.finishedKg || 0;
+  const materialHubPerKg =
+    margin.channelManufacture?.ikEngineering?.hub?.materialPerKg ?? null;
+  const materialDrumPerKg =
+    margin.channelManufacture?.ikEngineering?.drum?.materialPerKg ?? null;
+  const salesmanSoldKg =
+    margin.channelManufacture?.powerEngineering?.salesmanSoldKg ||
+    (await getSalesmanSoldKg(from, to));
+
+  // Raw material always seeds from THIS period's rate/kg (× current finished kg).
+  // Previous empty months often have tiny/junk material rates (e.g. 0.11) that should not
+  // replace actual Hub/Drum rates like 165.19 / 169.99. Other charges still seed from previous month.
+  const actualMaterialLines = materialChargeLinesForCurrentKg(
+    margin,
+    margin,
+    hubFinishedKg,
+    drumFinishedKg
+  );
+
+  const actualLines = sortChargeLines([
+    ...actualMaterialLines,
+    ...(await collectEditableChargeLines(from, to)),
+  ]);
+  const previousRaw = [
+    ...actualMaterialLines,
+    ...(await collectEditableChargeLines(prev.from, prev.to)),
+  ];
+  const { lines: previousLines, seedSource } = mergeChargeLineCatalog(
+    actualLines,
+    previousRaw
+  );
+
+  const ctx = {
+    hubFinishedKg,
+    drumFinishedKg,
+    materialHubPerKg,
+    materialDrumPerKg,
+    salesmanSoldKg,
+  };
+
+  return {
+    period: {
+      dateFrom: toDateInput(from),
+      dateTo: toDateInput(to),
+    },
+    previousPeriod: {
+      dateFrom: toDateInput(prev.from),
+      dateTo: toDateInput(prev.to),
+    },
+    seedSource,
+    hubFinishedKg,
+    drumFinishedKg,
+    salesmanSoldKg,
+    materialHubPerKg,
+    materialDrumPerKg,
+    actual: {
+      lines: actualLines,
+      rates: computeRatesFromChargeLines({ lines: actualLines, ...ctx }),
+    },
+    previous: {
+      lines: previousLines,
+      rates: computeRatesFromChargeLines({ lines: previousLines, ...ctx }),
+    },
+  };
+}
+
+async function previewChargesCalculator(body = {}) {
+  const query = { dateFrom: body.dateFrom, dateTo: body.dateTo };
+  const baseline = await getChargesCalculator(query);
+  const overrides = body.overrides && typeof body.overrides === "object" ? body.overrides : {};
+  const seedLines = baseline.previous.lines.length
+    ? baseline.previous.lines
+    : baseline.actual.lines;
+
+  const lines = sortChargeLines(
+    seedLines.map((line) => {
+      const raw = overrides[line.id];
+      const amount =
+        raw === undefined || raw === null || raw === ""
+          ? line.amount
+          : Number(raw);
+      return {
+        ...line,
+        amount: Number.isFinite(amount) ? roundMoney(Math.max(0, amount)) : 0,
+      };
+    })
+  );
+
+  const rates = computeRatesFromChargeLines({
+    lines,
+    hubFinishedKg: baseline.hubFinishedKg,
+    drumFinishedKg: baseline.drumFinishedKg,
+    materialHubPerKg: baseline.materialHubPerKg,
+    materialDrumPerKg: baseline.materialDrumPerKg,
+    salesmanSoldKg: baseline.salesmanSoldKg,
+  });
+
+  return {
+    period: baseline.period,
+    previousPeriod: baseline.previousPeriod,
+    hubFinishedKg: baseline.hubFinishedKg,
+    drumFinishedKg: baseline.drumFinishedKg,
+    salesmanSoldKg: baseline.salesmanSoldKg,
+    materialHubPerKg: baseline.materialHubPerKg,
+    materialDrumPerKg: baseline.materialDrumPerKg,
+    actual: baseline.actual,
+    assumption: { lines, rates },
+  };
+}
+
 module.exports = {
   createEntry,
   listEntries,
@@ -2135,5 +2875,7 @@ module.exports = {
   getExpenseBreakdown,
   getProductionMargin,
   getPartySalesMargin,
+  getChargesCalculator,
+  previewChargesCalculator,
   EXPENSE_CATEGORIES,
 };

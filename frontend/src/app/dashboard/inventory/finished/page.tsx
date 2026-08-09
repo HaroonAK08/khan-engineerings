@@ -188,8 +188,8 @@ export default function FinishedGoodsPage() {
       key: "drum",
       label: t("finished.stat.drum"),
       value: drumUnits,
-      accent: "bg-amber-500",
-      cardClass: "bg-amber-500/5",
+      accent: "bg-yellow-500",
+      cardClass: "bg-yellow-400/10",
     },
   ];
 

@@ -160,6 +160,8 @@ export type ProductionMarginProduct = {
   sellPriceSource?: "period_sales" | "all_time_sales" | "catalog" | "none";
   unitsSoldPeriod?: number;
   sellValue: number;
+  soldCogs?: number;
+  saleOnly?: boolean;
   profit: number;
   profitPerPiece: number;
   marginPct: number | null;
@@ -223,6 +225,7 @@ export type ProductionMarginReport = {
     id: string;
     label: string;
     amount: number;
+    amountPerKg?: number | null;
     kind: "material" | "overhead";
   }>;
   channelManufacture?: {
@@ -264,6 +267,77 @@ export async function getProductionMargin(params?: { dateFrom?: string; dateTo?:
   const { data } = await api.get<ProductionMarginReport>("/finance/production-margin", {
     params,
   });
+  return data;
+}
+
+export type ChargeAllocation =
+  | "hub"
+  | "drum"
+  | "common"
+  | "electricity"
+  | "salesman"
+  | "material_hub"
+  | "material_drum";
+
+export type ChargeCalculatorLine = {
+  id: string;
+  label: string;
+  amount: number;
+  allocation: ChargeAllocation;
+};
+
+export type ChargeCalculatorRates = {
+  materialHubPerKg: number | null;
+  materialDrumPerKg: number | null;
+  factoryHubPerKg: number | null;
+  factoryDrumPerKg: number | null;
+  overallPerKg: number | null;
+  salesmanLoad: number;
+  salesmanAddOnPerKg: number;
+  peHubPerKg: number | null;
+  peDrumPerKg: number | null;
+  breakdown: Array<{
+    id: string;
+    label: string;
+    amount: number;
+    hubPerKg: number | null;
+    drumPerKg: number | null;
+  }>;
+};
+
+export type ChargesCalculatorReport = {
+  period: { dateFrom: string; dateTo: string };
+  previousPeriod: { dateFrom: string; dateTo: string };
+  seedSource?: "previous" | "actual";
+  hubFinishedKg: number;
+  drumFinishedKg: number;
+  salesmanSoldKg: number;
+  materialHubPerKg: number | null;
+  materialDrumPerKg: number | null;
+  actual: { lines: ChargeCalculatorLine[]; rates: ChargeCalculatorRates };
+  previous: { lines: ChargeCalculatorLine[]; rates: ChargeCalculatorRates };
+};
+
+export type ChargesCalculatorPreview = Omit<ChargesCalculatorReport, "previous"> & {
+  assumption: { lines: ChargeCalculatorLine[]; rates: ChargeCalculatorRates };
+};
+
+export async function getChargesCalculator(params?: { dateFrom?: string; dateTo?: string }) {
+  const { data } = await api.get<ChargesCalculatorReport>("/finance/charges-calculator", {
+    params,
+  });
+  return data;
+}
+
+export async function previewChargesCalculator(body: {
+  dateFrom?: string;
+  dateTo?: string;
+  overrides: Record<string, number>;
+}) {
+  const { data } = await api.post<ChargesCalculatorPreview>(
+    "/finance/charges-calculator/preview",
+    body
+  );
   return data;
 }
 

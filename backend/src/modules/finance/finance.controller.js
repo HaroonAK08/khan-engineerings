@@ -108,6 +108,24 @@ async function removeEntry(req, res, next) {
   }
 }
 
+async function chargesCalculator(req, res, next) {
+  try {
+    const report = await financeService.getChargesCalculator(req.query);
+    res.json(report);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function chargesCalculatorPreview(req, res, next) {
+  try {
+    const report = await financeService.previewChargesCalculator(req.body);
+    res.json(report);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   overview,
   monthly,
@@ -121,4 +139,6 @@ module.exports = {
   listEntries,
   createEntry,
   removeEntry,
+  chargesCalculator,
+  chargesCalculatorPreview,
 };

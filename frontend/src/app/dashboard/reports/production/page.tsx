@@ -83,8 +83,8 @@ export default function ProductionReportsHubPage() {
   ) {
     const title = family === "hub" ? t("prod.hub") : t("prod.drum");
     const isDrum = family === "drum";
-    const headerBg = isDrum ? "bg-amber-600" : "bg-sky-600";
-    const headerText = "text-white";
+    const headerBg = isDrum ? "bg-yellow-500" : "bg-sky-600";
+    const headerText = isDrum ? "text-yellow-950" : "text-white";
     const totals = rows.reduce(
       (acc, p) => {
         acc.pieces += p.goodUnits || 0;
@@ -141,7 +141,7 @@ export default function ProductionReportsHubPage() {
                       key={String(p.productId)}
                       className={
                         isDrum
-                          ? "cursor-pointer border-amber-500/10 bg-amber-500/5 hover:bg-amber-500/10"
+                          ? "cursor-pointer border-yellow-500/20 bg-yellow-400/15 hover:bg-yellow-400/25"
                           : "cursor-pointer border-sky-500/10 bg-sky-500/5 hover:bg-sky-500/10"
                       }
                     >
@@ -178,7 +178,7 @@ export default function ProductionReportsHubPage() {
                 <TableRow
                   className={
                     isDrum
-                      ? "bg-amber-600/15 font-medium hover:bg-amber-600/15"
+                      ? "bg-yellow-400/20 font-medium hover:bg-yellow-400/20"
                       : "bg-sky-600/15 font-medium hover:bg-sky-600/15"
                   }
                 >
@@ -259,7 +259,7 @@ export default function ProductionReportsHubPage() {
                 </p>
               </CardContent>
             </Card>
-            <Card className="border-amber-500/30 bg-amber-500/5 py-0">
+            <Card className="border-yellow-500/30 bg-yellow-400/10 py-0">
               <CardContent className="p-4">
                 <p className="font-data text-[10px] tracking-wider text-muted-foreground uppercase">
                   {t("prod.drum")}

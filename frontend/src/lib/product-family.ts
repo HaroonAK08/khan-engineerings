@@ -7,14 +7,14 @@ export function normalizeFamily(family: ProductFamilyLike): "hub" | "drum" | nul
   return null;
 }
 
-/** Table / list row background — hub = sky, drum = amber */
+/** Table / list row background — hub = sky, drum = yellow */
 export function familyRowClass(family: ProductFamilyLike, className?: string) {
   const f = normalizeFamily(family);
   return cn(
     f === "hub" &&
       "border-l-[3px] border-l-sky-500 bg-sky-500/10 hover:bg-sky-500/15 data-[state=selected]:bg-sky-500/15",
     f === "drum" &&
-      "border-l-[3px] border-l-amber-500 bg-amber-500/10 hover:bg-amber-500/15 data-[state=selected]:bg-amber-500/15",
+      "border-l-[3px] border-l-yellow-400 bg-yellow-400/15 hover:bg-yellow-400/25 data-[state=selected]:bg-yellow-400/25",
     className
   );
 }
@@ -27,7 +27,7 @@ export function familyBadgeClass(family: ProductFamilyLike, className?: string) 
     f === "hub" &&
       "border-sky-500/45 bg-sky-500/15 text-sky-800 dark:border-sky-400/40 dark:text-sky-300",
     f === "drum" &&
-      "border-amber-500/45 bg-amber-500/15 text-amber-900 dark:border-amber-400/40 dark:text-amber-300",
+      "border-yellow-500/50 bg-yellow-400/20 text-yellow-900 dark:border-yellow-400/40 dark:text-yellow-300",
     className
   );
 }
@@ -41,9 +41,9 @@ export function familyPickerItemClass(
   const f = normalizeFamily(family);
   return cn(
     f === "hub" && "border-l-[3px] border-l-sky-500 bg-sky-500/10 hover:bg-sky-500/18",
-    f === "drum" && "border-l-[3px] border-l-amber-500 bg-amber-500/10 hover:bg-amber-500/18",
+    f === "drum" && "border-l-[3px] border-l-yellow-400 bg-yellow-400/15 hover:bg-yellow-400/25",
     active && f === "hub" && "bg-sky-500/22",
-    active && f === "drum" && "bg-amber-500/22",
+    active && f === "drum" && "bg-yellow-400/30",
     active && !f && "bg-muted",
     className
   );
@@ -64,7 +64,7 @@ export function familyFilterChipClass(
     }
     if (family === "drum") {
       return cn(
-        "border-amber-500/40 bg-amber-500/5 text-amber-900 hover:bg-amber-500/12 dark:text-amber-300",
+        "border-yellow-500/40 bg-yellow-400/10 text-yellow-900 hover:bg-yellow-400/20 dark:text-yellow-300",
         className
       );
     }
@@ -78,7 +78,7 @@ export function familyFilterChipClass(
   }
   if (family === "drum") {
     return cn(
-      "border-amber-600 bg-amber-600 text-white hover:bg-amber-600 hover:text-white dark:border-amber-500 dark:bg-amber-500",
+      "border-yellow-500 bg-yellow-500 text-yellow-950 hover:bg-yellow-500 hover:text-yellow-950 dark:border-yellow-400 dark:bg-yellow-400",
       className
     );
   }
@@ -90,7 +90,7 @@ export function familyMetaTextClass(family: ProductFamilyLike, className?: strin
   return cn(
     "font-data uppercase",
     f === "hub" && "text-sky-700 dark:text-sky-300",
-    f === "drum" && "text-amber-800 dark:text-amber-300",
+    f === "drum" && "text-yellow-700 dark:text-yellow-300",
     !f && "text-muted-foreground",
     className
   );

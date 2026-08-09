@@ -6,12 +6,15 @@ import { Loader2 } from "lucide-react";
 import { FinanceSubnav } from "@/components/layout/finance-subnav";
 import { apiError, formatKg, formatMoney } from "@/lib/materials-api";
 import {
+  getPartySalesMargin,
   getProductionMargin,
+  type PartySalesMarginReport,
   type ProductionMarginFamily,
   type ProductionMarginProduct,
   type ProductionMarginReport,
 } from "@/lib/finance-api";
 import { DateRangeFilter } from "@/components/date-range-filter";
+import { ChargesCalculator } from "@/components/finance/charges-calculator";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +34,7 @@ function FamilyCard({
   title,
   data,
   labels,
+  variant,
 }: {
   title: string;
   data: ProductionMarginFamily;
@@ -45,68 +49,92 @@ function FamilyCard({
     profit: string;
     margin: string;
   };
+  variant: "hub" | "drum";
 }) {
+  const isDrum = variant === "drum";
+  const cardFill = isDrum
+    ? "border-yellow-600/40 bg-yellow-500 text-yellow-950"
+    : "border-sky-700/40 bg-sky-600 text-white";
+  const labelTone = isDrum
+    ? "font-semibold text-yellow-950"
+    : "font-semibold text-white";
+  const valueTone = isDrum
+    ? "font-bold text-yellow-950"
+    : "font-bold text-white";
+
   return (
-    <Card>
+    <Card className={cardFill}>
       <CardHeader className="pb-3">
-        <CardTitle className="text-nameplate text-sm">{title}</CardTitle>
+        <CardTitle className={cn("text-nameplate text-sm font-bold", valueTone)}>
+          {title}
+        </CardTitle>
       </CardHeader>
       <CardContent className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
         <div>
-          <p className="font-data text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
+          <p className={cn("font-data text-[10px] tracking-[0.12em] uppercase", labelTone)}>
             {labels.pieces}
           </p>
-          <p className="font-data mt-1 text-lg">{data.pieces}</p>
+          <p className={cn("font-data mt-1 text-lg", valueTone)}>{data.pieces}</p>
         </div>
         <div>
-          <p className="font-data text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
+          <p className={cn("font-data text-[10px] tracking-[0.12em] uppercase", labelTone)}>
             {labels.finishedKg}
           </p>
-          <p className="font-data mt-1 text-lg">{formatKg(data.finishedKg ?? 0)}</p>
+          <p className={cn("font-data mt-1 text-lg", valueTone)}>
+            {formatKg(data.finishedKg ?? 0)}
+          </p>
         </div>
         <div>
-          <p className="font-data text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
+          <p className={cn("font-data text-[10px] tracking-[0.12em] uppercase", labelTone)}>
             {labels.unitsSold}
           </p>
-          <p className="font-data mt-1 text-lg">{data.unitsSold ?? 0}</p>
+          <p className={cn("font-data mt-1 text-lg", valueTone)}>{data.unitsSold ?? 0}</p>
         </div>
         <div>
-          <p className="font-data text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
+          <p className={cn("font-data text-[10px] tracking-[0.12em] uppercase", labelTone)}>
             {labels.material}
           </p>
-          <p className="font-data mt-1 text-lg">{formatMoney(data.materialCost)}</p>
+          <p className={cn("font-data mt-1 text-lg", valueTone)}>
+            {formatMoney(data.materialCost)}
+          </p>
         </div>
         <div>
-          <p className="font-data text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
+          <p className={cn("font-data text-[10px] tracking-[0.12em] uppercase", labelTone)}>
             {labels.overhead}
           </p>
-          <p className="font-data mt-1 text-lg">{formatMoney(data.overhead)}</p>
+          <p className={cn("font-data mt-1 text-lg", valueTone)}>
+            {formatMoney(data.overhead)}
+          </p>
         </div>
         <div>
-          <p className="font-data text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
+          <p className={cn("font-data text-[10px] tracking-[0.12em] uppercase", labelTone)}>
             {labels.costPerKg}
           </p>
-          <p className="font-data mt-1 text-lg">
+          <p className={cn("font-data mt-1 text-lg", valueTone)}>
             {data.costPerKg != null ? formatMoney(data.costPerKg) : "—"}
           </p>
         </div>
         <div>
-          <p className="font-data text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
+          <p className={cn("font-data text-[10px] tracking-[0.12em] uppercase", labelTone)}>
             {labels.sellValue}
           </p>
-          <p className="font-data mt-1 text-lg">{formatMoney(data.sellValue)}</p>
+          <p className={cn("font-data mt-1 text-lg", valueTone)}>
+            {formatMoney(data.sellValue)}
+          </p>
         </div>
         <div>
-          <p className="font-data text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
+          <p className={cn("font-data text-[10px] tracking-[0.12em] uppercase", labelTone)}>
             {labels.profit}
           </p>
-          <p className="font-data mt-1 text-lg">{formatMoney(data.profit)}</p>
+          <p className={cn("font-data mt-1 text-lg", valueTone)}>
+            {formatMoney(data.profit)}
+          </p>
         </div>
         <div>
-          <p className="font-data text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
+          <p className={cn("font-data text-[10px] tracking-[0.12em] uppercase", labelTone)}>
             {labels.margin}
           </p>
-          <p className="font-data mt-1 text-lg">
+          <p className={cn("font-data mt-1 text-lg", valueTone)}>
             {data.marginPct != null ? `${data.marginPct}%` : "—"}
           </p>
         </div>
@@ -142,17 +170,20 @@ function FamilyProductTable({
     totalCost: string;
     costPerPiece: string;
     costPerKg: string;
+    unitsSold: string;
     sellPerPiece: string;
     soldPrice: string;
+    soldCost: string;
     netProfit: string;
     margin: string;
   };
   familyCostPerKg?: number | null;
   familyOverheadPerKg?: number | null;
 }) {
+  const { t } = useI18n();
   const isDrum = family === "drum";
-  const headerBg = isDrum ? "bg-amber-600" : "bg-sky-600";
-  const headerText = "text-white";
+  const headerBg = isDrum ? "bg-yellow-500" : "bg-sky-600";
+  const headerText = isDrum ? "text-yellow-950" : "text-white";
   const totals = rows.reduce(
     (acc, p) => {
       acc.pieces += p.pieces || 0;
@@ -162,7 +193,9 @@ function FamilyProductTable({
       acc.materialCost += p.materialCost || 0;
       acc.overhead += p.overhead || 0;
       acc.totalCost += p.totalCost || 0;
+      acc.unitsSold += p.unitsSoldPeriod || 0;
       acc.sellValue += p.sellValue || 0;
+      acc.soldCogs += p.soldCogs || 0;
       acc.profit += p.profit || 0;
       return acc;
     },
@@ -174,7 +207,9 @@ function FamilyProductTable({
       materialCost: 0,
       overhead: 0,
       totalCost: 0,
+      unitsSold: 0,
       sellValue: 0,
+      soldCogs: 0,
       profit: 0,
     }
   );
@@ -196,30 +231,62 @@ function FamilyProductTable({
         ? totals.overhead / totals.finishedKg
         : null;
   const avgSellPerPiece =
-    rows.reduce((s, p) => s + (p.unitsSoldPeriod || 0), 0) > 0
-      ? totals.sellValue / rows.reduce((s, p) => s + (p.unitsSoldPeriod || 0), 0)
-      : 0;
+    totals.unitsSold > 0 ? totals.sellValue / totals.unitsSold : null;
+
+  // Sticky header cells (vertical) + first column (horizontal).
+  const headClass = cn(
+    "sticky top-0 z-20 h-10 px-2.5 text-[11px] font-bold tracking-wide uppercase",
+    headerBg,
+    headerText
+  );
+  const stickyHead = cn(
+    headClass,
+    "left-0 z-40 min-w-[11rem] max-w-[14rem] shadow-[4px_0_12px_-6px_rgba(0,0,0,0.45)]"
+  );
+  const numHead = cn(headClass, "text-right");
+  const salesHead = cn(numHead, "border-l border-white/30");
+
+  function rowTone(profit: number) {
+    const loss = profit < 0;
+    const fill = loss
+      ? "bg-red-600 text-white hover:bg-red-600"
+      : "bg-emerald-600 text-white hover:bg-emerald-600";
+    const sticky = loss
+      ? "bg-red-600 shadow-[4px_0_12px_-6px_rgba(0,0,0,0.35)]"
+      : "bg-emerald-600 shadow-[4px_0_12px_-6px_rgba(0,0,0,0.35)]";
+    return { fill, sticky, loss };
+  }
+
+  const numCell =
+    "font-data px-2.5 py-2.5 text-right text-xs font-bold tabular-nums text-white";
+  const salesCell = cn(numCell, "border-l border-white/25");
+
+  const totalLoss = totals.profit < 0;
+  const totalFill = totalLoss
+    ? "bg-red-700 text-white hover:bg-red-700"
+    : "bg-emerald-700 text-white hover:bg-emerald-700";
+  const totalSticky = totalLoss ? "bg-red-700" : "bg-emerald-700";
 
   return (
-    <Card className="gap-0 overflow-visible py-0">
-      <div className={`sticky top-0 z-20 rounded-t-xl shadow-md ${headerBg} ${headerText}`}>
+    <Card className="gap-0 overflow-hidden py-0">
+      <div className={cn("sticky top-0 z-30 rounded-t-xl shadow-md", headerBg, headerText)}>
         <div className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-end sm:justify-between sm:px-5">
-          <h2 className="text-nameplate text-base tracking-[0.12em] uppercase sm:text-lg">
+          <h2 className="text-nameplate text-base font-bold tracking-[0.12em] uppercase sm:text-lg">
             {title}
           </h2>
-          <div className="font-data flex flex-wrap gap-x-4 gap-y-1 text-sm opacity-95">
+          <div className="font-data flex flex-wrap gap-x-4 gap-y-1 text-sm font-semibold">
             <p>
               {labels.overheadPerKg}:{" "}
-              <span className="text-base font-semibold">
+              <span className="text-base font-bold">
                 {avgOverheadPerKg != null ? formatMoney(avgOverheadPerKg) : "—"}
               </span>
             </p>
             <p>
               {labels.costPerKg}:{" "}
-              <span className="text-base font-semibold">
+              <span className="text-base font-bold">
                 {avgCostPerKg != null ? formatMoney(avgCostPerKg) : "—"}
               </span>
-              <span className="ml-2 text-xs opacity-80">
+              <span className="ml-2 text-xs font-semibold opacity-90">
                 ({formatKg(totals.finishedKg)})
               </span>
             </p>
@@ -230,164 +297,164 @@ function FamilyProductTable({
         {rows.length === 0 ? (
           <p className="px-6 py-8 text-sm text-muted-foreground">{emptyLabel}</p>
         ) : (
-          <Table containerClassName="overflow-visible">
-            <TableHeader className={`sticky top-12 z-10 shadow-sm [&_tr]:border-b-0`}>
-              <TableRow className={`hover:bg-transparent ${headerBg}`}>
-                <TableHead className={`${headerBg} ${headerText} font-semibold`}>
-                  {labels.product}
+          <Table
+            className="min-w-[1100px] border-separate border-spacing-0"
+            containerClassName="max-h-[min(70vh,42rem)] overflow-auto"
+          >
+            <TableHeader>
+              <TableRow className={cn("hover:bg-transparent border-0", headerBg)}>
+                <TableHead className={stickyHead}>{labels.product}</TableHead>
+                <TableHead className={numHead}>{labels.pieces}</TableHead>
+                <TableHead className={numHead}>{labels.finishedKg}</TableHead>
+                <TableHead className={numHead}>
+                  {isDrum ? labels.daigKg : labels.scrapKg}
                 </TableHead>
-                <TableHead className={`${headerBg} ${headerText} text-right font-semibold`}>
-                  {labels.pieces}
-                </TableHead>
-                <TableHead className={`${headerBg} ${headerText} text-right font-semibold`}>
-                  {labels.finishedKg}
-                </TableHead>
-                {isDrum ? (
-                  <TableHead className={`${headerBg} ${headerText} text-right font-semibold`}>
-                    {labels.daigKg}
-                  </TableHead>
-                ) : (
-                  <TableHead className={`${headerBg} ${headerText} text-right font-semibold`}>
-                    {labels.scrapKg}
-                  </TableHead>
-                )}
-                <TableHead className={`${headerBg} ${headerText} text-right font-semibold`}>
-                  {labels.materialCost}
-                </TableHead>
-                <TableHead className={`${headerBg} ${headerText} text-right font-semibold`}>
-                  {labels.overhead}
-                </TableHead>
-                <TableHead className={`${headerBg} ${headerText} text-right font-semibold`}>
-                  {labels.overheadPerKg}
-                </TableHead>
-                <TableHead className={`${headerBg} ${headerText} text-right font-semibold`}>
-                  {labels.totalCost}
-                </TableHead>
-                <TableHead className={`${headerBg} ${headerText} text-right font-semibold`}>
-                  {labels.costPerKg}
-                </TableHead>
-                <TableHead className={`${headerBg} ${headerText} text-right font-semibold`}>
-                  {labels.costPerPiece}
-                </TableHead>
-                <TableHead className={`${headerBg} ${headerText} text-right font-semibold`}>
-                  {labels.sellPerPiece}
-                </TableHead>
-                <TableHead className={`${headerBg} ${headerText} text-right font-semibold`}>
-                  {labels.soldPrice}
-                </TableHead>
-                <TableHead className={`${headerBg} ${headerText} text-right font-semibold`}>
-                  {labels.netProfit}
-                </TableHead>
-                <TableHead className={`${headerBg} ${headerText} text-right font-semibold`}>
-                  {labels.margin}
-                </TableHead>
+                <TableHead className={numHead}>{labels.materialCost}</TableHead>
+                <TableHead className={numHead}>{labels.overhead}</TableHead>
+                <TableHead className={numHead}>{labels.overheadPerKg}</TableHead>
+                <TableHead className={numHead}>{labels.totalCost}</TableHead>
+                <TableHead className={numHead}>{labels.costPerKg}</TableHead>
+                <TableHead className={numHead}>{labels.costPerPiece}</TableHead>
+                <TableHead className={salesHead}>{labels.unitsSold}</TableHead>
+                <TableHead className={numHead}>{labels.sellPerPiece}</TableHead>
+                <TableHead className={numHead}>{labels.soldPrice}</TableHead>
+                <TableHead className={numHead}>{labels.soldCost}</TableHead>
+                <TableHead className={numHead}>{labels.netProfit}</TableHead>
+                <TableHead className={numHead}>{labels.margin}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((p) => (
-                <TableRow
-                  key={p.productId}
-                  className={
-                    isDrum
-                      ? "border-amber-500/10 bg-amber-500/5 hover:bg-amber-500/10"
-                      : "border-sky-500/10 bg-sky-500/5 hover:bg-sky-500/10"
-                  }
-                >
-                  <TableCell>
-                    <span>{p.name}</span>
-                  </TableCell>
-                  <TableCell className="font-data text-right text-xs">{p.pieces}</TableCell>
-                  <TableCell className="font-data text-right text-xs">
-                    {formatKg(p.finishedKg ?? 0)}
-                  </TableCell>
-                  <TableCell className="font-data text-right text-xs">
-                    {formatKg(isDrum ? p.daigKg : p.scrapKg)}
-                  </TableCell>
-                  <TableCell className="font-data text-right text-xs">
-                    {formatMoney(p.materialCost)}
-                  </TableCell>
-                  <TableCell className="font-data text-right text-xs">
-                    {formatMoney(p.overhead)}
-                  </TableCell>
-                  <TableCell className="font-data text-right text-xs">
-                    {p.overheadPerKg != null
-                      ? formatMoney(p.overheadPerKg)
-                      : p.finishedKg
-                        ? formatMoney(p.overhead / p.finishedKg)
+              {rows.map((p) => {
+                const saleOnly = Boolean(p.saleOnly) || !(p.pieces > 0);
+                const produced = !saleOnly;
+                const tone = rowTone(p.profit || 0);
+                return (
+                  <TableRow key={p.productId} className={cn("border-0", tone.fill)}>
+                    <TableCell
+                      className={cn(
+                        "sticky left-0 z-10 min-w-[11rem] max-w-[14rem] px-2.5 py-2.5",
+                        tone.sticky
+                      )}
+                    >
+                      <span className="block truncate text-sm font-bold text-white">
+                        {p.name}
+                      </span>
+                      {saleOnly ? (
+                        <span className="mt-0.5 block text-[10px] font-semibold leading-tight text-white">
+                          {t("prodMargin.saleOnlyHint")}
+                        </span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className={numCell}>
+                      {produced ? p.pieces : "—"}
+                    </TableCell>
+                    <TableCell className={numCell}>
+                      {produced ? formatKg(p.finishedKg ?? 0) : "—"}
+                    </TableCell>
+                    <TableCell className={numCell}>
+                      {produced
+                        ? formatKg(isDrum ? p.daigKg : p.scrapKg)
                         : "—"}
-                  </TableCell>
-                  <TableCell className="font-data text-right text-xs">
-                    {formatMoney(p.totalCost)}
-                  </TableCell>
-                  <TableCell className="font-data text-right text-xs">
-                    {p.costPerKg != null
-                      ? formatMoney(p.costPerKg)
-                      : p.finishedKg
-                        ? formatMoney(p.totalCost / p.finishedKg)
+                    </TableCell>
+                    <TableCell className={numCell}>
+                      {produced ? formatMoney(p.materialCost) : "—"}
+                    </TableCell>
+                    <TableCell className={numCell}>
+                      {produced ? formatMoney(p.overhead) : "—"}
+                    </TableCell>
+                    <TableCell className={numCell}>
+                      {produced && p.overheadPerKg != null
+                        ? formatMoney(p.overheadPerKg)
+                        : produced && p.finishedKg
+                          ? formatMoney(p.overhead / p.finishedKg)
+                          : "—"}
+                    </TableCell>
+                    <TableCell className={numCell}>
+                      {produced ? formatMoney(p.totalCost) : "—"}
+                    </TableCell>
+                    <TableCell className={numCell}>
+                      {produced && p.costPerKg != null
+                        ? formatMoney(p.costPerKg)
+                        : produced && p.finishedKg
+                          ? formatMoney(p.totalCost / p.finishedKg)
+                          : "—"}
+                    </TableCell>
+                    <TableCell className={numCell}>
+                      {p.costPerPiece > 0 ? formatMoney(p.costPerPiece) : "—"}
+                    </TableCell>
+                    <TableCell className={salesCell}>
+                      {p.unitsSoldPeriod ?? 0}
+                    </TableCell>
+                    <TableCell className={numCell}>
+                      {(p.unitsSoldPeriod || 0) > 0
+                        ? formatMoney(p.sellPricePerPiece)
                         : "—"}
-                  </TableCell>
-                  <TableCell className="font-data text-right text-xs">
-                    {formatMoney(p.costPerPiece)}
-                  </TableCell>
-                  <TableCell className="font-data text-right text-xs">
-                    {formatMoney(p.sellPricePerPiece)}
-                  </TableCell>
-                  <TableCell className="font-data text-right text-xs">
-                    {formatMoney(p.sellValue)}
-                  </TableCell>
-                  <TableCell className="font-data text-right text-xs">
-                    {formatMoney(p.profit)}
-                  </TableCell>
-                  <TableCell className="font-data text-right text-xs">
-                    {p.marginPct != null ? `${p.marginPct}%` : "—"}
-                  </TableCell>
-                </TableRow>
-              ))}
+                    </TableCell>
+                    <TableCell className={numCell}>
+                      {formatMoney(p.sellValue)}
+                    </TableCell>
+                    <TableCell className={numCell}>
+                      {formatMoney(p.soldCogs ?? 0)}
+                    </TableCell>
+                    <TableCell className={cn(numCell, "font-bold")}>
+                      {formatMoney(p.profit)}
+                    </TableCell>
+                    <TableCell className={cn(numCell, "font-bold")}>
+                      {p.marginPct != null ? `${p.marginPct}%` : "—"}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
-            <TableFooter>
-              <TableRow
-                className={
-                  isDrum
-                    ? "bg-amber-600/15 font-medium hover:bg-amber-600/15"
-                    : "bg-sky-600/15 font-medium hover:bg-sky-600/15"
-                }
-              >
-                <TableCell>{totalLabel}</TableCell>
-                <TableCell className="font-data text-right text-xs">{totals.pieces}</TableCell>
-                <TableCell className="font-data text-right text-xs">
+            <TableFooter className="bg-transparent">
+              <TableRow className={cn("border-0 font-bold", totalFill)}>
+                <TableCell
+                  className={cn(
+                    "sticky left-0 z-10 min-w-[11rem] max-w-[14rem] px-2.5 py-3 text-sm font-bold text-white shadow-[4px_0_12px_-6px_rgba(0,0,0,0.35)]",
+                    totalSticky
+                  )}
+                >
+                  {totalLabel}
+                </TableCell>
+                <TableCell className={numCell}>{totals.pieces}</TableCell>
+                <TableCell className={numCell}>
                   {formatKg(totals.finishedKg)}
                 </TableCell>
-                <TableCell className="font-data text-right text-xs">
+                <TableCell className={numCell}>
                   {formatKg(isDrum ? totals.daigKg : totals.scrapKg)}
                 </TableCell>
-                <TableCell className="font-data text-right text-xs">
+                <TableCell className={numCell}>
                   {formatMoney(totals.materialCost)}
                 </TableCell>
-                <TableCell className="font-data text-right text-xs">
+                <TableCell className={numCell}>
                   {formatMoney(totals.overhead)}
                 </TableCell>
-                <TableCell className="font-data text-right text-xs">
+                <TableCell className={numCell}>
                   {avgOverheadPerKg != null ? formatMoney(avgOverheadPerKg) : "—"}
                 </TableCell>
-                <TableCell className="font-data text-right text-xs">
+                <TableCell className={numCell}>
                   {formatMoney(totals.totalCost)}
                 </TableCell>
-                <TableCell className="font-data text-right text-xs">
+                <TableCell className={numCell}>
                   {avgCostPerKg != null ? formatMoney(avgCostPerKg) : "—"}
                 </TableCell>
-                <TableCell className="font-data text-right text-xs">
+                <TableCell className={numCell}>
                   {formatMoney(avgCostPerPiece)}
                 </TableCell>
-                <TableCell className="font-data text-right text-xs">
-                  {formatMoney(avgSellPerPiece)}
+                <TableCell className={salesCell}>{totals.unitsSold}</TableCell>
+                <TableCell className={numCell}>
+                  {avgSellPerPiece != null ? formatMoney(avgSellPerPiece) : "—"}
                 </TableCell>
-                <TableCell className="font-data text-right text-xs">
+                <TableCell className={numCell}>
                   {formatMoney(totals.sellValue)}
                 </TableCell>
-                <TableCell className="font-data text-right text-xs">
+                <TableCell className={numCell}>
+                  {formatMoney(totals.soldCogs)}
+                </TableCell>
+                <TableCell className={cn(numCell, "font-bold")}>
                   {formatMoney(totals.profit)}
                 </TableCell>
-                <TableCell className="font-data text-right text-xs">
+                <TableCell className={cn(numCell, "font-bold")}>
                   {marginPct != null ? `${marginPct}%` : "—"}
                 </TableCell>
               </TableRow>
@@ -403,14 +470,19 @@ export default function ProductionMarginPage() {
   const { t } = useI18n();
   const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
   const [report, setReport] = useState<ProductionMarginReport | null>(null);
+  const [partyMargin, setPartyMargin] = useState<PartySalesMarginReport | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     if (!hydrated) return;
     setLoading(true);
     try {
-      const data = await getProductionMargin({ dateFrom, dateTo });
+      const [data, party] = await Promise.all([
+        getProductionMargin({ dateFrom, dateTo }),
+        getPartySalesMargin({ dateFrom, dateTo }),
+      ]);
       setReport(data);
+      setPartyMargin(party);
     } catch (err) {
       toast.error(apiError(err, t("prodMargin.loadFailed")));
     } finally {
@@ -424,7 +496,30 @@ export default function ProductionMarginPage() {
   }, [load]);
 
   const summary = report?.summary;
-  const isProfit = (summary?.profit ?? 0) >= 0;
+  const partyTotals = partyMargin?.totals;
+  const isProfit = (partyTotals?.profit ?? summary?.profit ?? 0) >= 0;
+
+  function avgSalePerKg(sale: number, kg: number) {
+    if (!kg || kg <= 0) return null;
+    return Math.round((sale / kg) * 100) / 100;
+  }
+
+  const salePerKg = {
+    hub: partyTotals ? avgSalePerKg(partyTotals.hubSale, partyTotals.hubKg) : null,
+    drum: partyTotals ? avgSalePerKg(partyTotals.drumSale, partyTotals.drumKg) : null,
+    ikHub: partyTotals
+      ? avgSalePerKg(partyTotals.direct.hubSale, partyTotals.direct.hubKg)
+      : null,
+    ikDrum: partyTotals
+      ? avgSalePerKg(partyTotals.direct.drumSale, partyTotals.direct.drumKg)
+      : null,
+    peHub: partyTotals
+      ? avgSalePerKg(partyTotals.salesman.hubSale, partyTotals.salesman.hubKg)
+      : null,
+    peDrum: partyTotals
+      ? avgSalePerKg(partyTotals.salesman.drumSale, partyTotals.salesman.drumKg)
+      : null,
+  };
 
   const hubProducts = useMemo(
     () => (report?.products || []).filter((p) => (p.family || "hub") !== "drum"),
@@ -459,8 +554,10 @@ export default function ProductionMarginPage() {
     totalCost: t("prodMargin.totalCost"),
     costPerPiece: t("prodMargin.costPerPiece"),
     costPerKg: t("prodMargin.costPerKg"),
+    unitsSold: t("prodMargin.unitsSold"),
     sellPerPiece: t("prodMargin.sellPerPiece"),
-    soldPrice: t("prodMargin.sellValue"),
+    soldPrice: t("prodMargin.soldTotal"),
+    soldCost: t("prodMargin.soldCost"),
     netProfit: t("prodMargin.netProfit"),
     margin: t("prodMargin.margin"),
   };
@@ -469,29 +566,119 @@ export default function ProductionMarginPage() {
     <div className="flex flex-col gap-6">
       <FinanceSubnav />
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
-            {t("common.financeEyebrow")}
-          </p>
-          <h1 className="text-nameplate text-xl">{t("prodMargin.title")}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{t("prodMargin.subtitle")}</p>
-        </div>
-        <DateRangeFilter />
-      </div>
+      <DateRangeFilter />
 
-      {loading || !report || !summary ? (
+      {loading || !report || !summary || !partyTotals ? (
         <div className="flex justify-center py-16">
           <Loader2 className="size-6 animate-spin text-primary" />
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {[
+          {(() => {
+            type StatCard = {
+              label: string;
+              value: string;
+              hint?: string;
+              hints?: string[];
+              money?: string;
+              accent: string;
+              fill?: "hub" | "drum";
+              boldLabel?: boolean;
+              tone?: "profit" | "loss";
+            };
+
+            function renderStatCards(stats: StatCard[]) {
+              return (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  {stats.map((stat) => {
+                    const isDrumFill = stat.fill === "drum";
+                    const cardFill =
+                      stat.fill === "hub"
+                        ? "border-sky-700/40 bg-sky-600 text-white"
+                        : isDrumFill
+                          ? "border-yellow-600/40 bg-yellow-500 text-yellow-950"
+                          : stat.tone === "profit"
+                            ? "border-emerald-600/40 bg-emerald-600 text-white"
+                            : stat.tone === "loss"
+                              ? "border-red-600/40 bg-red-600 text-white"
+                              : "";
+                    const onFill = Boolean(cardFill);
+                    const fillText = isDrumFill ? "text-yellow-950" : "text-white";
+                    const fillMuted = isDrumFill ? "text-yellow-950/80" : "text-white/90";
+                    return (
+                      <Card
+                        key={stat.label}
+                        className={cn("relative overflow-hidden py-0", cardFill)}
+                      >
+                        {!cardFill ? (
+                          <span
+                            className={`absolute inset-x-0 top-0 h-1 ${stat.accent}`}
+                            aria-hidden
+                          />
+                        ) : null}
+                        <CardContent className="p-5">
+                          <p
+                            className={cn(
+                              "font-data text-[10px] tracking-[0.15em] uppercase",
+                              onFill
+                                ? cn("text-sm font-bold tracking-[0.18em]", fillText)
+                                : "text-muted-foreground",
+                              !onFill &&
+                                stat.boldLabel &&
+                                "text-sm font-bold tracking-[0.2em]"
+                            )}
+                          >
+                            {stat.label}
+                          </p>
+                          <p
+                            className={cn(
+                              "font-data mt-2 text-2xl",
+                              onFill ? cn("font-bold", fillText) : "font-medium"
+                            )}
+                          >
+                            {stat.value}
+                          </p>
+                          {(stat.hints?.length ? stat.hints : stat.hint ? [stat.hint] : []).map(
+                            (line) => (
+                              <p
+                                key={line}
+                                className={cn(
+                                  "mt-1 text-xs",
+                                  onFill
+                                    ? cn("font-semibold", fillMuted)
+                                    : "text-muted-foreground"
+                                )}
+                              >
+                                {line}
+                              </p>
+                            )
+                          )}
+                          {stat.money ? (
+                            <p
+                              className={cn(
+                                "font-data mt-0.5 text-sm tabular-nums",
+                                onFill ? cn("font-bold", fillText) : "font-medium"
+                              )}
+                            >
+                              {stat.money}
+                            </p>
+                          ) : null}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              );
+            }
+
+            const overviewStats: StatCard[] = [
               {
                 label: t("prodMargin.pieces"),
                 value: String(summary.pieces),
-                hint: t("prodMargin.piecesHint"),
+                hints: [
+                  `${t("prodMargin.hubLine")} ${report.byFamily.hub.pieces}`,
+                  `${t("prodMargin.drumLine")} ${report.byFamily.drum.pieces}`,
+                ],
                 accent: "bg-chart-1",
               },
               {
@@ -520,59 +707,11 @@ export default function ProductionMarginPage() {
               },
               {
                 label: t("prodMargin.materialUsed"),
-                value: formatMoney(report.purchasedVsUsed?.used.totalAmount ?? summary.materialCost),
+                value: formatMoney(
+                  report.purchasedVsUsed?.used.totalAmount ?? summary.materialCost
+                ),
                 hint: `${formatKg(report.purchasedVsUsed?.used.totalKg ?? summary.scrapKg + summary.daigKg)} · ${t("prodMargin.usedHint")}`,
                 accent: "bg-chart-5",
-              },
-              {
-                label: t("prodMargin.ikHubCostKg"),
-                value:
-                  report.channelManufacture?.ikEngineering.hub.totalPerKg != null
-                    ? formatMoney(report.channelManufacture.ikEngineering.hub.totalPerKg)
-                    : summary.hubCostPerKg != null
-                      ? formatMoney(summary.hubCostPerKg)
-                      : "—",
-                hint: `${formatKg(summary.hubFinishedKg ?? 0)} · ${t("prodMargin.ikCostHint")}`,
-                accent: "bg-sky-600",
-              },
-              {
-                label: t("prodMargin.ikDrumCostKg"),
-                value:
-                  report.channelManufacture?.ikEngineering.drum.totalPerKg != null
-                    ? formatMoney(report.channelManufacture.ikEngineering.drum.totalPerKg)
-                    : summary.drumCostPerKg != null
-                      ? formatMoney(summary.drumCostPerKg)
-                      : "—",
-                hint: `${formatKg(summary.drumFinishedKg ?? 0)} · ${t("prodMargin.ikCostHint")}`,
-                accent: "bg-amber-600",
-              },
-              {
-                label: t("prodMargin.hubOverheadPerKg"),
-                value:
-                  report.channelManufacture?.ikEngineering.hub
-                    ? formatMoney(
-                        (report.channelManufacture.ikEngineering.hub.salariesPerKg || 0) +
-                          (report.channelManufacture.ikEngineering.hub.mfgExpensesPerKg || 0)
-                      )
-                    : summary.hubOverheadPerKg != null
-                      ? formatMoney(summary.hubOverheadPerKg)
-                      : "—",
-                hint: t("prodMargin.overheadPerKgHint"),
-                accent: "bg-sky-500",
-              },
-              {
-                label: t("prodMargin.drumOverheadPerKg"),
-                value:
-                  report.channelManufacture?.ikEngineering.drum
-                    ? formatMoney(
-                        (report.channelManufacture.ikEngineering.drum.salariesPerKg || 0) +
-                          (report.channelManufacture.ikEngineering.drum.mfgExpensesPerKg || 0)
-                      )
-                    : summary.drumOverheadPerKg != null
-                      ? formatMoney(summary.drumOverheadPerKg)
-                      : "—",
-                hint: t("prodMargin.overheadPerKgHint"),
-                accent: "bg-amber-500",
               },
               {
                 label: t("prodMargin.salesChargesKg"),
@@ -583,25 +722,13 @@ export default function ProductionMarginPage() {
                 hint: report.channelManufacture?.powerEngineering.salesmanLoad
                   ? `${formatMoney(report.channelManufacture.powerEngineering.salesmanLoad)} · ${t("prodMargin.salesChargesHint")}`
                   : t("prodMargin.salesChargesHint"),
-                accent: "bg-amber-400",
+                accent: "bg-chart-4",
               },
               {
-                label: t("prodMargin.peHubCostKg"),
-                value:
-                  report.channelManufacture?.powerEngineering.hub.totalPerKg != null
-                    ? formatMoney(report.channelManufacture.powerEngineering.hub.totalPerKg)
-                    : "—",
-                hint: t("prodMargin.peCostHint"),
-                accent: "bg-orange-600",
-              },
-              {
-                label: t("prodMargin.peDrumCostKg"),
-                value:
-                  report.channelManufacture?.powerEngineering.drum.totalPerKg != null
-                    ? formatMoney(report.channelManufacture.powerEngineering.drum.totalPerKg)
-                    : "—",
-                hint: t("prodMargin.peCostHint"),
-                accent: "bg-orange-500",
+                label: t("prodMargin.electricityCharges"),
+                value: formatMoney(summary.overheadPools?.electricity ?? 0),
+                hint: t("prodMargin.electricityPeriodHint"),
+                accent: "bg-chart-2",
               },
               {
                 label: t("prodMargin.mfgCost"),
@@ -619,251 +746,416 @@ export default function ProductionMarginPage() {
                 accent: "bg-chart-3",
               },
               {
-                label: t("prodMargin.hubSalePl"),
-                value: formatMoney(report.byFamily?.hub?.profit ?? 0),
+                label: t("partyMargin.hubProfit"),
+                value: formatMoney(partyTotals.hubProfit),
                 hint:
-                  (report.byFamily?.hub?.finishedKg ?? 0) > 0
-                    ? formatMoney(
-                        (report.byFamily.hub.profit || 0) /
-                          (report.byFamily.hub.finishedKg || 1)
-                      )
+                  partyTotals.hubProfitPerKg != null
+                    ? formatMoney(partyTotals.hubProfitPerKg)
                     : "—",
-                accent: "bg-chart-3",
-                tone: (report.byFamily?.hub?.profit ?? 0) < 0 ? ("loss" as const) : ("profit" as const),
+                accent: partyTotals.hubProfit < 0 ? "bg-destructive" : "bg-chart-3",
+                boldLabel: true,
+                tone: partyTotals.hubProfit < 0 ? "loss" : "profit",
               },
               {
-                label: t("prodMargin.drumSalePl"),
-                value: formatMoney(report.byFamily?.drum?.profit ?? 0),
+                label: t("partyMargin.drumProfit"),
+                value: formatMoney(partyTotals.drumProfit),
                 hint:
-                  (report.byFamily?.drum?.finishedKg ?? 0) > 0
-                    ? formatMoney(
-                        (report.byFamily.drum.profit || 0) /
-                          (report.byFamily.drum.finishedKg || 1)
-                      )
+                  partyTotals.drumProfitPerKg != null
+                    ? formatMoney(partyTotals.drumProfitPerKg)
                     : "—",
-                accent: "bg-chart-3",
-                tone: (report.byFamily?.drum?.profit ?? 0) < 0 ? ("loss" as const) : ("profit" as const),
+                accent: partyTotals.drumProfit < 0 ? "bg-destructive" : "bg-chart-3",
+                boldLabel: true,
+                tone: partyTotals.drumProfit < 0 ? "loss" : "profit",
               },
               {
-                label: t("prodMargin.netProfit"),
-                value: formatMoney(summary.profit),
-                hint: t("prodMargin.sellMinusCost"),
+                label: isProfit ? t("partyMargin.totalProfit") : t("partyMargin.totalLoss"),
+                value: formatMoney(partyTotals.profit),
+                hint:
+                  partyTotals.profitPerKg != null
+                    ? formatMoney(partyTotals.profitPerKg)
+                    : "—",
                 accent: isProfit ? "bg-chart-3" : "bg-destructive",
-                tone: isProfit ? ("profit" as const) : ("loss" as const),
+                boldLabel: true,
+                tone: isProfit ? "profit" : "loss",
               },
-            ].map((stat) => (
-              <Card
-                key={stat.label}
-                className={cn(
-                  "relative overflow-hidden py-0",
-                  "tone" in stat &&
-                    stat.tone === "profit" &&
-                    "border-emerald-600/40 bg-emerald-600 text-white",
-                  "tone" in stat &&
-                    stat.tone === "loss" &&
-                    "border-red-600/40 bg-red-600 text-white"
-                )}
-              >
-                {"tone" in stat && stat.tone ? null : (
-                  <span className={`absolute inset-x-0 top-0 h-1 ${stat.accent}`} aria-hidden />
-                )}
-                <CardContent className="p-5">
-                  <p
-                    className={cn(
-                      "font-data text-[10px] tracking-[0.15em] uppercase",
-                      "tone" in stat && stat.tone
-                        ? "text-white/80"
-                        : "text-muted-foreground"
-                    )}
-                  >
-                    {stat.label}
-                  </p>
-                  <p className="font-data mt-2 text-2xl font-medium">{stat.value}</p>
-                  <p
-                    className={cn(
-                      "mt-1 text-xs",
-                      "tone" in stat && stat.tone ? "text-white/75" : "text-muted-foreground"
-                    )}
-                  >
-                    {stat.hint}
-                  </p>
-                  {"money" in stat && stat.money ? (
-                    <p className="font-data mt-0.5 text-sm font-medium tabular-nums">
-                      {stat.money}
-                    </p>
-                  ) : null}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+            ];
+
+            const hubStats: StatCard[] = [
+              {
+                label: t("prodMargin.hubSaleKg"),
+                value: salePerKg.hub != null ? formatMoney(salePerKg.hub) : "—",
+                hint: `${formatKg(partyTotals.hubKg)} · ${t("prodMargin.saleKgHint")}`,
+                accent: "bg-sky-600",
+                fill: "hub",
+              },
+              {
+                label: t("prodMargin.ikHubCostKg"),
+                value:
+                  report.channelManufacture?.ikEngineering.hub.totalPerKg != null
+                    ? formatMoney(report.channelManufacture.ikEngineering.hub.totalPerKg)
+                    : summary.hubCostPerKg != null
+                      ? formatMoney(summary.hubCostPerKg)
+                      : "—",
+                hint: `${formatKg(summary.hubFinishedKg ?? 0)} · ${t("prodMargin.ikCostHint")}`,
+                accent: "bg-sky-600",
+                fill: "hub",
+              },
+              {
+                label: t("prodMargin.hubOverheadPerKg"),
+                value:
+                  report.channelManufacture?.ikEngineering.hub
+                    ? formatMoney(
+                        (report.channelManufacture.ikEngineering.hub.salariesPerKg || 0) +
+                          (report.channelManufacture.ikEngineering.hub.mfgExpensesPerKg || 0)
+                      )
+                    : summary.hubOverheadPerKg != null
+                      ? formatMoney(summary.hubOverheadPerKg)
+                      : "—",
+                hint: t("prodMargin.overheadPerKgHint"),
+                accent: "bg-sky-500",
+                fill: "hub",
+              },
+              {
+                label: t("prodMargin.rawMaterialKg"),
+                value:
+                  report.channelManufacture?.ikEngineering?.hub?.materialPerKg != null
+                    ? formatMoney(report.channelManufacture.ikEngineering.hub.materialPerKg)
+                    : report.byFamily.hub.finishedKg
+                      ? formatMoney(
+                          report.byFamily.hub.materialCost / report.byFamily.hub.finishedKg
+                        )
+                      : "—",
+                hint: `${formatKg(summary.hubFinishedKg ?? 0)} · ${t("prodMargin.scrapPlusDaig")}`,
+                accent: "bg-sky-500",
+                fill: "hub",
+              },
+              {
+                label: t("prodMargin.peHubCostKg"),
+                value:
+                  report.channelManufacture?.powerEngineering.hub.totalPerKg != null
+                    ? formatMoney(report.channelManufacture.powerEngineering.hub.totalPerKg)
+                    : "—",
+                hint: t("prodMargin.peCostHint"),
+                accent: "bg-sky-700",
+                fill: "hub",
+              },
+              {
+                label: t("prodMargin.ikHubSaleKg"),
+                value: salePerKg.ikHub != null ? formatMoney(salePerKg.ikHub) : "—",
+                hint: `${formatKg(partyTotals.direct.hubKg)} · ${t("prodMargin.channelIk")}`,
+                accent: "bg-sky-500",
+                fill: "hub",
+              },
+              {
+                label: t("prodMargin.peHubSaleKg"),
+                value: salePerKg.peHub != null ? formatMoney(salePerKg.peHub) : "—",
+                hint: `${formatKg(partyTotals.salesman.hubKg)} · ${t("prodMargin.channelPower")}`,
+                accent: "bg-sky-700",
+                fill: "hub",
+              },
+            ];
+
+            const drumStats: StatCard[] = [
+              {
+                label: t("prodMargin.drumSaleKg"),
+                value: salePerKg.drum != null ? formatMoney(salePerKg.drum) : "—",
+                hint: `${formatKg(partyTotals.drumKg)} · ${t("prodMargin.saleKgHint")}`,
+                accent: "bg-yellow-500",
+                fill: "drum",
+              },
+              {
+                label: t("prodMargin.ikDrumCostKg"),
+                value:
+                  report.channelManufacture?.ikEngineering.drum.totalPerKg != null
+                    ? formatMoney(report.channelManufacture.ikEngineering.drum.totalPerKg)
+                    : summary.drumCostPerKg != null
+                      ? formatMoney(summary.drumCostPerKg)
+                      : "—",
+                hint: `${formatKg(summary.drumFinishedKg ?? 0)} · ${t("prodMargin.ikCostHint")}`,
+                accent: "bg-yellow-500",
+                fill: "drum",
+              },
+              {
+                label: t("prodMargin.drumOverheadPerKg"),
+                value:
+                  report.channelManufacture?.ikEngineering.drum
+                    ? formatMoney(
+                        (report.channelManufacture.ikEngineering.drum.salariesPerKg || 0) +
+                          (report.channelManufacture.ikEngineering.drum.mfgExpensesPerKg || 0)
+                      )
+                    : summary.drumOverheadPerKg != null
+                      ? formatMoney(summary.drumOverheadPerKg)
+                      : "—",
+                hint: t("prodMargin.overheadPerKgHint"),
+                accent: "bg-yellow-500",
+                fill: "drum",
+              },
+              {
+                label: t("prodMargin.rawMaterialKg"),
+                value:
+                  report.channelManufacture?.ikEngineering?.drum?.materialPerKg != null
+                    ? formatMoney(report.channelManufacture.ikEngineering.drum.materialPerKg)
+                    : report.byFamily.drum.finishedKg
+                      ? formatMoney(
+                          report.byFamily.drum.materialCost / report.byFamily.drum.finishedKg
+                        )
+                      : "—",
+                hint: `${formatKg(summary.drumFinishedKg ?? 0)} · ${t("prodMargin.scrapPlusDaig")}`,
+                accent: "bg-yellow-500",
+                fill: "drum",
+              },
+              {
+                label: t("prodMargin.peDrumCostKg"),
+                value:
+                  report.channelManufacture?.powerEngineering.drum.totalPerKg != null
+                    ? formatMoney(report.channelManufacture.powerEngineering.drum.totalPerKg)
+                    : "—",
+                hint: t("prodMargin.peCostHint"),
+                accent: "bg-yellow-600",
+                fill: "drum",
+              },
+              {
+                label: t("prodMargin.ikDrumSaleKg"),
+                value: salePerKg.ikDrum != null ? formatMoney(salePerKg.ikDrum) : "—",
+                hint: `${formatKg(partyTotals.direct.drumKg)} · ${t("prodMargin.channelIk")}`,
+                accent: "bg-yellow-500",
+                fill: "drum",
+              },
+              {
+                label: t("prodMargin.peDrumSaleKg"),
+                value: salePerKg.peDrum != null ? formatMoney(salePerKg.peDrum) : "—",
+                hint: `${formatKg(partyTotals.salesman.drumKg)} · ${t("prodMargin.channelPower")}`,
+                accent: "bg-yellow-600",
+                fill: "drum",
+              },
+            ];
+
+            return (
+              <div className="flex flex-col gap-6">
+                {renderStatCards(overviewStats)}
+
+                <div className="flex flex-col gap-3">
+                  <h2 className="text-nameplate text-sm font-bold text-sky-700 dark:text-sky-400">
+                    {t("prodMargin.hub")}
+                  </h2>
+                  {renderStatCards(hubStats)}
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  <h2 className="text-nameplate text-sm font-bold text-yellow-600 dark:text-yellow-400">
+                    {t("prodMargin.drum")}
+                  </h2>
+                  {renderStatCards(drumStats)}
+                </div>
+              </div>
+            );
+          })()}
 
           {report.channelManufacture ? (
             <div className="flex flex-col gap-3">
-              <div>
-                <h2 className="text-nameplate text-sm">{t("prodMargin.channelMfgTitle")}</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {t("prodMargin.channelMfgDesc")}
-                </p>
-              </div>
-              <div className="grid gap-4 lg:grid-cols-2">
-                {(
-                  [
-                    {
-                      key: "ik" as const,
-                      title: t("prodMargin.channelIk"),
-                      data: report.channelManufacture.ikEngineering,
-                      accent: "border-sky-500/40",
-                      showAddOn: false,
-                    },
-                    {
-                      key: "power" as const,
-                      title: t("prodMargin.channelPower"),
-                      data: report.channelManufacture.powerEngineering,
-                      accent: "border-amber-500/40",
-                      showAddOn: true,
-                    },
-                  ] as const
-                ).map((channel) => (
-                  <Card key={channel.key} className={`border ${channel.accent}`}>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-nameplate text-sm">{channel.title}</CardTitle>
-                      {channel.showAddOn &&
-                      "salesmanLoad" in channel.data &&
-                      channel.data.salesmanLoad > 0 ? (
-                        <CardDescription>
-                          {t("prodMargin.salesmanAddOnKg")}:{" "}
-                          {formatMoney(channel.data.salesmanAddOnPerKg)} ·{" "}
-                          {formatMoney(channel.data.salesmanLoad)}
-                          {"salesmanSoldKg" in channel.data &&
-                          channel.data.salesmanSoldKg
-                            ? ` · ${formatKg(channel.data.salesmanSoldKg)}`
-                            : ""}
-                        </CardDescription>
-                      ) : null}
-                    </CardHeader>
-                    <CardContent className="grid gap-4 sm:grid-cols-2">
-                      {(
-                        [
-                          { fam: "hub" as const, label: t("prodMargin.hubLine") },
-                          { fam: "drum" as const, label: t("prodMargin.drumLine") },
-                        ] as const
-                      ).map((col) => {
-                        const line = channel.data[col.fam];
-                        return (
-                          <div
-                            key={col.fam}
-                            className="rounded-md border bg-muted/20 p-3 text-sm"
-                          >
-                            <p className="font-data mb-2 text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
-                              {col.label}
-                            </p>
-                            <div className="flex flex-col gap-1.5">
-                              <div className="flex justify-between gap-2">
-                                <span className="text-muted-foreground">
-                                  {t("prodMargin.rawMaterialKg")}
-                                </span>
-                                <span className="font-data">
-                                  {line.materialPerKg != null
-                                    ? formatMoney(line.materialPerKg)
-                                    : "—"}
-                                </span>
-                              </div>
+              <h2 className="text-nameplate text-sm">{t("prodMargin.channelMfgTitle")}</h2>
+              {(() => {
+                const factory = report.channelManufacture.ikEngineering;
+                const power = report.channelManufacture.powerEngineering;
+                const families = [
+                  { fam: "hub" as const, label: t("prodMargin.hubLine") },
+                  { fam: "drum" as const, label: t("prodMargin.drumLine") },
+                ];
+                const moneyOrDash = (value: number | null | undefined) =>
+                  value != null ? formatMoney(value) : "—";
 
-                              {(line.expenseLines?.length || 0) > 0 ? (
-                                <>
-                                  <p className="font-data mt-1 text-[10px] tracking-[0.1em] text-muted-foreground uppercase">
-                                    {t("prodMargin.mfgExpensesKg")}
-                                  </p>
-                                  {line.expenseLines!.map((e) => (
-                                    <div
-                                      key={e.id}
-                                      className="flex justify-between gap-2 pl-2"
+                return (
+                  <>
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-nameplate text-sm">
+                          {t("prodMargin.factoryCostKg")}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="grid gap-4 sm:grid-cols-2">
+                        {families.map((col) => {
+                          const line = factory[col.fam];
+                          const isDrum = col.fam === "drum";
+                          const panelFill = isDrum
+                            ? "border-yellow-600/40 bg-yellow-500 text-yellow-950"
+                            : "border-sky-700/40 bg-sky-600 text-white";
+                          const muted = isDrum
+                            ? "font-semibold text-yellow-950"
+                            : "font-semibold text-white";
+                          const value = isDrum
+                            ? "font-bold text-yellow-950"
+                            : "font-bold text-white";
+                          const rule = isDrum ? "border-yellow-950/30" : "border-white/30";
+                          return (
+                            <div
+                              key={col.fam}
+                              className={cn("rounded-md border p-3 text-sm", panelFill)}
+                            >
+                              <p
+                                className={cn(
+                                  "font-data mb-2 text-[10px] tracking-[0.12em] uppercase",
+                                  muted
+                                )}
+                              >
+                                {col.label}
+                              </p>
+                              <div className="flex flex-col gap-1.5">
+                                <div className="flex justify-between gap-2">
+                                  <span className={muted}>{t("prodMargin.rawMaterialKg")}</span>
+                                  <span className={cn("font-data", value)}>
+                                    {moneyOrDash(line.materialPerKg)}
+                                  </span>
+                                </div>
+
+                                {(line.expenseLines?.length || 0) > 0 ? (
+                                  <>
+                                    <p
+                                      className={cn(
+                                        "font-data mt-1 text-[10px] tracking-[0.1em] uppercase",
+                                        muted
+                                      )}
                                     >
-                                      <span className="text-muted-foreground">{e.label}</span>
-                                      <span className="font-data">{formatMoney(e.perKg)}</span>
-                                    </div>
-                                  ))}
-                                </>
-                              ) : (
-                                <div className="flex justify-between gap-2">
-                                  <span className="text-muted-foreground">
-                                    {t("prodMargin.mfgExpensesKg")}
-                                  </span>
-                                  <span className="font-data">
-                                    {line.mfgExpensesPerKg != null
-                                      ? formatMoney(line.mfgExpensesPerKg)
-                                      : "—"}
-                                  </span>
-                                </div>
-                              )}
+                                      {t("prodMargin.mfgExpensesKg")}
+                                    </p>
+                                    {line.expenseLines!.map((e) => (
+                                      <div
+                                        key={e.id}
+                                        className="flex justify-between gap-2 pl-2"
+                                      >
+                                        <span className={muted}>{e.label}</span>
+                                        <span className={cn("font-data", value)}>
+                                          {formatMoney(e.perKg)}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </>
+                                ) : (
+                                  <div className="flex justify-between gap-2">
+                                    <span className={muted}>{t("prodMargin.mfgExpensesKg")}</span>
+                                    <span className={cn("font-data", value)}>
+                                      {moneyOrDash(line.mfgExpensesPerKg)}
+                                    </span>
+                                  </div>
+                                )}
 
-                              {(line.salaryLines?.length || 0) > 0 ? (
-                                <>
-                                  <p className="font-data mt-1 text-[10px] tracking-[0.1em] text-muted-foreground uppercase">
-                                    {t("prodMargin.salariesKg")}
-                                  </p>
-                                  {line.salaryLines!.map((e) => (
-                                    <div
-                                      key={e.id}
-                                      className="flex justify-between gap-2 pl-2"
+                                {(line.salaryLines?.length || 0) > 0 ? (
+                                  <>
+                                    <p
+                                      className={cn(
+                                        "font-data mt-1 text-[10px] tracking-[0.1em] uppercase",
+                                        muted
+                                      )}
                                     >
-                                      <span className="text-muted-foreground">{e.label}</span>
-                                      <span className="font-data">{formatMoney(e.perKg)}</span>
-                                    </div>
-                                  ))}
-                                </>
-                              ) : (
-                                <div className="flex justify-between gap-2">
-                                  <span className="text-muted-foreground">
-                                    {t("prodMargin.salariesKg")}
-                                  </span>
-                                  <span className="font-data">
-                                    {line.salariesPerKg != null
-                                      ? formatMoney(line.salariesPerKg)
-                                      : "—"}
-                                  </span>
-                                </div>
-                              )}
+                                      {t("prodMargin.salariesKg")}
+                                    </p>
+                                    {line.salaryLines!.map((e) => (
+                                      <div
+                                        key={e.id}
+                                        className="flex justify-between gap-2 pl-2"
+                                      >
+                                        <span className={muted}>{e.label}</span>
+                                        <span className={cn("font-data", value)}>
+                                          {formatMoney(e.perKg)}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </>
+                                ) : (
+                                  <div className="flex justify-between gap-2">
+                                    <span className={muted}>{t("prodMargin.salariesKg")}</span>
+                                    <span className={cn("font-data", value)}>
+                                      {moneyOrDash(line.salariesPerKg)}
+                                    </span>
+                                  </div>
+                                )}
 
-                              {channel.showAddOn ? (
-                                <div className="flex justify-between gap-2">
-                                  <span className="text-muted-foreground">
-                                    {t("prodMargin.salesmanAddOnKg")}
-                                  </span>
+                                <div
+                                  className={cn(
+                                    "mt-1 flex justify-between gap-2 border-t pt-1.5 font-bold",
+                                    rule,
+                                    value
+                                  )}
+                                >
+                                  <span>{t("prodMargin.totalMfgKg")}</span>
                                   <span className="font-data">
-                                    {formatMoney(line.salesmanAddOnPerKg || 0)}
+                                    {moneyOrDash(line.totalPerKg)}
                                   </span>
                                 </div>
-                              ) : null}
-                              <div className="mt-1 flex justify-between gap-2 border-t pt-1.5 font-semibold">
-                                <span>{t("prodMargin.totalMfgKg")}</span>
-                                <span className="font-data">
-                                  {line.totalPerKg != null
-                                    ? formatMoney(line.totalPerKg)
-                                    : "—"}
-                                </span>
                               </div>
                             </div>
-                          </div>
-                        );
-                      })}
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+                          );
+                        })}
+                      </CardContent>
+                    </Card>
+
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <div className="rounded-md border border-sky-500/40 bg-muted/20 p-3 text-sm">
+                        <p className="text-nameplate text-sm">{t("prodMargin.channelIk")}</p>
+                        <div className="mt-2 flex flex-col gap-1.5">
+                          {families.map((col) => (
+                            <div key={col.fam} className="flex justify-between gap-2">
+                              <span className="text-muted-foreground">{col.label}</span>
+                              <span className="font-data">
+                                {factory[col.fam].totalPerKg != null
+                                  ? `${formatMoney(factory[col.fam].totalPerKg)} / kg`
+                                  : "—"}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="rounded-md border bg-muted/20 p-3 text-sm">
+                        <p className="text-nameplate text-sm">{t("prodMargin.salesmanAddOnKg")}</p>
+                        <p className="font-data mt-2 text-lg">
+                          {formatMoney(power.salesmanAddOnPerKg)}
+                        </p>
+                        {power.salesmanLoad > 0 ? (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {formatMoney(power.salesmanLoad)}
+                            {power.salesmanSoldKg
+                              ? ` · ${formatKg(power.salesmanSoldKg)}`
+                              : ""}
+                          </p>
+                        ) : null}
+                      </div>
+
+                      <div className="rounded-md border border-yellow-500/40 bg-muted/20 p-3 text-sm">
+                        <p className="text-nameplate text-sm">{t("prodMargin.channelPower")}</p>
+                        <div className="mt-2 flex flex-col gap-1.5">
+                          {families.map((col) => (
+                            <div key={col.fam} className="flex justify-between gap-2">
+                              <span className="text-muted-foreground">{col.label}</span>
+                              <span className="font-data">
+                                {power[col.fam].totalPerKg != null
+                                  ? `${formatMoney(power[col.fam].totalPerKg)} / kg`
+                                  : "—"}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           ) : null}
+
+          <ChargesCalculator dateFrom={dateFrom} dateTo={dateTo} />
 
           <div className="grid gap-4 lg:grid-cols-2">
             <FamilyCard
               title={t("prodMargin.hubSummary")}
               data={report.byFamily.hub}
               labels={familyLabels}
+              variant="hub"
             />
             <FamilyCard
               title={t("prodMargin.drumSummary")}
               data={report.byFamily.drum}
               labels={familyLabels}
+              variant="drum"
             />
           </div>
 
@@ -984,6 +1276,7 @@ export default function ProductionMarginPage() {
                     <TableRow>
                       <TableHead>{t("common.category")}</TableHead>
                       <TableHead className="text-right">{t("common.amount")}</TableHead>
+                      <TableHead className="text-right">{t("prodMargin.amountPerKg")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -997,8 +1290,11 @@ export default function ProductionMarginPage() {
                               : t("prodMargin.kindOverhead")}
                           </Badge>
                         </TableCell>
-                        <TableCell className="font-data text-right text-xs">
+                        <TableCell className="font-data text-right text-xs font-semibold">
                           {formatMoney(row.amount)}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-xs font-bold">
+                          {row.amountPerKg != null ? formatMoney(row.amountPerKg) : "—"}
                         </TableCell>
                       </TableRow>
                     ))}

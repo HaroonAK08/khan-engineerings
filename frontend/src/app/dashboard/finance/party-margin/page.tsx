@@ -30,38 +30,43 @@ import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 import { cn } from "@/lib/utils";
 
 const headCell =
-  "bg-slate-800 text-white font-semibold whitespace-nowrap border-b-0 shadow-sm dark:bg-slate-900";
+  "sticky top-0 z-20 h-10 bg-slate-800 px-2.5 text-[11px] font-bold tracking-wide text-white uppercase whitespace-nowrap border-b-0 shadow-sm dark:bg-slate-900";
 
-const stickyPartyHead =
-  "sticky left-0 z-30 w-44 min-w-44 max-w-44 bg-slate-800 text-white shadow-[4px_0_8px_-4px_rgba(0,0,0,0.35)] dark:bg-slate-900";
+const stickyPartyHead = cn(
+  headCell,
+  "left-0 z-40 w-44 min-w-44 max-w-44 shadow-[4px_0_12px_-6px_rgba(0,0,0,0.45)]"
+);
 
 const stickyGroupHead = (withParty: boolean) =>
   cn(
-    "sticky z-20 w-40 min-w-40 max-w-40 overflow-hidden bg-slate-800 text-white shadow-[4px_0_8px_-4px_rgba(0,0,0,0.25)] dark:bg-slate-900",
-    withParty ? "left-44" : "left-0"
+    headCell,
+    "z-30 w-40 min-w-40 max-w-40 overflow-hidden shadow-[4px_0_12px_-6px_rgba(0,0,0,0.35)]",
+    withParty ? "left-44" : "left-0 z-40"
   );
 
-const plRowClass = (loss: boolean) =>
+const plRowClass = (loss: boolean, deep = false) =>
   loss
-    ? "bg-red-600 text-white hover:bg-red-600"
-    : "bg-emerald-600 text-white hover:bg-emerald-600";
+    ? deep
+      ? "bg-red-700 text-white hover:bg-red-700"
+      : "bg-red-600 text-white hover:bg-red-600"
+    : deep
+      ? "bg-emerald-700 text-white hover:bg-emerald-700"
+      : "bg-emerald-600 text-white hover:bg-emerald-600";
 
-const stickyPartyCell = (loss: boolean) =>
+const stickyPartyCell = (loss: boolean, deep = false) =>
   cn(
-    "sticky left-0 z-20 w-44 min-w-44 max-w-44 truncate font-medium text-white shadow-[4px_0_8px_-4px_rgba(0,0,0,0.2)]",
-    loss ? "bg-red-600" : "bg-emerald-600"
+    "sticky left-0 z-20 w-44 min-w-44 max-w-44 truncate font-bold text-white shadow-[4px_0_12px_-6px_rgba(0,0,0,0.35)]",
+    loss ? (deep ? "bg-red-700" : "bg-red-600") : deep ? "bg-emerald-700" : "bg-emerald-600"
   );
 
-const stickyGroupCell = (withParty: boolean, loss: boolean, tint?: "profit" | "loss" | "none") =>
+const stickyGroupCell = (withParty: boolean, loss: boolean, deep = false) =>
   cn(
-    "sticky z-10 w-40 min-w-40 max-w-40 overflow-hidden shadow-[4px_0_8px_-4px_rgba(0,0,0,0.15)]",
+    "sticky z-10 w-40 min-w-40 max-w-40 overflow-hidden font-bold text-white shadow-[4px_0_12px_-6px_rgba(0,0,0,0.3)]",
     withParty ? "left-44" : "left-0",
-    tint === "loss" || loss
-      ? "bg-red-600 text-white"
-      : tint === "profit"
-        ? "bg-emerald-600 text-white"
-        : "bg-background"
+    loss ? (deep ? "bg-red-700" : "bg-red-600") : deep ? "bg-emerald-700" : "bg-emerald-600"
   );
+
+const numCell = "font-data px-2.5 py-2.5 text-right text-xs font-bold tabular-nums text-white";
 
 function moneyOrDash(n: number | null | undefined) {
   return n == null ? "—" : formatMoney(n);
@@ -169,8 +174,8 @@ function PlCell({
     <>
       <TableCell
         className={cn(
-          "font-data text-right text-xs font-semibold",
-          solid ? "text-white" : loss ? "text-destructive" : "text-chart-3"
+          numCell,
+          !solid && (loss ? "text-destructive" : "text-chart-3")
         )}
       >
         {formatMoney(value)}
@@ -178,8 +183,8 @@ function PlCell({
       {perKgValue !== undefined ? (
         <TableCell
           className={cn(
-            "font-data text-right text-xs",
-            solid ? "text-white/90" : loss ? "text-destructive" : "text-chart-3"
+            numCell,
+            solid ? "text-white" : loss ? "text-destructive" : "text-chart-3"
           )}
         >
           {moneyOrDash(perKgValue)}
@@ -192,83 +197,57 @@ function PlCell({
 function RowCells({
   row,
   showParty,
-  strong,
+  deep,
 }: {
   row: PartySalesMarginParty & { partyCount?: number };
   showParty: boolean;
-  strong?: boolean;
+  deep?: boolean;
 }) {
   const loss = row.profit < 0;
-  const groupTint: "profit" | "loss" | "none" = loss ? "loss" : "profit";
   return (
     <>
       {showParty ? (
-        <TableCell className={stickyPartyCell(loss)}>{row.partyName}</TableCell>
+        <TableCell className={stickyPartyCell(loss, deep)}>{row.partyName}</TableCell>
       ) : null}
-      <TableCell className={stickyGroupCell(showParty, loss, groupTint)}>
+      <TableCell className={stickyGroupCell(showParty, loss, deep)}>
         <div className="flex min-w-0 max-w-full items-center gap-1.5 overflow-hidden">
-          <span
-            className={cn("min-w-0 truncate", strong && "font-semibold")}
-            title={row.groupName}
-          >
+          <span className="min-w-0 truncate font-bold" title={row.groupName}>
             {row.groupName}
           </span>
           <Badge
             variant="secondary"
             className={cn(
-              "font-data shrink-0 border-white/30 bg-white/20 text-[9px] text-white",
-              row.salesmanChannel ? "border-amber-200/50 bg-amber-300/30" : "border-sky-200/50 bg-sky-300/30"
+              "font-data shrink-0 border-white/40 bg-white/25 text-[9px] font-bold text-white",
+              row.salesmanChannel
+                ? "border-amber-200/60 bg-amber-300/35"
+                : "border-sky-200/60 bg-sky-300/35"
             )}
           >
             {row.salesmanChannel ? "PE" : "IK"}
           </Badge>
           {row.partyCount != null ? (
-            <span className="shrink-0 text-xs text-white/80">· {row.partyCount}</span>
+            <span className="shrink-0 text-xs font-semibold text-white">· {row.partyCount}</span>
           ) : null}
         </div>
       </TableCell>
-      <TableCell className={cn("font-data text-right text-xs", strong && "font-semibold")}>
-        {row.hubQty ?? 0}
-      </TableCell>
-      <TableCell className={cn("font-data text-right text-xs", strong && "font-semibold")}>
-        {row.drumQty ?? 0}
-      </TableCell>
-      <TableCell className={cn("font-data text-right text-xs", strong && "font-semibold")}>
-        {row.totalQty ?? 0}
-      </TableCell>
-      <TableCell className={cn("font-data text-right text-xs", strong && "font-semibold")}>
-        {formatKg(row.hubKg)}
-      </TableCell>
-      <TableCell className={cn("font-data text-right text-xs", strong && "font-semibold")}>
-        {formatKg(row.drumKg)}
-      </TableCell>
-      <TableCell className={cn("font-data text-right text-xs", strong && "font-semibold")}>
-        {formatKg(row.totalKg)}
-      </TableCell>
-      <TableCell className={cn("font-data text-right text-xs", strong && "font-semibold")}>
-        {formatMoney(row.hubSale)}
-      </TableCell>
-      <TableCell className={cn("font-data text-right text-xs", strong && "font-semibold")}>
-        {formatMoney(row.drumSale)}
-      </TableCell>
-      <TableCell className={cn("font-data text-right text-xs", strong && "font-semibold")}>
-        {formatMoney(row.totalSale)}
-      </TableCell>
-      <TableCell className="font-data text-right text-xs">{moneyOrDash(row.hubSalePerKg)}</TableCell>
-      <TableCell className="font-data text-right text-xs">{moneyOrDash(row.drumSalePerKg)}</TableCell>
-      <TableCell className="font-data text-right text-xs">{moneyOrDash(row.avgSalePerKg)}</TableCell>
-      <TableCell className="font-data text-right text-xs">{moneyOrDash(row.hubMfgPerKg)}</TableCell>
-      <TableCell className="font-data text-right text-xs">{moneyOrDash(row.drumMfgPerKg)}</TableCell>
-      <TableCell className="font-data text-right text-xs">{moneyOrDash(row.avgMfgPerKg)}</TableCell>
-      <TableCell className={cn("font-data text-right text-xs", strong && "font-semibold")}>
-        {formatMoney(row.hubMfg)}
-      </TableCell>
-      <TableCell className={cn("font-data text-right text-xs", strong && "font-semibold")}>
-        {formatMoney(row.drumMfg)}
-      </TableCell>
-      <TableCell className={cn("font-data text-right text-xs", strong && "font-semibold")}>
-        {formatMoney(row.totalMfg)}
-      </TableCell>
+      <TableCell className={numCell}>{row.hubQty ?? 0}</TableCell>
+      <TableCell className={numCell}>{row.drumQty ?? 0}</TableCell>
+      <TableCell className={numCell}>{row.totalQty ?? 0}</TableCell>
+      <TableCell className={numCell}>{formatKg(row.hubKg)}</TableCell>
+      <TableCell className={numCell}>{formatKg(row.drumKg)}</TableCell>
+      <TableCell className={numCell}>{formatKg(row.totalKg)}</TableCell>
+      <TableCell className={numCell}>{formatMoney(row.hubSale)}</TableCell>
+      <TableCell className={numCell}>{formatMoney(row.drumSale)}</TableCell>
+      <TableCell className={numCell}>{formatMoney(row.totalSale)}</TableCell>
+      <TableCell className={numCell}>{moneyOrDash(row.hubSalePerKg)}</TableCell>
+      <TableCell className={numCell}>{moneyOrDash(row.drumSalePerKg)}</TableCell>
+      <TableCell className={numCell}>{moneyOrDash(row.avgSalePerKg)}</TableCell>
+      <TableCell className={numCell}>{moneyOrDash(row.hubMfgPerKg)}</TableCell>
+      <TableCell className={numCell}>{moneyOrDash(row.drumMfgPerKg)}</TableCell>
+      <TableCell className={numCell}>{moneyOrDash(row.avgMfgPerKg)}</TableCell>
+      <TableCell className={numCell}>{formatMoney(row.hubMfg)}</TableCell>
+      <TableCell className={numCell}>{formatMoney(row.drumMfg)}</TableCell>
+      <TableCell className={numCell}>{formatMoney(row.totalMfg)}</TableCell>
       <PlCell value={row.hubProfit} perKg={row.hubProfitPerKg} solid />
       <PlCell value={row.drumProfit} perKg={row.drumProfitPerKg} solid />
       <PlCell value={row.profit} perKg={row.profitPerKg} solid />
@@ -422,18 +401,7 @@ export default function PartySalesMarginPage() {
     <div className="flex flex-col gap-6">
       <FinanceSubnav />
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
-            {t("common.financeEyebrow")}
-          </p>
-          <h1 className="text-nameplate text-xl">{t("partyMargin.title")}</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            {t("partyMargin.subtitle")}
-          </p>
-        </div>
-        <DateRangeFilter />
-      </div>
+      <DateRangeFilter />
 
       {loading || !report || !rates || !totals ? (
         <div className="flex justify-center py-16">
@@ -442,73 +410,106 @@ export default function PartySalesMarginPage() {
       ) : (
         <>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {[
-              {
-                label: t("partyMargin.factoryHub"),
-                value: moneyOrDash(rates.hubFactoryCostPerKg),
-              },
-              {
-                label: t("partyMargin.factoryDrum"),
-                value: moneyOrDash(rates.drumFactoryCostPerKg),
-              },
-              {
-                label: t("partyMargin.salesmanHub"),
-                value: moneyOrDash(rates.hubMfgSalesman),
-              },
-              {
-                label: t("partyMargin.salesmanDrum"),
-                value: moneyOrDash(rates.drumMfgSalesman),
-              },
-              {
-                label: t("partyMargin.salesmanLoad"),
-                value: formatMoney(rates.salesmanLoad),
-                hint: `${formatKg(rates.salesmanSoldKg)} · ${t("partyMargin.salesmanPerKg")} ${formatMoney(rates.salesmanPerSoldKg)}`,
-              },
-              {
-                label: t("partyMargin.elecHub"),
-                value: moneyOrDash(report.electricity.hubPerKg),
-              },
-              {
-                label: t("partyMargin.elecDrum"),
-                value: moneyOrDash(report.electricity.drumPerKg),
-              },
-              {
-                label: t("partyMargin.hubProfit"),
-                value: formatMoney(totals.hubProfit),
-                hint: moneyOrDash(totals.hubProfitPerKg),
-                accent: totals.hubProfit < 0 ? "text-destructive" : "text-chart-3",
-              },
-              {
-                label: t("partyMargin.drumProfit"),
-                value: formatMoney(totals.drumProfit),
-                hint: moneyOrDash(totals.drumProfitPerKg),
-                accent: totals.drumProfit < 0 ? "text-destructive" : "text-chart-3",
-              },
-              {
-                label: isProfit ? t("partyMargin.totalProfit") : t("partyMargin.totalLoss"),
-                value: formatMoney(totals.profit),
-                hint: moneyOrDash(totals.profitPerKg),
-                accent: isProfit ? "text-chart-3" : "text-destructive",
-              },
-            ].map((card) => (
+            {(
+              [
+                {
+                  label: t("partyMargin.factoryHub"),
+                  value: moneyOrDash(rates.hubFactoryCostPerKg),
+                  fill: "hub" as const,
+                },
+                {
+                  label: t("partyMargin.factoryDrum"),
+                  value: moneyOrDash(rates.drumFactoryCostPerKg),
+                  fill: "drum" as const,
+                },
+                {
+                  label: t("partyMargin.salesmanHub"),
+                  value: moneyOrDash(rates.hubMfgSalesman),
+                  fill: "hub" as const,
+                },
+                {
+                  label: t("partyMargin.salesmanDrum"),
+                  value: moneyOrDash(rates.drumMfgSalesman),
+                  fill: "drum" as const,
+                },
+                {
+                  label: t("partyMargin.salesmanLoad"),
+                  value: formatMoney(rates.salesmanLoad),
+                  hint: `${formatKg(rates.salesmanSoldKg)} · ${t("partyMargin.salesmanPerKg")} ${formatMoney(rates.salesmanPerSoldKg)}`,
+                },
+                {
+                  label: t("partyMargin.elecHub"),
+                  value: moneyOrDash(report.electricity.hubPerKg),
+                  fill: "hub" as const,
+                },
+                {
+                  label: t("partyMargin.elecDrum"),
+                  value: moneyOrDash(report.electricity.drumPerKg),
+                  fill: "drum" as const,
+                },
+                {
+                  label: t("partyMargin.hubProfit"),
+                  value: formatMoney(totals.hubProfit),
+                  hint: moneyOrDash(totals.hubProfitPerKg),
+                  accent: totals.hubProfit < 0 ? "text-destructive" : "text-chart-3",
+                  boldLabel: true,
+                },
+                {
+                  label: t("partyMargin.drumProfit"),
+                  value: formatMoney(totals.drumProfit),
+                  hint: moneyOrDash(totals.drumProfitPerKg),
+                  accent: totals.drumProfit < 0 ? "text-destructive" : "text-chart-3",
+                  boldLabel: true,
+                },
+                {
+                  label: isProfit ? t("partyMargin.totalProfit") : t("partyMargin.totalLoss"),
+                  value: formatMoney(totals.profit),
+                  hint: moneyOrDash(totals.profitPerKg),
+                  accent: isProfit ? "text-chart-3" : "text-destructive",
+                  boldLabel: true,
+                },
+              ] as Array<{
+                label: string;
+                value: string;
+                hint?: string;
+                hints?: string[];
+                fill?: "hub" | "drum";
+                accent?: string;
+                boldLabel?: boolean;
+              }>
+            ).map((card) => {
+              const isDrumFill = card.fill === "drum";
+              const filled =
+                card.accent?.includes("text-chart-3")
+                  ? "border-emerald-600/40 bg-emerald-600 text-white"
+                  : card.accent?.includes("text-destructive")
+                    ? "border-red-600/40 bg-red-600 text-white"
+                    : card.fill === "hub"
+                      ? "border-sky-700/40 bg-sky-600 text-white"
+                      : isDrumFill
+                        ? "border-yellow-600/40 bg-yellow-500 text-yellow-950"
+                        : "";
+              const fillText = isDrumFill ? "text-yellow-950" : "text-white";
+              const lines = card.hints?.length
+                ? card.hints
+                : card.hint
+                  ? [card.hint]
+                  : [];
+              return (
               <Card
                 key={card.label}
-                className={cn(
-                  "py-0",
-                  card.accent?.includes("text-chart-3") &&
-                    "border-emerald-600/40 bg-emerald-600 text-white",
-                  card.accent?.includes("text-destructive") &&
-                    "border-red-600/40 bg-red-600 text-white"
-                )}
+                className={cn("py-0", filled)}
               >
                 <CardContent className="p-4">
                   <p
                     className={cn(
                       "font-data text-[10px] tracking-[0.12em] uppercase",
-                      card.accent?.includes("text-chart-3") ||
-                        card.accent?.includes("text-destructive")
-                        ? "text-white/80"
-                        : "text-muted-foreground"
+                      filled
+                        ? cn("text-sm font-bold tracking-[0.18em]", fillText)
+                        : "text-muted-foreground",
+                      !filled &&
+                        card.boldLabel &&
+                        "text-sm font-bold tracking-[0.2em]"
                     )}
                   >
                     {card.label}
@@ -516,30 +517,30 @@ export default function PartySalesMarginPage() {
                   <p
                     className={cn(
                       "font-data mt-1 text-xl",
-                      card.accent?.includes("text-chart-3") ||
-                        card.accent?.includes("text-destructive")
-                        ? "text-white"
-                        : card.accent
+                      filled ? cn("font-bold", fillText) : card.accent
                     )}
                   >
                     {card.value}
                   </p>
-                  {card.hint ? (
+                  {lines.map((line) => (
                     <p
+                      key={line}
                       className={cn(
-                        "mt-1 text-xs",
-                        card.accent?.includes("text-chart-3") ||
-                          card.accent?.includes("text-destructive")
-                          ? "text-white/75"
+                        "mt-1 text-xs font-bold",
+                        filled
+                          ? isDrumFill
+                            ? "text-yellow-950"
+                            : "text-white"
                           : "text-muted-foreground"
                       )}
                     >
-                      {card.hint}
+                      {line}
                     </p>
-                  ) : null}
+                  ))}
                 </CardContent>
               </Card>
-            ))}
+              );
+            })}
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
@@ -735,23 +736,28 @@ export default function PartySalesMarginPage() {
 
           <Card className="gap-0 overflow-hidden py-0">
             <CardHeader className="px-4 pt-4 pb-2 sm:px-5">
-              <CardTitle className="text-nameplate text-sm">{t("partyMargin.byGroup")}</CardTitle>
+              <CardTitle className="text-nameplate text-sm font-bold">
+                {t("partyMargin.byGroup")}
+              </CardTitle>
             </CardHeader>
             <CardContent className="px-0 pb-0">
-              <Table containerClassName="max-h-[min(70vh,40rem)] overflow-auto">
+              <Table
+                className="min-w-[1100px] border-separate border-spacing-0"
+                containerClassName="max-h-[min(70vh,40rem)] overflow-auto"
+              >
                 <TableHeader className="sticky top-0 z-40 [&_tr]:border-b-0">
                   <MarginTableHeads showParty={false} />
                 </TableHeader>
                 <TableBody>
                   {powerGroups.length > 0 ? (
                     <>
-                      <TableRow className="hover:bg-amber-500/10">
+                      <TableRow className="hover:bg-muted/40 border-0">
                         <TableCell
                           colSpan={26}
-                          className="sticky left-0 bg-amber-500/15 py-2 text-xs font-semibold tracking-wide text-amber-950 dark:text-amber-100"
+                          className="sticky left-0 bg-muted/50 py-2 text-xs font-bold tracking-wide"
                         >
                           {t("partyMargin.salesman")}
-                          <span className="ml-2 font-normal text-muted-foreground">
+                          <span className="ml-2 font-semibold text-muted-foreground">
                             · {powerGroups.map((g) => g.groupName).join(", ")}
                           </span>
                         </TableCell>
@@ -759,7 +765,7 @@ export default function PartySalesMarginPage() {
                       {powerGroups.map((g) => (
                         <TableRow
                           key={g.groupId || g.groupName}
-                          className={plRowClass(g.profit < 0)}
+                          className={cn("border-0", plRowClass(g.profit < 0))}
                         >
                           <RowCells row={g} showParty={false} />
                         </TableRow>
@@ -767,30 +773,32 @@ export default function PartySalesMarginPage() {
                       {powerAll ? (
                         <TableRow
                           className={cn(
-                            "border-t border-amber-600/30",
-                            powerAll.profit < 0 ? "bg-amber-500/20" : "bg-amber-500/15"
+                            "border-0 border-t-2 border-white/30",
+                            plRowClass(powerAll.profit < 0, true)
                           )}
                         >
-                          <RowCells row={powerAll} showParty={false} strong />
+                          <RowCells row={powerAll} showParty={false} deep />
                         </TableRow>
                       ) : null}
                     </>
                   ) : null}
                   {ikMerged ? (
                     <>
-                      <TableRow className="hover:bg-sky-500/10">
+                      <TableRow className="hover:bg-muted/40 border-0">
                         <TableCell
                           colSpan={26}
-                          className="sticky left-0 bg-sky-500/15 py-2 text-xs font-semibold tracking-wide text-sky-950 dark:text-sky-100"
+                          className="sticky left-0 bg-muted/50 py-2 text-xs font-bold tracking-wide"
                         >
                           {t("partyMargin.direct")}
-                          <span className="ml-2 font-normal text-muted-foreground">
+                          <span className="ml-2 font-semibold text-muted-foreground">
                             · {ikGroups.map((g) => g.groupName).join(", ")}
                           </span>
                         </TableCell>
                       </TableRow>
-                      <TableRow className={plRowClass(ikMerged.profit < 0)}>
-                        <RowCells row={ikMerged} showParty={false} strong />
+                      <TableRow
+                        className={cn("border-0", plRowClass(ikMerged.profit < 0, true))}
+                      >
+                        <RowCells row={ikMerged} showParty={false} deep />
                       </TableRow>
                     </>
                   ) : null}
@@ -802,7 +810,9 @@ export default function PartySalesMarginPage() {
           <Card className="gap-0 overflow-hidden py-0">
             <CardHeader className="gap-3 px-4 pt-4 pb-3 sm:flex-row sm:items-end sm:justify-between sm:px-5">
               <div>
-                <CardTitle className="text-nameplate text-sm">{t("partyMargin.byParty")}</CardTitle>
+                <CardTitle className="text-nameplate text-sm font-bold">
+                  {t("partyMargin.byParty")}
+                </CardTitle>
                 <CardDescription>
                   {parties.length} {t("partyMargin.parties")}
                 </CardDescription>
@@ -841,7 +851,10 @@ export default function PartySalesMarginPage() {
                   {t("partyMargin.noRows")}
                 </p>
               ) : (
-                <Table containerClassName="max-h-[min(75vh,48rem)] overflow-auto">
+                <Table
+                  className="min-w-[1100px] border-separate border-spacing-0"
+                  containerClassName="max-h-[min(75vh,48rem)] overflow-auto"
+                >
                   <TableHeader className="sticky top-0 z-40 [&_tr]:border-b-0">
                     <MarginTableHeads showParty />
                   </TableHeader>
@@ -849,55 +862,57 @@ export default function PartySalesMarginPage() {
                     {parties.map((p) => (
                       <TableRow
                         key={p.partyId}
-                        className={plRowClass(p.profit < 0)}
+                        className={cn("border-0", plRowClass(p.profit < 0))}
                       >
                         <RowCells row={p} showParty />
                       </TableRow>
                     ))}
                   </TableBody>
-                  <TableFooter className="sticky bottom-0 z-30">
-                    <TableRow className="border-t-2 border-slate-800/40 bg-muted/95 font-medium hover:bg-muted/95">
+                  <TableFooter className="sticky bottom-0 z-30 bg-transparent">
+                    <TableRow
+                      className={cn(
+                        "border-0 border-t-2 border-white/30 font-bold",
+                        plRowClass(filteredTotals.profit < 0, true)
+                      )}
+                    >
                       <TableCell
                         colSpan={2}
-                        className="sticky left-0 z-20 w-80 min-w-80 max-w-80 bg-muted font-semibold shadow-[4px_0_8px_-4px_rgba(0,0,0,0.2)]"
+                        className={cn(
+                          "sticky left-0 z-20 w-80 min-w-80 max-w-80 px-2.5 py-3 text-sm font-bold text-white shadow-[4px_0_12px_-6px_rgba(0,0,0,0.35)]",
+                          filteredTotals.profit < 0 ? "bg-red-700" : "bg-emerald-700"
+                        )}
                       >
                         {t("prodMargin.total")}
                       </TableCell>
-                      <TableCell className="font-data bg-muted text-right text-xs">
-                        {filteredTotals.hubQty}
-                      </TableCell>
-                      <TableCell className="font-data bg-muted text-right text-xs">
-                        {filteredTotals.drumQty}
-                      </TableCell>
-                      <TableCell className="font-data bg-muted text-right text-xs">
-                        {filteredTotals.totalQty}
-                      </TableCell>
-                      <TableCell className="font-data bg-muted text-right text-xs">
+                      <TableCell className={numCell}>{filteredTotals.hubQty}</TableCell>
+                      <TableCell className={numCell}>{filteredTotals.drumQty}</TableCell>
+                      <TableCell className={numCell}>{filteredTotals.totalQty}</TableCell>
+                      <TableCell className={numCell}>
                         {formatKg(filteredTotals.hubKg)}
                       </TableCell>
-                      <TableCell className="font-data bg-muted text-right text-xs">
+                      <TableCell className={numCell}>
                         {formatKg(filteredTotals.drumKg)}
                       </TableCell>
-                      <TableCell className="font-data bg-muted text-right text-xs">
+                      <TableCell className={numCell}>
                         {formatKg(filteredTotals.totalKg)}
                       </TableCell>
-                      <TableCell className="font-data bg-muted text-right text-xs">
+                      <TableCell className={numCell}>
                         {formatMoney(filteredTotals.hubSale)}
                       </TableCell>
-                      <TableCell className="font-data bg-muted text-right text-xs">
+                      <TableCell className={numCell}>
                         {formatMoney(filteredTotals.drumSale)}
                       </TableCell>
-                      <TableCell className="font-data bg-muted text-right text-xs">
+                      <TableCell className={numCell}>
                         {formatMoney(filteredTotals.totalSale)}
                       </TableCell>
-                      <TableCell colSpan={6} className="bg-muted" />
-                      <TableCell className="font-data bg-muted text-right text-xs">
+                      <TableCell colSpan={6} className={numCell} />
+                      <TableCell className={numCell}>
                         {formatMoney(filteredTotals.hubMfg)}
                       </TableCell>
-                      <TableCell className="font-data bg-muted text-right text-xs">
+                      <TableCell className={numCell}>
                         {formatMoney(filteredTotals.drumMfg)}
                       </TableCell>
-                      <TableCell className="font-data bg-muted text-right text-xs">
+                      <TableCell className={numCell}>
                         {formatMoney(filteredTotals.totalMfg)}
                       </TableCell>
                       <PlCell
@@ -907,6 +922,7 @@ export default function PartySalesMarginPage() {
                             ? filteredTotals.hubProfit / filteredTotals.hubKg
                             : null
                         }
+                        solid
                       />
                       <PlCell
                         value={filteredTotals.drumProfit}
@@ -915,6 +931,7 @@ export default function PartySalesMarginPage() {
                             ? filteredTotals.drumProfit / filteredTotals.drumKg
                             : null
                         }
+                        solid
                       />
                       <PlCell
                         value={filteredTotals.profit}
@@ -923,6 +940,7 @@ export default function PartySalesMarginPage() {
                             ? filteredTotals.profit / filteredTotals.totalKg
                             : null
                         }
+                        solid
                       />
                     </TableRow>
                   </TableFooter>

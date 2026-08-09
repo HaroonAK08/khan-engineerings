@@ -740,8 +740,8 @@ function BuiltyForm() {
                 {formatMoney(familySummary.hub.amount)}
               </p>
             </div>
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
-              <p className="text-xs text-amber-700 dark:text-amber-300">{t("prod.drum")}</p>
+            <div className="rounded-lg border border-yellow-500/30 bg-yellow-400/10 p-3">
+              <p className="text-xs text-yellow-800 dark:text-yellow-300">{t("prod.drum")}</p>
               <p className="font-data mt-1 text-xl">{familySummary.drum.qty}</p>
               <p className="font-data mt-1 text-sm text-muted-foreground">
                 {formatMoney(familySummary.drum.amount)}

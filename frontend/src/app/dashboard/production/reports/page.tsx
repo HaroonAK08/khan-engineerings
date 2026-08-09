@@ -72,7 +72,7 @@ export default function ProductionReportsPage() {
     const accent =
       family === "hub"
         ? "border-sky-500/30 bg-sky-500/5"
-        : "border-amber-500/30 bg-amber-500/5";
+        : "border-yellow-500/30 bg-yellow-400/10";
 
     return (
       <Card className={accent}>
