@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -28,6 +28,11 @@ import { useI18n } from "@/hooks/use-i18n";
 import { todayInput } from "@/lib/date-range";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 import { DateRangeFilter } from "@/components/date-range-filter";
+import {
+  VOICE_SALARY_PAY_EVENT,
+  VOICE_SALARY_PAY_PENDING_KEY,
+  type VoiceSalaryPayPayload,
+} from "@/lib/voice/produce-bridge";
 import { WorkerSearchSelect } from "@/components/workers/worker-search-select";
 import {
   ExpenseScopeChips,
@@ -441,15 +446,92 @@ export default function SalariesPage() {
     if (scopeFilter !== "hub" && scopeFilter !== "drum") setOpenLabourGroup(null);
   }, [scopeFilter]);
 
-  function openPay(w: Worker) {
+  function openPay(w: Worker, presetAmount?: number, presetDate?: string, presetNote?: string) {
     setEditingId(null);
     setShowAddWorker(false);
     setShowAddPayment(false);
     setPayingId(w._id);
-    setPayAmount("");
-    setPayDate(todayInput());
-    setPayNote("");
+    setPayAmount(
+      presetAmount != null && Number.isFinite(presetAmount) && presetAmount > 0
+        ? String(presetAmount)
+        : ""
+    );
+    setPayDate(presetDate || todayInput());
+    setPayNote(presetNote || "");
   }
+
+  const scrollPayToIdRef = useRef<string | null>(null);
+
+  function ensureWorkerVisibleForPay(worker: Worker) {
+    setSearch("");
+    scrollPayToIdRef.current = worker._id;
+
+    if (scopeFilter === "drum") {
+      setOpenLabourGroup(isDrumKhradWorker(worker) ? "khrad" : "casting");
+    } else if (scopeFilter === "hub") {
+      const kind = classifyHubLabour(worker);
+      setOpenLabourGroup(kind === "common" ? "others" : kind);
+    }
+  }
+
+  useEffect(() => {
+    const id = scrollPayToIdRef.current;
+    if (!id || payingId !== id) return;
+
+    let tries = 0;
+    const tryScroll = () => {
+      const el = document.querySelector(`[data-worker-id="${id}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+        scrollPayToIdRef.current = null;
+        return;
+      }
+      tries += 1;
+      if (tries < 8) window.setTimeout(tryScroll, 60);
+    };
+
+    const t = window.setTimeout(tryScroll, 40);
+    return () => window.clearTimeout(t);
+  }, [payingId, openLabourGroup, filteredWorkers, search]);
+
+  useEffect(() => {
+    const applyVoicePay = (detail: VoiceSalaryPayPayload) => {
+      const worker = workers.find((w) => w._id === detail.workerId);
+      if (!worker) {
+        toast.error("Worker not found for voice payment.");
+        return;
+      }
+      openPay(worker, detail.amount, detail.expenseDate, detail.notes);
+      ensureWorkerVisibleForPay(worker);
+      toast.success(
+        `Pay ${worker.name} — ${detail.amount.toLocaleString()} ready. Confirm to save.`
+      );
+    };
+
+    const onVoicePay = (event: Event) => {
+      const detail = (event as CustomEvent<VoiceSalaryPayPayload>).detail;
+      if (detail?.workerId && detail.amount != null) applyVoicePay(detail);
+    };
+    window.addEventListener(VOICE_SALARY_PAY_EVENT, onVoicePay);
+
+    try {
+      const raw = sessionStorage.getItem(VOICE_SALARY_PAY_PENDING_KEY);
+      if (raw) {
+        sessionStorage.removeItem(VOICE_SALARY_PAY_PENDING_KEY);
+        const pending = JSON.parse(raw) as VoiceSalaryPayPayload;
+        if (pending?.workerId && pending.amount != null) {
+          if (workers.length) applyVoicePay(pending);
+          else {
+            sessionStorage.setItem(VOICE_SALARY_PAY_PENDING_KEY, JSON.stringify(pending));
+          }
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+
+    return () => window.removeEventListener(VOICE_SALARY_PAY_EVENT, onVoicePay);
+  }, [workers, scopeFilter]);
 
   function openEdit(w: Worker) {
     setPayingId(null);
@@ -619,6 +701,7 @@ export default function SalariesPage() {
     return (
       <Card
         key={w._id}
+        data-worker-id={w._id}
         className="cursor-pointer py-0 transition-colors hover:bg-muted/30"
         onClick={() => router.push(`/dashboard/expenses/salaries/${w._id}`)}
       >

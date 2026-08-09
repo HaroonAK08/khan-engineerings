@@ -32,6 +32,7 @@ import { ThemeToggle } from "./theme-toggle";
 import { LanguageToggle } from "./language-toggle";
 import { NAV_ITEMS } from "./nav-items";
 import { SidebarBrand, SidebarNav } from "./sidebar";
+import { VoiceHeaderControl } from "@/components/voice/voice-header-control";
 
 function currentTitleKey(pathname: string | null): MessageKey {
   if (!pathname) return "nav.dashboard";
@@ -100,6 +101,7 @@ export function Topbar() {
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
+        <VoiceHeaderControl />
         {user && (
           <Badge
             variant="secondary"

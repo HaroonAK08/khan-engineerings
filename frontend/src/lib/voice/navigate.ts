@@ -25,14 +25,24 @@ export const VOICE_ROUTES: VoiceRoute[] = [
   {
     href: "/dashboard/production/new",
     label: "New production",
-    words: ["new production", "add production", "create production"],
+    words: [
+      "new production",
+      "add production",
+      "create production",
+      "produce",
+      "reduce",
+    ],
   },
   {
     href: "/dashboard/production/history",
     label: "Production history",
     words: ["production history", "production record", "production records"],
   },
-  { href: "/dashboard/expenses", label: "Expenses", words: ["expenses", "expense", "kharcha"] },
+  {
+    href: "/dashboard/expenses",
+    label: "Expenses",
+    words: ["expenses", "expense", "kharcha"],
+  },
   {
     href: "/dashboard/expenses/electricity",
     label: "Electricity expenses",
@@ -65,13 +75,34 @@ export const VOICE_ROUTES: VoiceRoute[] = [
   },
   {
     href: "/dashboard/builty",
-    label: "Builty / Sales",
-    words: ["builty", "bilt", "sales", "sale", "invoices", "invoice", "dispatch"],
+    label: "Builty",
+    words: [
+      "builty",
+      "bilt",
+      "bilti",
+      "building",
+      "builty page",
+      "builty list",
+      "sales list",
+      "go to builty",
+      "open builty",
+      "show builty",
+    ],
   },
   {
     href: "/dashboard/builty/new",
     label: "New builty",
-    words: ["new builty", "new sale", "create builty", "add builty"],
+    words: [
+      "new builty",
+      "create builty",
+      "add builty",
+      "make builty",
+      "create building",
+      "new building",
+      "new sale",
+      "create sale",
+      "add sale",
+    ],
   },
   {
     href: "/dashboard/builty/history",
@@ -82,7 +113,7 @@ export const VOICE_ROUTES: VoiceRoute[] = [
   {
     href: "/dashboard/suppliers",
     label: "Suppliers",
-    words: ["suppliers", "supplier list", "vendors"],
+    words: ["suppliers", "supplier", "supplier list", "vendors", "vendor"],
   },
   {
     href: "/dashboard/salesmen",
@@ -103,16 +134,19 @@ export const VOICE_ROUTES: VoiceRoute[] = [
 ];
 
 export function matchVoiceRoute(text: string): VoiceRoute | null {
+  const normalized = text.toLowerCase().replace(/\s+/g, " ").trim();
   const ranked = VOICE_ROUTES.map((route) => {
     let best = 0;
     for (const word of route.words) {
-      if (text === word) best = Math.max(best, 100);
-      else if (text.includes(word)) best = Math.max(best, 40 + word.length);
+      if (normalized === word) best = Math.max(best, 100);
+      else if (normalized.endsWith(` ${word}`) || normalized.includes(` ${word} `)) {
+        best = Math.max(best, 55 + word.length);
+      } else if (normalized.includes(word)) best = Math.max(best, 40 + word.length);
     }
     return { route, best };
   })
     .filter((row) => row.best > 0)
-    .sort((a, b) => b.best - a.best);
+    .sort((a, b) => b.best - a.best || b.route.words[0].length - a.route.words[0].length);
 
   return ranked[0]?.route || null;
 }

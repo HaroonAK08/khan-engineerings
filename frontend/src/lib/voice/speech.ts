@@ -13,6 +13,7 @@ type BrowserSpeechRecognition = {
   interimResults: boolean;
   lang: string;
   maxAlternatives: number;
+  grammars?: unknown;
   start: () => void;
   stop: () => void;
   abort: () => void;
@@ -30,6 +31,10 @@ type BrowserSpeechRecognition = {
 
 type SpeechRecognitionCtor = new () => BrowserSpeechRecognition;
 
+type SpeechGrammarListLike = {
+  addFromString: (grammar: string, weight?: number) => void;
+};
+
 function getSpeechRecognitionCtor(): SpeechRecognitionCtor | null {
   if (typeof window === "undefined") return null;
   const w = window as Window & {
@@ -37,6 +42,31 @@ function getSpeechRecognitionCtor(): SpeechRecognitionCtor | null {
     webkitSpeechRecognition?: SpeechRecognitionCtor;
   };
   return w.SpeechRecognition || w.webkitSpeechRecognition || null;
+}
+
+function getSpeechGrammarListCtor(): (new () => SpeechGrammarListLike) | null {
+  if (typeof window === "undefined") return null;
+  const w = window as Window & {
+    SpeechGrammarList?: new () => SpeechGrammarListLike;
+    webkitSpeechGrammarList?: new () => SpeechGrammarListLike;
+  };
+  return w.SpeechGrammarList || w.webkitSpeechGrammarList || null;
+}
+
+function buildGrammarFromPhrases(phrases: string[]) {
+  const cleaned = phrases
+    .map((p) =>
+      p
+        .toLowerCase()
+        .replace(/[^a-z0-9\u0600-\u06ff\s]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+    )
+    .filter((p) => p.length >= 2 && p.length <= 60)
+    .slice(0, 180);
+  if (!cleaned.length) return null;
+  const alts = cleaned.map((p) => p.replace(/\s+/g, " ")).join(" | ");
+  return `#JSGF V1.0; grammar kevoice; public <phrase> = ${alts} ;`;
 }
 
 export function isSpeechSupported() {
@@ -48,6 +78,7 @@ export class VoiceRecognizer {
   private handlers: SpeechHandlers = {};
   private wantListening = false;
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
+  private grammarPhrases: string[] = [];
   lang: SpeechLang = "en-US";
 
   setHandlers(handlers: SpeechHandlers) {
@@ -57,6 +88,10 @@ export class VoiceRecognizer {
   setLang(lang: SpeechLang) {
     this.lang = lang;
     if (this.recognition) this.recognition.lang = lang;
+  }
+
+  setGrammarPhrases(phrases: string[]) {
+    this.grammarPhrases = phrases;
   }
 
   isListening() {
@@ -123,6 +158,19 @@ export class VoiceRecognizer {
     }
   }
 
+  private applyGrammar(recognition: BrowserSpeechRecognition) {
+    const GrammarCtor = getSpeechGrammarListCtor();
+    const jsgf = buildGrammarFromPhrases(this.grammarPhrases);
+    if (!GrammarCtor || !jsgf) return;
+    try {
+      const list = new GrammarCtor();
+      list.addFromString(jsgf, 1);
+      recognition.grammars = list;
+    } catch {
+      /* browser may ignore grammars */
+    }
+  }
+
   private beginSession(Ctor: SpeechRecognitionCtor) {
     this.teardownSession();
 
@@ -131,6 +179,7 @@ export class VoiceRecognizer {
     recognition.interimResults = true;
     recognition.lang = this.lang;
     recognition.maxAlternatives = 1;
+    this.applyGrammar(recognition);
 
     recognition.onstart = null;
 

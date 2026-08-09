@@ -14,6 +14,12 @@ import { todayInput } from "@/lib/date-range";
 import { getStock, apiError, formatKg, withSameDayConfirm } from "@/lib/materials-api";
 import { listProducts, produce } from "@/lib/production-api";
 import {
+  VOICE_PRODUCE_ADD_EVENT,
+  VOICE_PRODUCE_PENDING_KEY,
+  type VoiceProduceFormLine,
+  type VoiceProduceFormPayload,
+} from "@/lib/voice/produce-bridge";
+import {
   familyFilterChipClass,
   familyMetaTextClass,
   familyPickerItemClass,
@@ -96,6 +102,68 @@ function NewProductionForm() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const appendVoiceLines = useCallback((incoming: VoiceProduceFormLine[]) => {
+    if (!incoming.length) return;
+    setLines((prev) => {
+      const mapped = incoming.map((row) => ({
+        ...emptyLine(row.productId),
+        quantity: Math.max(1, Math.round(Number(row.quantity) || 1)),
+        productionDate: row.productionDate || todayInput(),
+      }));
+      const onlyBlank =
+        prev.length === 1 && !prev[0].productId && Number(prev[0].quantity) === 1;
+      return onlyBlank ? mapped : [...prev, ...mapped];
+    });
+  }, []);
+
+  const applyVoicePayload = useCallback(
+    (payload: VoiceProduceFormPayload | VoiceProduceFormLine[]) => {
+      // Back-compat: older pending payloads were a bare line array
+      const detail: VoiceProduceFormPayload = Array.isArray(payload)
+        ? { items: payload }
+        : payload;
+
+      if (detail.productionDate && (!detail.items || !detail.items.length)) {
+        setLines((prev) =>
+          prev.map((line) => ({ ...line, productionDate: detail.productionDate! }))
+        );
+        return;
+      }
+
+      if (detail.items?.length) {
+        appendVoiceLines(
+          detail.items.map((row) => ({
+            ...row,
+            productionDate: row.productionDate || detail.productionDate,
+          }))
+        );
+      }
+    },
+    [appendVoiceLines]
+  );
+
+  useEffect(() => {
+    const onVoiceAdd = (event: Event) => {
+      const detail = (event as CustomEvent<VoiceProduceFormPayload | VoiceProduceFormLine[]>)
+        .detail;
+      if (detail) applyVoicePayload(detail);
+    };
+    window.addEventListener(VOICE_PRODUCE_ADD_EVENT, onVoiceAdd);
+
+    try {
+      const raw = sessionStorage.getItem(VOICE_PRODUCE_PENDING_KEY);
+      if (raw) {
+        sessionStorage.removeItem(VOICE_PRODUCE_PENDING_KEY);
+        const pending = JSON.parse(raw) as VoiceProduceFormPayload | VoiceProduceFormLine[];
+        applyVoicePayload(pending);
+      }
+    } catch {
+      /* ignore */
+    }
+
+    return () => window.removeEventListener(VOICE_PRODUCE_ADD_EVENT, onVoiceAdd);
+  }, [applyVoicePayload]);
 
   useEffect(() => {
     if (initializedFromQuery.current || !initialProductId || products.length === 0) return;

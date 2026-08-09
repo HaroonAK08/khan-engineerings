@@ -20,16 +20,28 @@ export async function listProducts(params?: {
 
 export async function createProduct(body: Partial<Product>) {
   const { data } = await api.post<{ product: Product }>("/products", body);
+  if (typeof window !== "undefined") {
+    const { scheduleVoiceModelRetrain } = await import("@/lib/voice/voice-model");
+    scheduleVoiceModelRetrain();
+  }
   return data.product;
 }
 
 export async function updateProduct(id: string, body: Partial<Product>) {
   const { data } = await api.patch<{ product: Product }>(`/products/${id}`, body);
+  if (typeof window !== "undefined") {
+    const { scheduleVoiceModelRetrain } = await import("@/lib/voice/voice-model");
+    scheduleVoiceModelRetrain();
+  }
   return data.product;
 }
 
 export async function deleteProduct(id: string) {
   await api.delete(`/products/${id}`);
+  if (typeof window !== "undefined") {
+    const { scheduleVoiceModelRetrain } = await import("@/lib/voice/voice-model");
+    scheduleVoiceModelRetrain();
+  }
 }
 
 export async function listBatches(params?: {

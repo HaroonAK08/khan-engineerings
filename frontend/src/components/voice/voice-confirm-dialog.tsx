@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,7 +13,12 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { EntityMatch, ResolvedVoiceDraft, VoiceIntent } from "@/lib/voice/types";
+import type {
+  EntityMatch,
+  ResolvedBuiltyLine,
+  ResolvedVoiceDraft,
+  VoiceIntent,
+} from "@/lib/voice/types";
 import { isAlwaysCommonExpenseCategory } from "@/hooks/use-persisted-expense-scope";
 import { listCustomers } from "@/lib/sales-api";
 import { listSuppliers } from "@/lib/materials-api";
@@ -44,6 +49,10 @@ const INTENT_LABEL: Record<VoiceIntent, string> = {
   supplier_payment: "Supplier payment",
   produce: "Production",
   navigate: "Open page",
+  add_supplier: "Add supplier",
+  add_salesman: "Add salesman",
+  add_worker: "Add worker",
+  salary_pay: "Salary payment",
 };
 
 type Props = {
@@ -78,6 +87,65 @@ function mergeOptions(preferred: EntityMatch[], all: EntityMatch[]) {
   return Array.from(map.values());
 }
 
+function emptyBuiltyLine(seed?: Partial<ResolvedBuiltyLine>): ResolvedBuiltyLine {
+  return {
+    productQuery: seed?.productQuery || "",
+    productMatches: seed?.productMatches || [],
+    selectedProductId: seed?.selectedProductId,
+    quantity: seed?.quantity ?? 1,
+    rate: seed?.rate,
+    amount: seed?.amount,
+    pricingMode: seed?.pricingMode || "rate_kg",
+    materialType: seed?.materialType,
+  };
+}
+
+function normalizeBuiltyDraft(draft: ResolvedVoiceDraft): ResolvedVoiceDraft {
+  if (draft.intent !== "builty" && draft.intent !== "produce") {
+    return { ...draft };
+  }
+  const items =
+    draft.items?.length
+      ? draft.items.map((line) => emptyBuiltyLine(line))
+      : [
+          emptyBuiltyLine({
+            productMatches: draft.productMatches,
+            selectedProductId: draft.selectedProductId,
+            quantity: draft.quantity || 1,
+            rate: draft.rate,
+            amount: draft.amount,
+            pricingMode: draft.pricingMode || "rate_kg",
+            materialType: draft.materialType,
+          }),
+        ];
+  const first = items[0];
+  return {
+    ...draft,
+    items,
+    selectedProductId: first?.selectedProductId,
+    quantity: first?.quantity,
+    rate: first?.rate,
+    amount: first?.amount,
+    pricingMode: first?.pricingMode,
+    materialType: first?.materialType || draft.materialType,
+  };
+}
+
+function syncBuiltyFromItems(
+  items: ResolvedBuiltyLine[]
+): Partial<ResolvedVoiceDraft> {
+  const first = items[0];
+  return {
+    items,
+    selectedProductId: first?.selectedProductId,
+    quantity: first?.quantity,
+    rate: first?.rate,
+    amount: first?.amount,
+    pricingMode: first?.pricingMode,
+    materialType: first?.materialType,
+  };
+}
+
 export function VoiceConfirmDialog({
   open,
   draft,
@@ -92,7 +160,7 @@ export function VoiceConfirmDialog({
   const [loadingOptions, setLoadingOptions] = useState(false);
 
   useEffect(() => {
-    if (draft) setLocal({ ...draft });
+    if (draft) setLocal(normalizeBuiltyDraft(draft));
   }, [draft]);
 
   useEffect(() => {
@@ -172,11 +240,14 @@ export function VoiceConfirmDialog({
         return Boolean(
           local.builtyNo?.trim() &&
             local.selectedCustomerId &&
-            local.selectedProductId &&
-            local.quantity &&
-            local.quantity > 0 &&
-            ((local.pricingMode === "rate_kg" && local.rate && local.rate > 0) ||
-              (local.pricingMode === "fixed" && local.amount && local.amount > 0))
+            (local.items || []).length > 0 &&
+            (local.items || []).every(
+              (line) =>
+                line.selectedProductId &&
+                line.quantity > 0 &&
+                ((line.pricingMode === "rate_kg" && line.rate && line.rate > 0) ||
+                  (line.pricingMode === "fixed" && line.amount && line.amount > 0))
+            )
         );
       case "customer_payment":
         return Boolean(
@@ -188,10 +259,21 @@ export function VoiceConfirmDialog({
         );
       case "produce":
         return Boolean(
-          local.selectedProductId && local.quantity && local.quantity > 0
+          (local.items || []).length > 0 &&
+            (local.items || []).every(
+              (line) => line.selectedProductId && line.quantity > 0
+            )
         );
       case "navigate":
         return Boolean(local.navigateHref);
+      case "add_supplier":
+      case "add_salesman":
+      case "add_worker":
+        return Boolean(local.title?.trim());
+      case "salary_pay":
+        return Boolean(
+          local.selectedCustomerId && local.amount && local.amount > 0
+        );
       default:
         return false;
     }
@@ -214,7 +296,7 @@ export function VoiceConfirmDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg gap-5 p-6">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl gap-5 p-6">
         <DialogHeader>
           <DialogTitle className="text-xl">
             Review {INTENT_LABEL[local.intent]}
@@ -222,7 +304,9 @@ export function VoiceConfirmDialog({
           <DialogDescription className="text-sm leading-relaxed">
             {local.intent === "navigate"
               ? "Choose where to go, then tap Open."
-              : "Check every field below. Edit anything that is wrong, then tap Add to save it."}
+              : local.intent === "builty" || local.intent === "produce"
+                ? "Check each product line. Add more products if needed, then tap Add."
+                : "Check every field below. Edit anything that is wrong, then tap Add to save it."}
           </DialogDescription>
         </DialogHeader>
 
@@ -417,76 +501,178 @@ export function VoiceConfirmDialog({
                   ))}
                 </select>
               </Field>
-              <Field label="Product">
-                <select
-                  className="h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
-                  value={local.selectedProductId || ""}
-                  onChange={(e) => patch({ selectedProductId: e.target.value })}
+
+              <div className="grid gap-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">
+                    Products ({(local.items || []).length})
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => {
+                      const prev = local.items || [];
+                      const last = prev[prev.length - 1];
+                      patch(
+                        syncBuiltyFromItems([
+                          ...prev,
+                          emptyBuiltyLine({
+                            pricingMode: last?.pricingMode || "rate_kg",
+                            rate: last?.pricingMode === "rate_kg" ? last.rate : undefined,
+                          }),
+                        ])
+                      );
+                    }}
+                  >
+                    <Plus className="size-4" />
+                    Add product
+                  </Button>
+                </div>
+
+                {(local.items || []).map((line, index) => {
+                  const lineOptions = mergeOptions(
+                    line.productMatches || [],
+                    productOptions
+                  );
+                  const updateLine = (partial: Partial<ResolvedBuiltyLine>) => {
+                    const next = (local.items || []).map((row, i) =>
+                      i === index ? { ...row, ...partial } : row
+                    );
+                    patch(syncBuiltyFromItems(next));
+                  };
+                  return (
+                    <div
+                      key={`builty-line-${index}`}
+                      className="grid gap-3 rounded-lg border border-border bg-muted/20 p-3"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          Product {index + 1}
+                          {line.productQuery ? ` · “${line.productQuery}”` : ""}
+                        </p>
+                        {(local.items || []).length > 1 ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 gap-1.5 text-destructive hover:text-destructive"
+                            onClick={() => {
+                              const next = (local.items || []).filter(
+                                (_, i) => i !== index
+                              );
+                              patch(syncBuiltyFromItems(next));
+                            }}
+                          >
+                            <Trash2 className="size-3.5" />
+                            Remove
+                          </Button>
+                        ) : null}
+                      </div>
+                      <Field label="Product">
+                        <select
+                          className="h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+                          value={line.selectedProductId || ""}
+                          onChange={(e) =>
+                            updateLine({ selectedProductId: e.target.value })
+                          }
+                        >
+                          <option value="">Select product</option>
+                          {lineOptions.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.label}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                      <Field label="Quantity">
+                        <Input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={line.quantity ?? ""}
+                          onChange={(e) =>
+                            updateLine({
+                              quantity: e.target.value ? Number(e.target.value) : 0,
+                            })
+                          }
+                        />
+                      </Field>
+                      <Field label="Pricing">
+                        <select
+                          className="h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+                          value={line.pricingMode || "rate_kg"}
+                          onChange={(e) =>
+                            updateLine({
+                              pricingMode: e.target.value as "rate_kg" | "fixed",
+                            })
+                          }
+                        >
+                          <option value="rate_kg">Rate per kg</option>
+                          <option value="fixed">Fixed per unit</option>
+                        </select>
+                      </Field>
+                      {line.pricingMode === "fixed" ? (
+                        <Field label="Fixed amount (per unit)">
+                          <Input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={line.amount ?? ""}
+                            onChange={(e) =>
+                              updateLine({
+                                amount: e.target.value
+                                  ? Number(e.target.value)
+                                  : undefined,
+                              })
+                            }
+                          />
+                        </Field>
+                      ) : (
+                        <Field label="Rate per kg">
+                          <Input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={line.rate ?? ""}
+                            onChange={(e) =>
+                              updateLine({
+                                rate: e.target.value
+                                  ? Number(e.target.value)
+                                  : undefined,
+                              })
+                            }
+                          />
+                        </Field>
+                      )}
+                    </div>
+                  );
+                })}
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-fit gap-2"
+                  onClick={() => {
+                    const prev = local.items || [];
+                    const last = prev[prev.length - 1];
+                    patch(
+                      syncBuiltyFromItems([
+                        ...prev,
+                        emptyBuiltyLine({
+                          pricingMode: last?.pricingMode || "rate_kg",
+                          rate: last?.pricingMode === "rate_kg" ? last.rate : undefined,
+                        }),
+                      ])
+                    );
+                  }}
                 >
-                  <option value="">Select product</option>
-                  {productOptions.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Quantity">
-                <Input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={local.quantity ?? ""}
-                  onChange={(e) =>
-                    patch({
-                      quantity: e.target.value ? Number(e.target.value) : undefined,
-                    })
-                  }
-                />
-              </Field>
-              <Field label="Pricing">
-                <select
-                  className="h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
-                  value={local.pricingMode || "rate_kg"}
-                  onChange={(e) =>
-                    patch({
-                      pricingMode: e.target.value as "rate_kg" | "fixed",
-                    })
-                  }
-                >
-                  <option value="rate_kg">Rate per kg</option>
-                  <option value="fixed">Fixed per unit</option>
-                </select>
-              </Field>
-              {local.pricingMode === "fixed" ? (
-                <Field label="Fixed amount (per unit)">
-                  <Input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={local.amount ?? ""}
-                    onChange={(e) =>
-                      patch({
-                        amount: e.target.value ? Number(e.target.value) : undefined,
-                      })
-                    }
-                  />
-                </Field>
-              ) : (
-                <Field label="Rate per kg">
-                  <Input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={local.rate ?? ""}
-                    onChange={(e) =>
-                      patch({
-                        rate: e.target.value ? Number(e.target.value) : undefined,
-                      })
-                    }
-                  />
-                </Field>
-              )}
+                  <Plus className="size-4" />
+                  Add another product
+                </Button>
+              </div>
+
               <Field label="Amount paid now (optional)">
                 <Input
                   type="number"
@@ -586,45 +772,149 @@ export function VoiceConfirmDialog({
 
           {local.intent === "produce" && (
             <>
-              <Field label="Product">
-                <select
-                  className="h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
-                  value={local.selectedProductId || ""}
-                  onChange={(e) => patch({ selectedProductId: e.target.value })}
-                >
-                  <option value="">Select product</option>
-                  {productOptions.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Quantity (pcs)">
-                <Input
-                  type="number"
-                  min={1}
-                  step="1"
-                  value={local.quantity ?? ""}
-                  onChange={(e) =>
+              <div className="grid gap-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">
+                    Products ({(local.items || []).length})
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => {
+                      const prev = local.items || [];
+                      patch(
+                        syncBuiltyFromItems([
+                          ...prev,
+                          emptyBuiltyLine({
+                            materialType: local.materialType || "daig",
+                            quantity: 1,
+                          }),
+                        ])
+                      );
+                    }}
+                  >
+                    <Plus className="size-4" />
+                    Add product
+                  </Button>
+                </div>
+
+                {(local.items || []).map((line, index) => {
+                  const lineOptions = mergeOptions(
+                    line.productMatches || [],
+                    productOptions
+                  );
+                  const updateLine = (partial: Partial<ResolvedBuiltyLine>) => {
+                    const next = (local.items || []).map((row, i) =>
+                      i === index ? { ...row, ...partial } : row
+                    );
+                    const first = next[0];
                     patch({
-                      quantity: e.target.value ? Number(e.target.value) : undefined,
-                    })
-                  }
-                />
-              </Field>
-              <Field label="Material">
-                <select
-                  className="h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
-                  value={local.materialType || "scrap"}
-                  onChange={(e) =>
-                    patch({ materialType: e.target.value as "scrap" | "daig" })
-                  }
+                      ...syncBuiltyFromItems(next),
+                      materialType:
+                        first?.materialType || local.materialType,
+                    });
+                  };
+                  return (
+                    <div
+                      key={`produce-line-${index}`}
+                      className="grid gap-3 rounded-lg border border-border bg-muted/20 p-3"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          Product {index + 1}
+                          {line.productQuery ? ` · “${line.productQuery}”` : ""}
+                        </p>
+                        {(local.items || []).length > 1 ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 gap-1.5 text-destructive hover:text-destructive"
+                            onClick={() => {
+                              const next = (local.items || []).filter(
+                                (_, i) => i !== index
+                              );
+                              patch(syncBuiltyFromItems(next));
+                            }}
+                          >
+                            <Trash2 className="size-3.5" />
+                            Remove
+                          </Button>
+                        ) : null}
+                      </div>
+                      <Field label="Product">
+                        <select
+                          className="h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+                          value={line.selectedProductId || ""}
+                          onChange={(e) =>
+                            updateLine({ selectedProductId: e.target.value })
+                          }
+                        >
+                          <option value="">Select product</option>
+                          {lineOptions.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.label}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                      <Field label="Quantity (pcs)">
+                        <Input
+                          type="number"
+                          min={1}
+                          step="1"
+                          value={line.quantity ?? ""}
+                          onChange={(e) =>
+                            updateLine({
+                              quantity: e.target.value
+                                ? Number(e.target.value)
+                                : 0,
+                            })
+                          }
+                        />
+                      </Field>
+                      <Field label="Material">
+                        <select
+                          className="h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+                          value={line.materialType || local.materialType || "scrap"}
+                          onChange={(e) =>
+                            updateLine({
+                              materialType: e.target.value as "scrap" | "daig",
+                            })
+                          }
+                        >
+                          <option value="scrap">Scrap</option>
+                          <option value="daig">Daig</option>
+                        </select>
+                      </Field>
+                    </div>
+                  );
+                })}
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-fit gap-2"
+                  onClick={() => {
+                    const prev = local.items || [];
+                    patch(
+                      syncBuiltyFromItems([
+                        ...prev,
+                        emptyBuiltyLine({
+                          materialType: local.materialType || "daig",
+                          quantity: 1,
+                        }),
+                      ])
+                    );
+                  }}
                 >
-                  <option value="scrap">Scrap</option>
-                  <option value="daig">Daig</option>
-                </select>
-              </Field>
+                  <Plus className="size-4" />
+                  Add another product
+                </Button>
+              </div>
+
               <Field label="Waste %">
                 <Input
                   type="number"
@@ -633,7 +923,9 @@ export function VoiceConfirmDialog({
                   value={local.wastePercent ?? 6}
                   onChange={(e) =>
                     patch({
-                      wastePercent: e.target.value ? Number(e.target.value) : undefined,
+                      wastePercent: e.target.value
+                        ? Number(e.target.value)
+                        : undefined,
                     })
                   }
                 />

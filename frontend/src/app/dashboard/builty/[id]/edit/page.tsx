@@ -33,6 +33,11 @@ import {
   familyRowClass,
 } from "@/lib/product-family";
 import { cn } from "@/lib/utils";
+import {
+  VOICE_BUILTY_ADD_EVENT,
+  VOICE_BUILTY_PENDING_KEY,
+  type VoiceBuiltyFormPayload,
+} from "@/lib/voice/produce-bridge";
 
 type Line = {
   product: string;
@@ -163,6 +168,115 @@ function EditBuiltyForm() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const applyVoiceBuilty = useCallback((payload: VoiceBuiltyFormPayload) => {
+    if (payload.builtyNo) setBuiltyNo(payload.builtyNo);
+    if (payload.billNo) setBillNo(payload.billNo);
+    if (payload.builtyDate) setBuiltyDate(payload.builtyDate);
+
+    if (
+      (payload.rateOnly != null || payload.fixedOnly != null) &&
+      !payload.items?.length
+    ) {
+      setLines((prev) => {
+        let lastIdx = -1;
+        for (let i = prev.length - 1; i >= 0; i--) {
+          if (prev[i].product) {
+            lastIdx = i;
+            break;
+          }
+        }
+        if (lastIdx < 0) return prev;
+        return prev.map((line, i) => {
+          if (i !== lastIdx) return line;
+          if (payload.fixedOnly != null) {
+            return {
+              ...line,
+              pricingMode: "fixed" as PricingMode,
+              fixedAmount: Number(payload.fixedOnly) || 0,
+              ratePerKg: 0,
+            };
+          }
+          return {
+            ...line,
+            pricingMode: "rate_kg" as PricingMode,
+            ratePerKg: Number(payload.rateOnly) || 0,
+          };
+        });
+      });
+      toast.success(
+        payload.fixedOnly != null
+          ? `Fixed price set to ${payload.fixedOnly}`
+          : `Rate set to ${payload.rateOnly}/kg`
+      );
+      return;
+    }
+
+    if (payload.items?.length) {
+      setLines((prev) => {
+        let next = prev.filter((l) => l.product || prev.length === 1);
+        if (next.length === 1 && !next[0].product) next = [];
+
+        for (const row of payload.items) {
+          const existingIdx = next.findIndex((l) => l.product === row.productId);
+          const pricingMode = (row.pricingMode ||
+            (row.amount != null && row.rate == null ? "fixed" : "rate_kg")) as PricingMode;
+          if (existingIdx >= 0) {
+            const current = next[existingIdx];
+            next[existingIdx] = {
+              ...current,
+              pricingMode,
+              ratePerKg:
+                pricingMode === "rate_kg"
+                  ? row.rate != null
+                    ? Number(row.rate) || 0
+                    : current.ratePerKg
+                  : 0,
+              fixedAmount:
+                pricingMode === "fixed"
+                  ? row.amount != null
+                    ? Number(row.amount) || 0
+                    : current.fixedAmount
+                  : 0,
+              quantity:
+                row.quantityExplicit === false
+                  ? current.quantity
+                  : Math.max(1, Math.round(Number(row.quantity) || 1)),
+            };
+          } else {
+            next.push({
+              product: row.productId,
+              quantity: Math.max(1, Math.round(Number(row.quantity) || 1)),
+              pricingMode,
+              ratePerKg: pricingMode === "rate_kg" ? Number(row.rate) || 0 : 0,
+              fixedAmount: pricingMode === "fixed" ? Number(row.amount) || 0 : 0,
+            });
+          }
+        }
+        return next.length ? next : [emptyLine()];
+      });
+      toast.success(`Updated ${payload.items.length} product(s) by voice`);
+    }
+  }, []);
+
+  useEffect(() => {
+    const onVoiceAdd = (event: Event) => {
+      const detail = (event as CustomEvent<VoiceBuiltyFormPayload>).detail;
+      if (detail) applyVoiceBuilty(detail);
+    };
+    window.addEventListener(VOICE_BUILTY_ADD_EVENT, onVoiceAdd);
+    try {
+      const raw = sessionStorage.getItem(VOICE_BUILTY_PENDING_KEY);
+      if (raw) {
+        sessionStorage.removeItem(VOICE_BUILTY_PENDING_KEY);
+        const pending = JSON.parse(raw) as VoiceBuiltyFormPayload;
+        applyVoiceBuilty(pending);
+      }
+    } catch {
+      /* ignore */
+    }
+    return () => window.removeEventListener(VOICE_BUILTY_ADD_EVENT, onVoiceAdd);
+  }, [applyVoiceBuilty]);
 
   const filteredProducts = useMemo(() => {
     const q = productSearch.trim().toLowerCase();
