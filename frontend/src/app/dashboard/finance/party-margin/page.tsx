@@ -44,26 +44,47 @@ const stickyGroupHead = (withParty: boolean) =>
     withParty ? "left-44" : "left-0 z-40"
   );
 
-const plRowClass = (loss: boolean, deep = false) =>
-  loss
-    ? deep
-      ? "bg-red-700 text-white hover:bg-red-700"
-      : "bg-red-600 text-white hover:bg-red-600"
-    : deep
-      ? "bg-emerald-700 text-white hover:bg-emerald-700"
-      : "bg-emerald-600 text-white hover:bg-emerald-600";
+type PlTone = "loss" | "mixed" | "profit";
 
-const stickyPartyCell = (loss: boolean, deep = false) =>
+function plTone(row: { profit: number; hubProfit: number; drumProfit: number }): PlTone {
+  if (row.profit < 0) return "loss";
+  if (row.hubProfit < 0 || row.drumProfit < 0) return "mixed";
+  return "profit";
+}
+
+const plToneBg = (tone: PlTone, deep = false) => {
+  if (tone === "loss") return deep ? "bg-red-700" : "bg-red-600";
+  if (tone === "mixed") return deep ? "bg-amber-600" : "bg-amber-500";
+  return deep ? "bg-emerald-700" : "bg-emerald-600";
+};
+
+const plRowClass = (tone: PlTone, deep = false) => {
+  if (tone === "loss") {
+    return deep
+      ? "bg-red-700 text-white hover:bg-red-700"
+      : "bg-red-600 text-white hover:bg-red-600";
+  }
+  if (tone === "mixed") {
+    return deep
+      ? "bg-amber-600 text-white hover:bg-amber-600"
+      : "bg-amber-500 text-white hover:bg-amber-500";
+  }
+  return deep
+    ? "bg-emerald-700 text-white hover:bg-emerald-700"
+    : "bg-emerald-600 text-white hover:bg-emerald-600";
+};
+
+const stickyPartyCell = (tone: PlTone, deep = false) =>
   cn(
     "sticky left-0 z-20 w-44 min-w-44 max-w-44 truncate font-bold text-white shadow-[4px_0_12px_-6px_rgba(0,0,0,0.35)]",
-    loss ? (deep ? "bg-red-700" : "bg-red-600") : deep ? "bg-emerald-700" : "bg-emerald-600"
+    plToneBg(tone, deep)
   );
 
-const stickyGroupCell = (withParty: boolean, loss: boolean, deep = false) =>
+const stickyGroupCell = (withParty: boolean, tone: PlTone, deep = false) =>
   cn(
     "sticky z-10 w-40 min-w-40 max-w-40 overflow-hidden font-bold text-white shadow-[4px_0_12px_-6px_rgba(0,0,0,0.3)]",
     withParty ? "left-44" : "left-0",
-    loss ? (deep ? "bg-red-700" : "bg-red-600") : deep ? "bg-emerald-700" : "bg-emerald-600"
+    plToneBg(tone, deep)
   );
 
 const numCell = "font-data px-2.5 py-2.5 text-right text-xs font-bold tabular-nums text-white";
@@ -203,13 +224,13 @@ function RowCells({
   showParty: boolean;
   deep?: boolean;
 }) {
-  const loss = row.profit < 0;
+  const tone = plTone(row);
   return (
     <>
       {showParty ? (
-        <TableCell className={stickyPartyCell(loss, deep)}>{row.partyName}</TableCell>
+        <TableCell className={stickyPartyCell(tone, deep)}>{row.partyName}</TableCell>
       ) : null}
-      <TableCell className={stickyGroupCell(showParty, loss, deep)}>
+      <TableCell className={stickyGroupCell(showParty, tone, deep)}>
         <div className="flex min-w-0 max-w-full items-center gap-1.5 overflow-hidden">
           <span className="min-w-0 truncate font-bold" title={row.groupName}>
             {row.groupName}
@@ -765,7 +786,7 @@ export default function PartySalesMarginPage() {
                       {powerGroups.map((g) => (
                         <TableRow
                           key={g.groupId || g.groupName}
-                          className={cn("border-0", plRowClass(g.profit < 0))}
+                          className={cn("border-0", plRowClass(plTone(g)))}
                         >
                           <RowCells row={g} showParty={false} />
                         </TableRow>
@@ -774,7 +795,7 @@ export default function PartySalesMarginPage() {
                         <TableRow
                           className={cn(
                             "border-0 border-t-2 border-white/30",
-                            plRowClass(powerAll.profit < 0, true)
+                            plRowClass(plTone(powerAll), true)
                           )}
                         >
                           <RowCells row={powerAll} showParty={false} deep />
@@ -796,7 +817,7 @@ export default function PartySalesMarginPage() {
                         </TableCell>
                       </TableRow>
                       <TableRow
-                        className={cn("border-0", plRowClass(ikMerged.profit < 0, true))}
+                        className={cn("border-0", plRowClass(plTone(ikMerged), true))}
                       >
                         <RowCells row={ikMerged} showParty={false} deep />
                       </TableRow>
@@ -862,7 +883,7 @@ export default function PartySalesMarginPage() {
                     {parties.map((p) => (
                       <TableRow
                         key={p.partyId}
-                        className={cn("border-0", plRowClass(p.profit < 0))}
+                        className={cn("border-0", plRowClass(plTone(p)))}
                       >
                         <RowCells row={p} showParty />
                       </TableRow>
@@ -872,14 +893,14 @@ export default function PartySalesMarginPage() {
                     <TableRow
                       className={cn(
                         "border-0 border-t-2 border-white/30 font-bold",
-                        plRowClass(filteredTotals.profit < 0, true)
+                        plRowClass(plTone(filteredTotals), true)
                       )}
                     >
                       <TableCell
                         colSpan={2}
                         className={cn(
                           "sticky left-0 z-20 w-80 min-w-80 max-w-80 px-2.5 py-3 text-sm font-bold text-white shadow-[4px_0_12px_-6px_rgba(0,0,0,0.35)]",
-                          filteredTotals.profit < 0 ? "bg-red-700" : "bg-emerald-700"
+                          plToneBg(plTone(filteredTotals), true)
                         )}
                       >
                         {t("prodMargin.total")}

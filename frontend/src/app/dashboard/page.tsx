@@ -13,6 +13,7 @@ import {
   type ProductionMarginProduct,
   type ProductionMarginReport,
 } from "@/lib/finance-api";
+import { splitCastingKhrad } from "@/lib/casting-khrad";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { ChargesCalculator } from "@/components/finance/charges-calculator";
 import { Badge } from "@/components/ui/badge";
@@ -578,6 +579,7 @@ export default function ProductionMarginPage() {
             type StatCard = {
               label: string;
               value: string;
+              valueAddon?: string;
               hint?: string;
               hints?: string[];
               money?: string;
@@ -637,6 +639,16 @@ export default function ProductionMarginPage() {
                             )}
                           >
                             {stat.value}
+                            {stat.valueAddon ? (
+                              <span
+                                className={cn(
+                                  "ml-2 align-middle text-sm font-semibold tabular-nums",
+                                  onFill ? fillMuted : "text-muted-foreground"
+                                )}
+                              >
+                                {stat.valueAddon}
+                              </span>
+                            ) : null}
                           </p>
                           {(stat.hints?.length ? stat.hints : stat.hint ? [stat.hint] : []).map(
                             (line) => (
@@ -780,14 +792,23 @@ export default function ProductionMarginPage() {
               },
             ];
 
+            const peSalesAddonPerKg =
+              report.channelManufacture?.powerEngineering.salesmanAddOnPerKg;
+            const peSalesAddon =
+              peSalesAddonPerKg != null && peSalesAddonPerKg > 0
+                ? `+ ${formatMoney(peSalesAddonPerKg)}`
+                : undefined;
+
+            const hubSplit = splitCastingKhrad(
+              report.channelManufacture?.ikEngineering.hub,
+              "hub"
+            );
+            const drumSplit = splitCastingKhrad(
+              report.channelManufacture?.ikEngineering.drum,
+              "drum"
+            );
+
             const hubStats: StatCard[] = [
-              {
-                label: t("prodMargin.hubSaleKg"),
-                value: salePerKg.hub != null ? formatMoney(salePerKg.hub) : "—",
-                hint: `${formatKg(partyTotals.hubKg)} · ${t("prodMargin.saleKgHint")}`,
-                accent: "bg-sky-600",
-                fill: "hub",
-              },
               {
                 label: t("prodMargin.ikHubCostKg"),
                 value:
@@ -801,31 +822,9 @@ export default function ProductionMarginPage() {
                 fill: "hub",
               },
               {
-                label: t("prodMargin.hubOverheadPerKg"),
-                value:
-                  report.channelManufacture?.ikEngineering.hub
-                    ? formatMoney(
-                        (report.channelManufacture.ikEngineering.hub.salariesPerKg || 0) +
-                          (report.channelManufacture.ikEngineering.hub.mfgExpensesPerKg || 0)
-                      )
-                    : summary.hubOverheadPerKg != null
-                      ? formatMoney(summary.hubOverheadPerKg)
-                      : "—",
-                hint: t("prodMargin.overheadPerKgHint"),
-                accent: "bg-sky-500",
-                fill: "hub",
-              },
-              {
-                label: t("prodMargin.rawMaterialKg"),
-                value:
-                  report.channelManufacture?.ikEngineering?.hub?.materialPerKg != null
-                    ? formatMoney(report.channelManufacture.ikEngineering.hub.materialPerKg)
-                    : report.byFamily.hub.finishedKg
-                      ? formatMoney(
-                          report.byFamily.hub.materialCost / report.byFamily.hub.finishedKg
-                        )
-                      : "—",
-                hint: `${formatKg(summary.hubFinishedKg ?? 0)} · ${t("prodMargin.scrapPlusDaig")}`,
+                label: t("prodMargin.ikHubSaleKg"),
+                value: salePerKg.ikHub != null ? formatMoney(salePerKg.ikHub) : "—",
+                hint: `${formatKg(partyTotals.direct.hubKg)} · ${t("prodMargin.channelIk")}`,
                 accent: "bg-sky-500",
                 fill: "hub",
               },
@@ -835,15 +834,9 @@ export default function ProductionMarginPage() {
                   report.channelManufacture?.powerEngineering.hub.totalPerKg != null
                     ? formatMoney(report.channelManufacture.powerEngineering.hub.totalPerKg)
                     : "—",
+                valueAddon: peSalesAddon,
                 hint: t("prodMargin.peCostHint"),
                 accent: "bg-sky-700",
-                fill: "hub",
-              },
-              {
-                label: t("prodMargin.ikHubSaleKg"),
-                value: salePerKg.ikHub != null ? formatMoney(salePerKg.ikHub) : "—",
-                hint: `${formatKg(partyTotals.direct.hubKg)} · ${t("prodMargin.channelIk")}`,
-                accent: "bg-sky-500",
                 fill: "hub",
               },
               {
@@ -853,16 +846,31 @@ export default function ProductionMarginPage() {
                 accent: "bg-sky-700",
                 fill: "hub",
               },
+              {
+                label: t("prodMargin.castingCostKg"),
+                value:
+                  hubSplit.castingPerKg != null ? formatMoney(hubSplit.castingPerKg) : "—",
+                hint: t("prodMargin.castingCostHint"),
+                accent: "bg-sky-500",
+                fill: "hub",
+              },
+              {
+                label: t("prodMargin.khradCostKg"),
+                value: hubSplit.khradPerKg != null ? formatMoney(hubSplit.khradPerKg) : "—",
+                hint: t("prodMargin.khradCostHint"),
+                accent: "bg-sky-500",
+                fill: "hub",
+              },
+              {
+                label: t("prodMargin.hubSaleKg"),
+                value: salePerKg.hub != null ? formatMoney(salePerKg.hub) : "—",
+                hint: `${formatKg(partyTotals.hubKg)} · ${t("prodMargin.saleKgHint")}`,
+                accent: "bg-sky-600",
+                fill: "hub",
+              },
             ];
 
             const drumStats: StatCard[] = [
-              {
-                label: t("prodMargin.drumSaleKg"),
-                value: salePerKg.drum != null ? formatMoney(salePerKg.drum) : "—",
-                hint: `${formatKg(partyTotals.drumKg)} · ${t("prodMargin.saleKgHint")}`,
-                accent: "bg-yellow-500",
-                fill: "drum",
-              },
               {
                 label: t("prodMargin.ikDrumCostKg"),
                 value:
@@ -876,31 +884,9 @@ export default function ProductionMarginPage() {
                 fill: "drum",
               },
               {
-                label: t("prodMargin.drumOverheadPerKg"),
-                value:
-                  report.channelManufacture?.ikEngineering.drum
-                    ? formatMoney(
-                        (report.channelManufacture.ikEngineering.drum.salariesPerKg || 0) +
-                          (report.channelManufacture.ikEngineering.drum.mfgExpensesPerKg || 0)
-                      )
-                    : summary.drumOverheadPerKg != null
-                      ? formatMoney(summary.drumOverheadPerKg)
-                      : "—",
-                hint: t("prodMargin.overheadPerKgHint"),
-                accent: "bg-yellow-500",
-                fill: "drum",
-              },
-              {
-                label: t("prodMargin.rawMaterialKg"),
-                value:
-                  report.channelManufacture?.ikEngineering?.drum?.materialPerKg != null
-                    ? formatMoney(report.channelManufacture.ikEngineering.drum.materialPerKg)
-                    : report.byFamily.drum.finishedKg
-                      ? formatMoney(
-                          report.byFamily.drum.materialCost / report.byFamily.drum.finishedKg
-                        )
-                      : "—",
-                hint: `${formatKg(summary.drumFinishedKg ?? 0)} · ${t("prodMargin.scrapPlusDaig")}`,
+                label: t("prodMargin.ikDrumSaleKg"),
+                value: salePerKg.ikDrum != null ? formatMoney(salePerKg.ikDrum) : "—",
+                hint: `${formatKg(partyTotals.direct.drumKg)} · ${t("prodMargin.channelIk")}`,
                 accent: "bg-yellow-500",
                 fill: "drum",
               },
@@ -910,15 +896,9 @@ export default function ProductionMarginPage() {
                   report.channelManufacture?.powerEngineering.drum.totalPerKg != null
                     ? formatMoney(report.channelManufacture.powerEngineering.drum.totalPerKg)
                     : "—",
+                valueAddon: peSalesAddon,
                 hint: t("prodMargin.peCostHint"),
                 accent: "bg-yellow-600",
-                fill: "drum",
-              },
-              {
-                label: t("prodMargin.ikDrumSaleKg"),
-                value: salePerKg.ikDrum != null ? formatMoney(salePerKg.ikDrum) : "—",
-                hint: `${formatKg(partyTotals.direct.drumKg)} · ${t("prodMargin.channelIk")}`,
-                accent: "bg-yellow-500",
                 fill: "drum",
               },
               {
@@ -926,6 +906,29 @@ export default function ProductionMarginPage() {
                 value: salePerKg.peDrum != null ? formatMoney(salePerKg.peDrum) : "—",
                 hint: `${formatKg(partyTotals.salesman.drumKg)} · ${t("prodMargin.channelPower")}`,
                 accent: "bg-yellow-600",
+                fill: "drum",
+              },
+              {
+                label: t("prodMargin.castingCostKg"),
+                value:
+                  drumSplit.castingPerKg != null ? formatMoney(drumSplit.castingPerKg) : "—",
+                hint: t("prodMargin.drumCastingCostHint"),
+                accent: "bg-yellow-500",
+                fill: "drum",
+              },
+              {
+                label: t("prodMargin.khradCostKg"),
+                value:
+                  drumSplit.khradPerKg != null ? formatMoney(drumSplit.khradPerKg) : "—",
+                hint: t("prodMargin.khradCostHint"),
+                accent: "bg-yellow-500",
+                fill: "drum",
+              },
+              {
+                label: t("prodMargin.drumSaleKg"),
+                value: salePerKg.drum != null ? formatMoney(salePerKg.drum) : "—",
+                hint: `${formatKg(partyTotals.drumKg)} · ${t("prodMargin.saleKgHint")}`,
+                accent: "bg-yellow-500",
                 fill: "drum",
               },
             ];
@@ -975,17 +978,81 @@ export default function ProductionMarginPage() {
                       <CardContent className="grid gap-4 sm:grid-cols-2">
                         {families.map((col) => {
                           const line = factory[col.fam];
+                          const split = splitCastingKhrad(line, col.fam);
                           const isDrum = col.fam === "drum";
                           const panelFill = isDrum
                             ? "border-yellow-600/40 bg-yellow-500 text-yellow-950"
                             : "border-sky-700/40 bg-sky-600 text-white";
                           const muted = isDrum
+                            ? "font-medium text-yellow-950/85"
+                            : "font-medium text-white/90";
+                          const value = isDrum
                             ? "font-semibold text-yellow-950"
                             : "font-semibold text-white";
-                          const value = isDrum
-                            ? "font-bold text-yellow-950"
-                            : "font-bold text-white";
-                          const rule = isDrum ? "border-yellow-950/30" : "border-white/30";
+                          const rule = isDrum ? "border-yellow-950/35" : "border-white/35";
+                          const sectionTitle = isDrum
+                            ? "font-extrabold text-yellow-950"
+                            : "font-extrabold text-white";
+                          const sectionTotal = isDrum
+                            ? "bg-yellow-950/15 text-yellow-950"
+                            : "bg-white/15 text-white";
+                          const grandTotal = isDrum
+                            ? "bg-yellow-950/25 text-yellow-950"
+                            : "bg-white/25 text-white";
+
+                          const renderSplitSection = (
+                            title: string,
+                            rows: typeof split.castingLines,
+                            total: number | null
+                          ) => (
+                            <div className="flex flex-col gap-1.5">
+                              <p
+                                className={cn(
+                                  "font-data mt-1 text-xs tracking-[0.14em] uppercase",
+                                  sectionTitle
+                                )}
+                              >
+                                {title}
+                              </p>
+                              {rows.length > 0 ? (
+                                rows.map((row) => (
+                                  <div
+                                    key={row.id}
+                                    className="flex justify-between gap-2 pl-2 text-sm"
+                                  >
+                                    <span className={muted}>
+                                      {row.kind === "material"
+                                        ? t("prodMargin.rawMaterialKg")
+                                        : row.halfShare
+                                          ? `${row.label} (${t("prodMargin.halfShare")})`
+                                          : row.label}
+                                    </span>
+                                    <span className={cn("font-data", value)}>
+                                      {formatMoney(row.perKg)}
+                                    </span>
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="flex justify-between gap-2 pl-2 text-sm">
+                                  <span className={muted}>—</span>
+                                  <span className={cn("font-data", value)}>—</span>
+                                </div>
+                              )}
+                              <div
+                                className={cn(
+                                  "mt-0.5 flex justify-between gap-2 rounded-sm border-t px-1.5 py-1.5 text-sm font-extrabold",
+                                  rule,
+                                  sectionTotal
+                                )}
+                              >
+                                <span className="uppercase tracking-wide">{title}</span>
+                                <span className="font-data text-base tabular-nums">
+                                  {moneyOrDash(total)}
+                                </span>
+                              </div>
+                            </div>
+                          );
+
                           return (
                             <div
                               key={col.fam}
@@ -993,91 +1060,34 @@ export default function ProductionMarginPage() {
                             >
                               <p
                                 className={cn(
-                                  "font-data mb-2 text-[10px] tracking-[0.12em] uppercase",
-                                  muted
+                                  "font-data mb-2 text-[11px] tracking-[0.14em] uppercase",
+                                  sectionTitle
                                 )}
                               >
                                 {col.label}
                               </p>
-                              <div className="flex flex-col gap-1.5">
-                                <div className="flex justify-between gap-2">
-                                  <span className={muted}>{t("prodMargin.rawMaterialKg")}</span>
-                                  <span className={cn("font-data", value)}>
-                                    {moneyOrDash(line.materialPerKg)}
-                                  </span>
-                                </div>
-
-                                {(line.expenseLines?.length || 0) > 0 ? (
-                                  <>
-                                    <p
-                                      className={cn(
-                                        "font-data mt-1 text-[10px] tracking-[0.1em] uppercase",
-                                        muted
-                                      )}
-                                    >
-                                      {t("prodMargin.mfgExpensesKg")}
-                                    </p>
-                                    {line.expenseLines!.map((e) => (
-                                      <div
-                                        key={e.id}
-                                        className="flex justify-between gap-2 pl-2"
-                                      >
-                                        <span className={muted}>{e.label}</span>
-                                        <span className={cn("font-data", value)}>
-                                          {formatMoney(e.perKg)}
-                                        </span>
-                                      </div>
-                                    ))}
-                                  </>
-                                ) : (
-                                  <div className="flex justify-between gap-2">
-                                    <span className={muted}>{t("prodMargin.mfgExpensesKg")}</span>
-                                    <span className={cn("font-data", value)}>
-                                      {moneyOrDash(line.mfgExpensesPerKg)}
-                                    </span>
-                                  </div>
+                              <div className="flex flex-col gap-3">
+                                {renderSplitSection(
+                                  t("prodMargin.castingCost"),
+                                  split.castingLines,
+                                  split.castingPerKg
                                 )}
-
-                                {(line.salaryLines?.length || 0) > 0 ? (
-                                  <>
-                                    <p
-                                      className={cn(
-                                        "font-data mt-1 text-[10px] tracking-[0.1em] uppercase",
-                                        muted
-                                      )}
-                                    >
-                                      {t("prodMargin.salariesKg")}
-                                    </p>
-                                    {line.salaryLines!.map((e) => (
-                                      <div
-                                        key={e.id}
-                                        className="flex justify-between gap-2 pl-2"
-                                      >
-                                        <span className={muted}>{e.label}</span>
-                                        <span className={cn("font-data", value)}>
-                                          {formatMoney(e.perKg)}
-                                        </span>
-                                      </div>
-                                    ))}
-                                  </>
-                                ) : (
-                                  <div className="flex justify-between gap-2">
-                                    <span className={muted}>{t("prodMargin.salariesKg")}</span>
-                                    <span className={cn("font-data", value)}>
-                                      {moneyOrDash(line.salariesPerKg)}
-                                    </span>
-                                  </div>
+                                {renderSplitSection(
+                                  t("prodMargin.khradCost"),
+                                  split.khradLines,
+                                  split.khradPerKg
                                 )}
-
                                 <div
                                   className={cn(
-                                    "mt-1 flex justify-between gap-2 border-t pt-1.5 font-bold",
+                                    "mt-1 flex justify-between gap-2 rounded-sm border-t-2 px-1.5 py-2 text-sm font-extrabold",
                                     rule,
-                                    value
+                                    grandTotal
                                   )}
                                 >
-                                  <span>{t("prodMargin.totalMfgKg")}</span>
-                                  <span className="font-data">
+                                  <span className="uppercase tracking-wide">
+                                    {t("prodMargin.totalMfgKg")}
+                                  </span>
+                                  <span className="font-data text-lg tabular-nums">
                                     {moneyOrDash(line.totalPerKg)}
                                   </span>
                                 </div>
@@ -1090,7 +1100,7 @@ export default function ProductionMarginPage() {
 
                     <div className="grid gap-3 sm:grid-cols-3">
                       <div className="rounded-md border border-sky-500/40 bg-muted/20 p-3 text-sm">
-                        <p className="text-nameplate text-sm">{t("prodMargin.channelIk")}</p>
+                        <p className="text-nameplate text-sm">{t("prodMargin.channelIkMfg")}</p>
                         <div className="mt-2 flex flex-col gap-1.5">
                           {families.map((col) => {
                             const totalPerKg = factory[col.fam].totalPerKg;
@@ -1124,7 +1134,7 @@ export default function ProductionMarginPage() {
                       </div>
 
                       <div className="rounded-md border border-yellow-500/40 bg-muted/20 p-3 text-sm">
-                        <p className="text-nameplate text-sm">{t("prodMargin.channelPower")}</p>
+                        <p className="text-nameplate text-sm">{t("prodMargin.channelPowerMfg")}</p>
                         <div className="mt-2 flex flex-col gap-1.5">
                           {families.map((col) => {
                             const totalPerKg = power[col.fam].totalPerKg;

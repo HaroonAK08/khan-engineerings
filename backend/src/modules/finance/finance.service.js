@@ -1375,7 +1375,7 @@ async function getProductionMargin(query = {}) {
       if (hubOthersPerKg != null) {
         salaryLines.push({
           id: "others_salaries",
-          label: "Others",
+          label: "Other salaries",
           perKg: hubOthersPerKg,
         });
       }

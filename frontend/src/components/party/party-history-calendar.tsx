@@ -435,16 +435,40 @@ export function PartyHistoryCalendar({ customerId, entries, onChanged }: Props) 
                 {displayRows.map((row) => {
                   const e = row.entry;
                   const isPayment = e.type === "payment";
+                  const isInvoice = e.type === "invoice";
                   const isCleared = Math.abs(row.baqaya) <= 0.001;
+                  const invoiceBuiltyId = isInvoice ? builtyIdOf(e) : "";
+                  const openBuilty = () => {
+                    if (!invoiceBuiltyId) {
+                      toast.error(t("customerDetail.builtyMissing"));
+                      return;
+                    }
+                    router.push(`/dashboard/builty/${invoiceBuiltyId}`);
+                  };
                   return (
                     <TableRow
                       key={e._id}
-                      className={
+                      tabIndex={isInvoice ? 0 : undefined}
+                      className={[
+                        isInvoice ? "cursor-pointer" : "",
                         isPayment
                           ? "bg-emerald-100 hover:bg-emerald-100/90 dark:bg-emerald-900/50 dark:hover:bg-emerald-900/60"
                           : isCleared
                             ? "bg-muted/40 hover:bg-muted/50"
-                            : undefined
+                            : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      onClick={isInvoice ? openBuilty : undefined}
+                      onKeyDown={
+                        isInvoice
+                          ? (ev) => {
+                              if (ev.key === "Enter" || ev.key === " ") {
+                                ev.preventDefault();
+                                openBuilty();
+                              }
+                            }
+                          : undefined
                       }
                     >
                       <TableCell className="font-data whitespace-nowrap">
@@ -474,7 +498,10 @@ export function PartyHistoryCalendar({ customerId, entries, onChanged }: Props) 
                       >
                         {formatBaqaya(row.baqaya)}
                       </TableCell>
-                      <TableCell className="text-end">
+                      <TableCell
+                        className="text-end"
+                        onClick={(ev) => ev.stopPropagation()}
+                      >
                         <div className="inline-flex flex-wrap justify-end gap-1">
                           <Button
                             type="button"

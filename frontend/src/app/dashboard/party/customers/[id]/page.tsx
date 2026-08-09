@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
@@ -30,7 +30,50 @@ import {
 } from "@/components/ui/table";
 import { PartyHistoryCalendar } from "@/components/party/party-history-calendar";
 import { useI18n } from "@/hooks/use-i18n";
-import { todayInput } from "@/lib/date-range";
+import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
+import { toDateInput, todayInput } from "@/lib/date-range";
+
+function roundMoney(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
+function entryDayKey(e: CustomerLedgerEntry) {
+  return toDateInput(new Date(e.entryDate));
+}
+
+function entryDelta(e: CustomerLedgerEntry) {
+  if (e.type === "payment") return -roundMoney(e.amount || 0);
+  if (e.type === "adjustment") {
+    const signed = e.signedAmount ?? 0;
+    if (signed <= 0) return 0;
+    return roundMoney(signed);
+  }
+  const b = e.builty && typeof e.builty === "object" ? e.builty : null;
+  return roundMoney(b?.totalAmount ?? e.amount ?? 0);
+}
+
+/** Net baqaya for all ledger rows on or before cutoff (range + earlier). */
+function balanceAsOf(entries: CustomerLedgerEntry[], cutoff: string) {
+  let running = 0;
+  for (const e of entries) {
+    if (entryDayKey(e) > cutoff) continue;
+    running = roundMoney(running + entryDelta(e));
+  }
+  return running;
+}
+
+function formatBaqaya(baqaya: number) {
+  const abs = formatMoney(Math.abs(baqaya));
+  if (baqaya > 0.001) return abs;
+  if (baqaya < -0.001) return `+ ${abs}`;
+  return formatMoney(0);
+}
+
+function baqayaClass(baqaya: number) {
+  if (baqaya > 0.001) return "text-amber-700 dark:text-amber-400";
+  if (baqaya < -0.001) return "text-emerald-700 dark:text-emerald-400";
+  return undefined;
+}
 
 type PartyClaim = {
   _id: string;
@@ -46,8 +89,10 @@ export default function CustomerDetailPage() {
   const { t } = useI18n();
   const params = useParams();
   const id = String(params.id);
+  const { dateFrom, dateTo, setDateFrom, setDateTo } = usePersistedDateRange();
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [balance, setBalance] = useState(0);
+  const [recordedPreviousPending, setRecordedPreviousPending] = useState(0);
   const [stats, setStats] = useState({
     orderCount: 0,
     totalSales: 0,
@@ -71,6 +116,12 @@ export default function CustomerDetailPage() {
   const [paidNotes, setPaidNotes] = useState("");
   const [savingPaid, setSavingPaid] = useState(false);
 
+  const pendingCutoff = dateTo || dateFrom;
+  const previousPendingShown = useMemo(() => {
+    if (!pendingCutoff) return recordedPreviousPending;
+    return balanceAsOf(entries, pendingCutoff);
+  }, [entries, pendingCutoff, recordedPreviousPending]);
+
   const load = useCallback(
     async (opts?: { silent?: boolean }) => {
       if (!opts?.silent) setLoading(true);
@@ -82,6 +133,7 @@ export default function CustomerDetailPage() {
         ]);
         setCustomer(detail.customer);
         setBalance(detail.balance);
+        setRecordedPreviousPending(detail.previousPending || 0);
         setEntries(ledger.entries);
         setClaims(claimsRes.data.claims || []);
         setStats({
@@ -246,7 +298,7 @@ export default function CustomerDetailPage() {
               {t("customerDetail.previousPending")}
             </CardTitle>
             <p className="mt-1 text-sm text-muted-foreground">
-              {t("customerDetail.previousPendingDesc")}
+              {t("customerDetail.previousPendingDateDesc")}
             </p>
           </div>
           <Button
@@ -261,47 +313,77 @@ export default function CustomerDetailPage() {
             {showPendingForm ? t("common.cancel") : t("customerDetail.addPreviousPending")}
           </Button>
         </CardHeader>
-        {showPendingForm ? (
-          <CardContent className="pt-0">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div className="flex flex-col gap-1.5">
-                <Label>{t("common.amount")}</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  value={pendingAmount}
-                  onChange={(e) => setPendingAmount(e.target.value)}
-                  placeholder="0"
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label>{t("common.date")}</Label>
-                <Input
-                  type="date"
-                  value={pendingDate}
-                  onChange={(e) => setPendingDate(e.target.value)}
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label>{t("common.notes")}</Label>
-                <Input
-                  value={pendingNotes}
-                  onChange={(e) => setPendingNotes(e.target.value)}
-                />
+        <CardContent className={showPendingForm ? "pt-0" : undefined}>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-1.5">
+              <Label>{t("common.from")}</Label>
+              <Input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>{t("common.to")}</Label>
+              <Input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>{t("customerDetail.previousPending")}</Label>
+              <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3">
+                <span
+                  className={`font-data text-base font-semibold ${baqayaClass(previousPendingShown) || ""}`}
+                >
+                  {formatBaqaya(previousPendingShown)}
+                </span>
               </div>
             </div>
-            <Button
-              type="button"
-              className="mt-3 gap-2"
-              disabled={savingPending}
-              onClick={() => void onAddPreviousPending()}
-            >
-              {savingPending ? <Loader2 className="size-4 animate-spin" /> : null}
-              {t("common.save")}
-            </Button>
-          </CardContent>
-        ) : null}
+          </div>
+          {showPendingForm ? (
+            <div className="mt-4 border-t pt-4">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="flex flex-col gap-1.5">
+                  <Label>{t("common.amount")}</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    value={pendingAmount}
+                    onChange={(e) => setPendingAmount(e.target.value)}
+                    placeholder="0"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>{t("common.date")}</Label>
+                  <Input
+                    type="date"
+                    value={pendingDate}
+                    onChange={(e) => setPendingDate(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>{t("common.notes")}</Label>
+                  <Input
+                    value={pendingNotes}
+                    onChange={(e) => setPendingNotes(e.target.value)}
+                  />
+                </div>
+              </div>
+              <Button
+                type="button"
+                className="mt-3 gap-2"
+                disabled={savingPending}
+                onClick={() => void onAddPreviousPending()}
+              >
+                {savingPending ? <Loader2 className="size-4 animate-spin" /> : null}
+                {t("common.save")}
+              </Button>
+            </div>
+          ) : null}
+        </CardContent>
       </Card>
 
       <Card>
