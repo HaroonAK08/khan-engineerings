@@ -1092,16 +1092,19 @@ export default function ProductionMarginPage() {
                       <div className="rounded-md border border-sky-500/40 bg-muted/20 p-3 text-sm">
                         <p className="text-nameplate text-sm">{t("prodMargin.channelIk")}</p>
                         <div className="mt-2 flex flex-col gap-1.5">
-                          {families.map((col) => (
-                            <div key={col.fam} className="flex justify-between gap-2">
-                              <span className="text-muted-foreground">{col.label}</span>
-                              <span className="font-data">
-                                {factory[col.fam].totalPerKg != null
-                                  ? `${formatMoney(factory[col.fam].totalPerKg)} / kg`
-                                  : "—"}
-                              </span>
-                            </div>
-                          ))}
+                          {families.map((col) => {
+                            const totalPerKg = factory[col.fam].totalPerKg;
+                            return (
+                              <div key={col.fam} className="flex justify-between gap-2">
+                                <span className="text-muted-foreground">{col.label}</span>
+                                <span className="font-data">
+                                  {totalPerKg != null
+                                    ? `${formatMoney(totalPerKg)} / kg`
+                                    : "—"}
+                                </span>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
 
@@ -1123,16 +1126,19 @@ export default function ProductionMarginPage() {
                       <div className="rounded-md border border-yellow-500/40 bg-muted/20 p-3 text-sm">
                         <p className="text-nameplate text-sm">{t("prodMargin.channelPower")}</p>
                         <div className="mt-2 flex flex-col gap-1.5">
-                          {families.map((col) => (
-                            <div key={col.fam} className="flex justify-between gap-2">
-                              <span className="text-muted-foreground">{col.label}</span>
-                              <span className="font-data">
-                                {power[col.fam].totalPerKg != null
-                                  ? `${formatMoney(power[col.fam].totalPerKg)} / kg`
-                                  : "—"}
-                              </span>
-                            </div>
-                          ))}
+                          {families.map((col) => {
+                            const totalPerKg = power[col.fam].totalPerKg;
+                            return (
+                              <div key={col.fam} className="flex justify-between gap-2">
+                                <span className="text-muted-foreground">{col.label}</span>
+                                <span className="font-data">
+                                  {totalPerKg != null
+                                    ? `${formatMoney(totalPerKg)} / kg`
+                                    : "—"}
+                                </span>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     </div>
