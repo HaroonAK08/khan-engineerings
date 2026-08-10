@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/hooks/use-i18n";
 
-export type ReportViewMode = "whole" | "party" | "group";
+export type ReportViewMode = "whole" | "party" | "group" | "totals";
 
 type Props = {
   value: ReportViewMode;
@@ -21,6 +21,7 @@ export function ReportViewToggle({
     whole: t("rep.view.whole"),
     party: t("rep.view.party"),
     group: t("rep.view.group"),
+    totals: t("rep.view.totals"),
   };
 
   return (

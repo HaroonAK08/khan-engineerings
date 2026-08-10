@@ -9,6 +9,7 @@ import type { MessageKey } from "@/hooks/use-i18n";
 const LINKS: Array<{ href: string; labelKey: MessageKey; exact?: boolean }> = [
   { href: "/dashboard/reports", labelKey: "rep.nav.hub", exact: true },
   { href: "/dashboard/reports/received", labelKey: "rep.nav.received" },
+  { href: "/dashboard/reports/paid", labelKey: "rep.nav.paid" },
   { href: "/dashboard/reports/receivables", labelKey: "rep.nav.receivables" },
   { href: "/dashboard/reports/payables", labelKey: "rep.nav.payables" },
   { href: "/dashboard/reports/sales", labelKey: "rep.nav.sales" },

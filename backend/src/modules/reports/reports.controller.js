@@ -27,6 +27,15 @@ async function received(req, res, next) {
   }
 }
 
+async function paid(req, res, next) {
+  try {
+    const report = await reportsService.getPaidReport(req.query);
+    res.json({ report });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function payables(req, res, next) {
   try {
     const report = await reportsService.getPayablesReport(req.query);
@@ -85,6 +94,7 @@ function exportHandler(kind) {
       if (kind === "finance") return await reportsService.exportFinance(q, format, res);
       if (kind === "receivables") return await reportsService.exportReceivables(q, format, res);
       if (kind === "received") return await reportsService.exportReceived(q, format, res);
+      if (kind === "paid") return await reportsService.exportPaid(q, format, res);
       if (kind === "payables") return await reportsService.exportPayables(q, format, res);
       const err = new Error("Unknown export kind");
       err.statusCode = 404;
@@ -162,6 +172,7 @@ module.exports = {
   search,
   receivables,
   received,
+  paid,
   payables,
   customerStatement,
   supplierStatement,
@@ -175,6 +186,7 @@ module.exports = {
   exportFinance: exportHandler("finance"),
   exportReceivables: exportHandler("receivables"),
   exportReceived: exportHandler("received"),
+  exportPaid: exportHandler("paid"),
   exportPayables: exportHandler("payables"),
   exportCustomerStatement,
   exportSupplierStatement,

@@ -245,6 +245,50 @@ export async function getReceivedReport(params?: {
   return data.report;
 }
 
+export type PaidRecord = {
+  id: string;
+  type: string;
+  date: string;
+  reference: string;
+  notes?: string;
+  partyId: string;
+  partyName: string;
+  partyPhone?: string;
+  amount: number;
+  href: string;
+};
+
+export type PaidSupplierRollup = {
+  partyId: string;
+  name: string;
+  phone?: string;
+  amount: number;
+  balance: number;
+  recordCount: number;
+};
+
+export type PaidReport = {
+  period: { from: string | null; to: string | null };
+  party?: { id: string; name: string } | null;
+  totals: {
+    totalPaid: number;
+    totalLeft: number;
+    supplierCount: number;
+    recordCount: number;
+  };
+  bySupplier: PaidSupplierRollup[];
+  records: PaidRecord[];
+};
+
+export async function getPaidReport(params?: {
+  dateFrom?: string;
+  dateTo?: string;
+  supplierId?: string;
+}) {
+  const { data } = await api.get<{ report: PaidReport }>("/reports/paid", { params });
+  return data.report;
+}
+
 export async function getPayablesReport(params?: { dateFrom?: string; dateTo?: string }) {
   const { data } = await api.get<{ report: PayablesReport }>("/reports/payables", { params });
   return data.report;
@@ -259,6 +303,7 @@ export type ExportKind =
   | "finance"
   | "receivables"
   | "received"
+  | "paid"
   | "payables";
 
 export const COMBINED_REPORT_MODULES: Array<{ id: ExportKind; label: string }> = [

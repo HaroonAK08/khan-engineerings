@@ -1358,6 +1358,115 @@ async function getReceivedReport({ dateFrom, dateTo, groupId, customerId } = {})
   };
 }
 
+async function getPaidReport({ dateFrom, dateTo, supplierId } = {}) {
+  const LedgerEntry = require("../ledger/ledger.model");
+  let partyMeta = null;
+
+  const filter = {
+    type: "payment",
+    ...dateRangeFilter("entryDate", dateFrom, dateTo),
+  };
+
+  if (supplierId) {
+    if (!mongoose.isValidObjectId(supplierId)) throw httpError("Invalid supplier", 400);
+    const supplier = await Supplier.findById(supplierId).select("name phone").lean();
+    if (!supplier) throw httpError("Supplier not found", 404);
+    partyMeta = { id: String(supplier._id), name: supplier.name };
+    filter.supplier = supplier._id;
+  }
+
+  const payments = await LedgerEntry.find(filter)
+    .populate("supplier", "name nameUr phone")
+    .populate("purchase", "invoiceNo")
+    .sort({ entryDate: -1, createdAt: -1 })
+    .lean();
+
+  const records = payments.map((p) => {
+    const supplier =
+      p.supplier && typeof p.supplier === "object"
+        ? {
+            id: String(p.supplier._id),
+            name: p.supplier.name || "—",
+            phone: p.supplier.phone || "",
+          }
+        : { id: String(p.supplier || ""), name: "—", phone: "" };
+    const invoiceNo =
+      p.purchase && typeof p.purchase === "object" ? p.purchase.invoiceNo || "" : "";
+    const reference =
+      (p.notes && String(p.notes).trim()) || invoiceNo || "—";
+    return {
+      id: String(p._id),
+      type: "payment",
+      date: p.entryDate,
+      reference,
+      notes: p.notes || "",
+      partyId: supplier.id,
+      partyName: supplier.name,
+      partyPhone: supplier.phone,
+      amount: roundMoney(p.amount),
+      href: supplier.id ? `/dashboard/suppliers/${supplier.id}` : "/dashboard/suppliers",
+    };
+  });
+
+  const bySupplierMap = new Map();
+  for (const r of records) {
+    const key = r.partyId || r.partyName;
+    const existing = bySupplierMap.get(key);
+    if (existing) {
+      existing.amount = roundMoney(existing.amount + r.amount);
+      existing.recordCount += 1;
+    } else {
+      bySupplierMap.set(key, {
+        partyId: r.partyId,
+        name: r.partyName,
+        phone: r.partyPhone,
+        amount: r.amount,
+        balance: 0,
+        recordCount: 1,
+      });
+    }
+  }
+
+  const supplierIdsForBalance = partyMeta
+    ? [partyMeta.id]
+    : [...bySupplierMap.keys()].filter((id) => mongoose.isValidObjectId(id));
+
+  await Promise.all(
+    supplierIdsForBalance.map(async (id) => {
+      const balance = await supplierService.getBalance(id);
+      const row = bySupplierMap.get(id);
+      if (row) row.balance = roundMoney(balance);
+      else if (partyMeta) {
+        bySupplierMap.set(id, {
+          partyId: id,
+          name: partyMeta.name,
+          phone: "",
+          amount: 0,
+          balance: roundMoney(balance),
+          recordCount: 0,
+        });
+      }
+    })
+  );
+
+  const bySupplier = [...bySupplierMap.values()].sort((a, b) => b.amount - a.amount);
+  const totalPaid = roundMoney(records.reduce((s, r) => s + r.amount, 0));
+  const totalLeft = roundMoney(bySupplier.reduce((s, r) => s + Math.max(0, r.balance || 0), 0));
+
+  return {
+    period: { from: dateFrom || null, to: dateTo || null },
+    party: partyMeta,
+    totals: {
+      totalPaid,
+      totalLeft,
+      supplierCount: bySupplier.length,
+      recordCount: records.length,
+    },
+    bySupplier,
+    records,
+  };
+}
+
 async function getPayablesReport({ dateFrom, dateTo } = {}) {
   const supplierIds = await Purchase.distinct("supplier");
   for (const id of supplierIds) {
@@ -1730,6 +1839,154 @@ async function exportReceived(query, format, res) {
     meta,
   });
   return sendExcel(res, buf, "received-report.xlsx");
+}
+
+async function exportPaid(query, format, res) {
+  const report = await getPaidReport(query);
+  const view = ["whole", "party", "totals"].includes(query.view) ? query.view : "party";
+  const viewLabel =
+    view === "whole" ? "Overall" : view === "totals" ? "Total only" : "Party wise";
+  const period = periodLabel(query.dateFrom, query.dateTo);
+  const meta = {
+    Period: period,
+    Overall: !query.dateFrom && !query.dateTo ? "All" : period,
+    View: viewLabel,
+    Supplier: report.party?.name || "All suppliers",
+    "Total paid": money(report.totals.totalPaid),
+    "Amount left": money(report.totals.totalLeft),
+    Suppliers: report.totals.supplierCount,
+    Records: report.totals.recordCount,
+  };
+  const title = report.party
+    ? `Money paid — ${report.party.name}`
+    : "Money paid to suppliers";
+
+  const partyColumns = ["Supplier", "Payments", "Amount paid", "Amount left"];
+  const partyRows = (report.bySupplier || []).map((p) => [
+    p.name,
+    p.recordCount,
+    money(p.amount),
+    money(Math.max(0, p.balance || 0)),
+  ]);
+  if (partyRows.length > 0) {
+    partyRows.push([
+      "Total",
+      report.totals.recordCount,
+      money(report.totals.totalPaid),
+      money(report.totals.totalLeft),
+    ]);
+  }
+
+  const totalsColumns = ["Supplier", "Amount paid", "Amount left"];
+  const totalsRows = (report.bySupplier || []).map((p) => [
+    p.name,
+    money(p.amount),
+    money(Math.max(0, p.balance || 0)),
+  ]);
+  if (totalsRows.length > 0) {
+    totalsRows.push([
+      "Total",
+      money(report.totals.totalPaid),
+      money(report.totals.totalLeft),
+    ]);
+  }
+
+  const recordColumns = ["Date", "Supplier", "Reference", "Amount"];
+  const recordRows = (report.records || []).map((r) => [
+    fmtDate(r.date),
+    r.partyName,
+    r.reference,
+    money(r.amount),
+  ]);
+
+  if (format === "pdf") {
+    const sections = [];
+    if (query.supplierId || report.party) {
+      sections.push({
+        heading: report.party ? `Paid — ${report.party.name}` : "Supplier paid",
+        columns: partyColumns,
+        rows: partyRows,
+      });
+      sections.push({
+        heading: "All payments",
+        columns: recordColumns,
+        rows: recordRows,
+      });
+    } else if (view === "totals") {
+      sections.push({
+        heading: "Supplier totals",
+        columns: totalsColumns,
+        rows: totalsRows,
+      });
+    } else if (view === "party") {
+      sections.push({
+        heading: "Paid total of each supplier",
+        columns: partyColumns,
+        rows: partyRows,
+      });
+      sections.push({
+        heading: "All payments",
+        columns: recordColumns,
+        rows: recordRows,
+      });
+    } else {
+      sections.push({
+        heading: "Overall paid",
+        columns: ["Metric", "Value"],
+        rows: [
+          ["Total paid", money(report.totals.totalPaid)],
+          ["Amount left", money(report.totals.totalLeft)],
+          ["Suppliers", report.totals.supplierCount],
+          ["Records", report.totals.recordCount],
+        ],
+      });
+      sections.push({
+        heading: "All payments",
+        columns: recordColumns,
+        rows: recordRows,
+      });
+    }
+
+    const buf = await buildPdf({
+      title,
+      subtitle: "Khan Engineerings",
+      metaLines: [
+        `View: ${viewLabel}`,
+        `Overall: ${meta.Overall}`,
+        `Supplier: ${meta.Supplier}`,
+        `Total paid: ${meta["Total paid"]}`,
+        `Amount left: ${meta["Amount left"]}`,
+        `Suppliers: ${meta.Suppliers}`,
+        `Records: ${meta.Records}`,
+      ],
+      sections,
+    });
+    return sendPdf(res, buf, "paid-report.pdf");
+  }
+
+  const buf = await buildExcel({
+    title,
+    sheetName: "Paid",
+    columns:
+      view === "totals"
+        ? totalsColumns
+        : view === "whole"
+          ? ["Metric", "Value"]
+          : recordColumns,
+    rows:
+      view === "totals"
+        ? totalsRows
+        : view === "whole"
+          ? [
+              ["Total paid", money(report.totals.totalPaid)],
+              ["Amount left", money(report.totals.totalLeft)],
+              ["Suppliers", report.totals.supplierCount],
+              ["Records", report.totals.recordCount],
+            ]
+          : recordRows,
+    meta,
+  });
+  return sendExcel(res, buf, "paid-report.xlsx");
 }
 
 async function exportPayables(query, format, res) {
@@ -2374,6 +2631,7 @@ module.exports = {
   customersOverviewStatement,
   getReceivablesReport,
   getReceivedReport,
+  getPaidReport,
   getPayablesReport,
   exportSales,
   exportPurchases,
@@ -2383,6 +2641,7 @@ module.exports = {
   exportFinance,
   exportReceivables,
   exportReceived,
+  exportPaid,
   exportPayables,
   exportStatement,
   exportGroupStatement,
