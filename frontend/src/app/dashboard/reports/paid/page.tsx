@@ -159,7 +159,8 @@ export default function PaidReportPage() {
           if (next !== "party") setSupplierId("");
           setView(next);
         }}
-        modes={["whole", "party", "totals"]}
+        modes={["party", "whole"]}
+        labels={{ party: t("paidReports.viewTotal") }}
       />
 
       {drilledSupplier ? (
@@ -298,71 +299,6 @@ export default function PaidReportPage() {
                         <TableCell className="font-data text-right text-xs">
                           {report.totals.recordCount}
                         </TableCell>
-                        <TableCell className="font-data text-right text-sm font-medium text-emerald-700 dark:text-emerald-400">
-                          {formatMoney(report.totals.totalPaid)}
-                        </TableCell>
-                        <TableCell className="font-data text-right text-sm font-medium text-destructive">
-                          {formatMoney(report.totals.totalLeft)}
-                        </TableCell>
-                      </TableRow>
-                    </TableFooter>
-                  ) : null}
-                </Table>
-              </CardContent>
-            </Card>
-          ) : null}
-
-          {view === "totals" && !drilledSupplier ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-nameplate text-sm">{t("paidReports.totalsOnly")}</CardTitle>
-                <CardDescription>{t("paidReports.totalsOnlyHint")}</CardDescription>
-              </CardHeader>
-              <CardContent className="px-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{t("paidReports.supplier")}</TableHead>
-                      <TableHead className="text-right">{t("paidReports.partyTotal")}</TableHead>
-                      <TableHead className="text-right">{t("paidReports.partyLeft")}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {report.bySupplier.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={3} className="text-muted-foreground">
-                          {t("paidReports.empty")}
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      report.bySupplier.map((s) => (
-                        <TableRow key={s.partyId || s.name}>
-                          <TableCell className="font-medium">
-                            {s.partyId ? (
-                              <Link
-                                href={`/dashboard/suppliers/${s.partyId}`}
-                                className="text-primary hover:underline"
-                              >
-                                {s.name}
-                              </Link>
-                            ) : (
-                              s.name
-                            )}
-                          </TableCell>
-                          <TableCell className="font-data text-right text-xs text-emerald-700 dark:text-emerald-400">
-                            {formatMoney(s.amount)}
-                          </TableCell>
-                          <TableCell className="font-data text-right text-xs text-destructive">
-                            {formatMoney(leftFor(s.balance))}
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                  {report.bySupplier.length > 0 ? (
-                    <TableFooter>
-                      <TableRow>
-                        <TableCell className="font-medium">{t("paidReports.grandTotal")}</TableCell>
                         <TableCell className="font-data text-right text-sm font-medium text-emerald-700 dark:text-emerald-400">
                           {formatMoney(report.totals.totalPaid)}
                         </TableCell>

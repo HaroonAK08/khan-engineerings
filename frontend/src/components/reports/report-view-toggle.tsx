@@ -3,25 +3,26 @@
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/hooks/use-i18n";
 
-export type ReportViewMode = "whole" | "party" | "group" | "totals";
+export type ReportViewMode = "whole" | "party" | "group";
 
 type Props = {
   value: ReportViewMode;
   onChange: (view: ReportViewMode) => void;
   modes?: ReportViewMode[];
+  labels?: Partial<Record<ReportViewMode, string>>;
 };
 
 export function ReportViewToggle({
   value,
   onChange,
   modes = ["whole", "party", "group"],
+  labels: labelOverrides,
 }: Props) {
   const { t } = useI18n();
   const labels: Record<ReportViewMode, string> = {
-    whole: t("rep.view.whole"),
-    party: t("rep.view.party"),
-    group: t("rep.view.group"),
-    totals: t("rep.view.totals"),
+    whole: labelOverrides?.whole ?? t("rep.view.whole"),
+    party: labelOverrides?.party ?? t("rep.view.party"),
+    group: labelOverrides?.group ?? t("rep.view.group"),
   };
 
   return (

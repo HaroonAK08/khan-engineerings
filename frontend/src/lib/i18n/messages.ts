@@ -29,7 +29,6 @@ const en = {
   "rep.view.whole": "Overall",
   "rep.view.party": "Party wise",
   "rep.view.group": "Group wise",
-  "rep.view.totals": "Total only",
 
   "common.urduTypeHint": "Type English letters (e.g. ali) then Space or click a suggestion for Urdu.",
 
@@ -1138,8 +1137,7 @@ const en = {
   "paidReports.suppliers": "Suppliers",
   "paidReports.payments": "Payments",
   "paidReports.bySupplier": "Paid total of each supplier",
-  "paidReports.totalsOnly": "Supplier totals",
-  "paidReports.totalsOnlyHint": "Paid and amount left per supplier — no individual payment rows.",
+  "paidReports.viewTotal": "Total",
   "paidReports.partyTotal": "Paid",
   "paidReports.partyLeft": "Left",
   "paidReports.grandTotal": "Total paid",
@@ -1988,7 +1986,6 @@ const ur: Record<MessageKey, string> = {
   "rep.view.whole": "مجموعی",
   "rep.view.party": "پارٹی کے مطابق",
   "rep.view.group": "گروپ کے مطابق",
-  "rep.view.totals": "صرف کل",
 
   "common.urduTypeHint": "انگریزی لکھیں (جیسے ali) پھر Space دبائیں یا تجویز منتخب کریں۔",
 
@@ -3095,8 +3092,7 @@ const ur: Record<MessageKey, string> = {
   "paidReports.suppliers": "سپلائرز",
   "paidReports.payments": "ادائیگیاں",
   "paidReports.bySupplier": "ہر سپلائر کی کل ادا شدہ",
-  "paidReports.totalsOnly": "سپلائر کل",
-  "paidReports.totalsOnlyHint": "ہر سپلائر کی ادا شدہ اور باقی رقم — انفرادی ادائیگیاں نہیں۔",
+  "paidReports.viewTotal": "کل",
   "paidReports.partyTotal": "ادا شدہ",
   "paidReports.partyLeft": "باقی",
   "paidReports.grandTotal": "کل ادا شدہ",

@@ -1843,9 +1843,8 @@ async function exportReceived(query, format, res) {
 
 async function exportPaid(query, format, res) {
   const report = await getPaidReport(query);
-  const view = ["whole", "party", "totals"].includes(query.view) ? query.view : "party";
-  const viewLabel =
-    view === "whole" ? "Overall" : view === "totals" ? "Total only" : "Party wise";
+  const view = ["whole", "party"].includes(query.view) ? query.view : "party";
+  const viewLabel = view === "whole" ? "Overall" : "Party wise";
   const period = periodLabel(query.dateFrom, query.dateTo);
   const meta = {
     Period: period,
@@ -1877,20 +1876,6 @@ async function exportPaid(query, format, res) {
     ]);
   }
 
-  const totalsColumns = ["Supplier", "Amount paid", "Amount left"];
-  const totalsRows = (report.bySupplier || []).map((p) => [
-    p.name,
-    money(p.amount),
-    money(Math.max(0, p.balance || 0)),
-  ]);
-  if (totalsRows.length > 0) {
-    totalsRows.push([
-      "Total",
-      money(report.totals.totalPaid),
-      money(report.totals.totalLeft),
-    ]);
-  }
-
   const recordColumns = ["Date", "Supplier", "Reference", "Amount"];
   const recordRows = (report.records || []).map((r) => [
     fmtDate(r.date),
@@ -1912,22 +1897,11 @@ async function exportPaid(query, format, res) {
         columns: recordColumns,
         rows: recordRows,
       });
-    } else if (view === "totals") {
-      sections.push({
-        heading: "Supplier totals",
-        columns: totalsColumns,
-        rows: totalsRows,
-      });
     } else if (view === "party") {
       sections.push({
         heading: "Paid total of each supplier",
         columns: partyColumns,
         rows: partyRows,
-      });
-      sections.push({
-        heading: "All payments",
-        columns: recordColumns,
-        rows: recordRows,
       });
     } else {
       sections.push({
@@ -1967,23 +1941,16 @@ async function exportPaid(query, format, res) {
   const buf = await buildExcel({
     title,
     sheetName: "Paid",
-    columns:
-      view === "totals"
-        ? totalsColumns
-        : view === "whole"
-          ? ["Metric", "Value"]
-          : recordColumns,
+    columns: view === "whole" ? ["Metric", "Value"] : partyColumns,
     rows:
-      view === "totals"
-        ? totalsRows
-        : view === "whole"
-          ? [
-              ["Total paid", money(report.totals.totalPaid)],
-              ["Amount left", money(report.totals.totalLeft)],
-              ["Suppliers", report.totals.supplierCount],
-              ["Records", report.totals.recordCount],
-            ]
-          : recordRows,
+      view === "whole"
+        ? [
+            ["Total paid", money(report.totals.totalPaid)],
+            ["Amount left", money(report.totals.totalLeft)],
+            ["Suppliers", report.totals.supplierCount],
+            ["Records", report.totals.recordCount],
+          ]
+        : partyRows,
     meta,
   });
   return sendExcel(res, buf, "paid-report.xlsx");
