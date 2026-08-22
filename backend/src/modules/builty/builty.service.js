@@ -62,7 +62,14 @@ async function normalizeItems(items) {
     }
 
     const mode = raw.pricingMode === "fixed" ? "fixed" : "rate_kg";
-    const weightKg = Number.isFinite(product.weightKg) ? product.weightKg : 0;
+    const locked = Number(raw.weightKg);
+    const catalog = Number(product.weightKg);
+    const weightKg =
+      Number.isFinite(locked) && locked > 0
+        ? locked
+        : Number.isFinite(catalog)
+          ? catalog
+          : 0;
     let ratePerKg = 0;
     let unitPrice = 0;
     let lineTotal = 0;
@@ -364,9 +371,11 @@ async function updateBuilty(id, data) {
 
   if (data.items !== undefined) {
     const claimedByProduct = new Map();
+    const weightByProduct = new Map();
     for (const line of builty.items || []) {
       const pid = String(line.product?._id || line.product);
       claimedByProduct.set(pid, Number(line.claimedQuantity) || 0);
+      if (Number(line.weightKg) > 0) weightByProduct.set(pid, Number(line.weightKg));
     }
     const withClaimed = (data.items || []).map((raw) => ({
       ...raw,
@@ -374,6 +383,10 @@ async function updateBuilty(id, data) {
         raw.claimedQuantity != null
           ? raw.claimedQuantity
           : claimedByProduct.get(String(raw.product)) || 0,
+      weightKg:
+        Number(raw.weightKg) > 0
+          ? Number(raw.weightKg)
+          : weightByProduct.get(String(raw.product)) || undefined,
     }));
     const { items, totalAmount } = await normalizeItems(withClaimed);
     const warehouse =

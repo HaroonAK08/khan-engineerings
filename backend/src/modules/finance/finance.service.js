@@ -773,11 +773,17 @@ async function getProductionMargin(query = {}) {
       row.name = prod.name || row.name;
       row.family = prod.family || row.family;
       row.catalogSellPrice = Number(prod.sellingPrice) || 0;
-      row.weightKg = Number(prod.weightKg) || 0;
-    } else {
-      row.weightKg = Number(row.weightKg) || 0;
     }
-    row.finishedKg = roundKg((row.weightKg || 0) * (row.pieces || 0));
+    const fromBatchKg = roundKg(
+      Math.max(0, (row.scrapKg || 0) + (row.daigKg || 0) - (row.wasteKg || 0))
+    );
+    if (fromBatchKg > 0 && row.pieces > 0) {
+      row.weightKg = roundKg(fromBatchKg / row.pieces);
+      row.finishedKg = fromBatchKg;
+    } else {
+      row.weightKg = Number(prod?.weightKg || row.weightKg) || 0;
+      row.finishedKg = roundKg((row.weightKg || 0) * (row.pieces || 0));
+    }
   }
 
   // Actual builty sales this period (by product + by family).
@@ -1660,7 +1666,7 @@ async function getSalesmanSoldKg(from, to) {
   for (const row of salesRows) {
     if (!isSalesmanGroupName(row.groupName)) continue;
     const product = productMap.get(String(row.productId)) || {};
-    const weightKg = Number(row.itemWeightKg) || Number(product.weightKg) || 0;
+    const weightKg = Number(row.itemWeightKg) > 0 ? Number(row.itemWeightKg) : 0;
     const qty = Number(row.quantity) || 0;
     soldKg += weightKg * qty;
   }
@@ -1744,7 +1750,7 @@ async function getPartySalesMargin(query = {}) {
     const pid = String(row.customerId || "unknown");
     const product = productMap.get(String(row.productId)) || {};
     const family = product.family === "drum" ? "drum" : "hub";
-    const weightKg = Number(row.itemWeightKg) || Number(product.weightKg) || 0;
+    const weightKg = Number(row.itemWeightKg) > 0 ? Number(row.itemWeightKg) : 0;
     const qty = Number(row.quantity) || 0;
     const kg = weightKg * qty;
     const amount = Number(row.lineTotal) || 0;

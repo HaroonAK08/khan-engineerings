@@ -97,7 +97,7 @@ async function applyStockEffects(claim, items, warehouseId) {
       const perUnit =
         item.weightKg != null && Number(item.weightKg) > 0
           ? Number(item.weightKg)
-          : Number(product.weightKg) || 0;
+          : 0;
       const kg = roundKg(perUnit * item.quantity);
       if (kg <= 0) {
         throw httpError(
@@ -209,10 +209,15 @@ async function create(data) {
       throw httpError("Invalid disposition", 400);
     }
 
+    const soldLine = (builty.items || []).find(
+      (l) => productIdOf(l.product) === String(product._id)
+    );
     const weightKg =
       raw.weightKg != null && raw.weightKg !== ""
         ? Number(raw.weightKg)
-        : Number(product.weightKg) || null;
+        : Number(soldLine?.weightKg) > 0
+          ? Number(soldLine.weightKg)
+          : Number(product.weightKg) || null;
     if (weightKg != null && (!Number.isFinite(weightKg) || weightKg < 0)) {
       throw httpError("Weight kg is invalid", 400);
     }

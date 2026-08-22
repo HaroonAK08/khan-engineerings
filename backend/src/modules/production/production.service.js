@@ -283,7 +283,7 @@ async function produce(data) {
         status: "completed",
         currentStage: "finished",
         inputs: [{ materialType, quantityKg: chargedKg }],
-        outputs: [{ product: product._id, quantity, family }],
+        outputs: [{ product: product._id, quantity, family, weightKg }],
         furnaceWasteKg: wasteKg,
         handKg: 0,
         stages,
@@ -428,7 +428,7 @@ async function recordFurnace(id, data) {
     if (quantity <= 0) throw httpError("Output quantity must be greater than 0", 400);
 
     metalInPiecesKg += quantity * weightKg;
-    outputs.push({ product: product._id, quantity, family: product.family });
+    outputs.push({ product: product._id, quantity, family: product.family, weightKg });
     outputProgress.push({
       product: product._id,
       furnaceQty: quantity,
@@ -707,7 +707,19 @@ async function updateProduce(id, data) {
   if (!product) throw httpError("Product not found", 404);
   if (product.isActive === false) throw httpError("Product is inactive", 400);
 
-  const weightKg = Number(product.weightKg);
+  const prevOut = (batch.outputs || []).find((o) => String(o.product) === String(productId));
+  const lockedWeight = Number(prevOut?.weightKg);
+  const prevQty = Number(batch.goodUnits) || Number(prevOut?.quantity) || 0;
+  const impliedWeight =
+    prevQty > 0
+      ? (Number(batch.inputs?.[0]?.quantityKg) - Number(batch.furnaceWasteKg || 0)) / prevQty
+      : 0;
+  const weightKg =
+    Number.isFinite(lockedWeight) && lockedWeight > 0
+      ? lockedWeight
+      : Number.isFinite(impliedWeight) && impliedWeight > 0
+        ? impliedWeight
+        : Number(product.weightKg);
   if (!Number.isFinite(weightKg) || weightKg <= 0) {
     throw httpError(
       `Set weight (kg) on product "${product.name}" first — material use is calculated from piece weight.`,
@@ -765,7 +777,7 @@ async function updateProduce(id, data) {
   batch.family = family;
   batch.productionDate = productionDate;
   batch.inputs = [{ materialType, quantityKg: chargedKg }];
-  batch.outputs = [{ product: product._id, quantity, family }];
+  batch.outputs = [{ product: product._id, quantity, family, weightKg }];
   batch.furnaceWasteKg = wasteKg;
   batch.outputProgress = [
     {

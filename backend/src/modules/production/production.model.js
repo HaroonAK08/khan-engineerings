@@ -22,6 +22,7 @@ const outputSchema = new mongoose.Schema(
     product: { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: true },
     quantity: { type: Number, required: true, min: 0 },
     family: { type: String, enum: PRODUCT_FAMILY_IDS, required: true },
+    weightKg: { type: Number, min: 0, default: null },
   },
   { _id: false }
 );
