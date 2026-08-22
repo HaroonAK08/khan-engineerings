@@ -162,22 +162,13 @@ function FamilyProductTable({
   totalLabel: string;
   labels: {
     product: string;
-    pieces: string;
-    finishedKg: string;
-    scrapKg: string;
-    daigKg: string;
-    materialCost: string;
-    overhead: string;
+    avgWeight: string;
+    productionCostPrice: string;
+    salePrice: string;
+    totalPrice: string;
+    avgQuantity: string;
     overheadPerKg: string;
-    totalCost: string;
-    costPerPiece: string;
     costPerKg: string;
-    unitsSold: string;
-    sellPerPiece: string;
-    soldPrice: string;
-    soldCost: string;
-    netProfit: string;
-    margin: string;
   };
   familyCostPerKg?: number | null;
   familyOverheadPerKg?: number | null;
@@ -190,36 +181,26 @@ function FamilyProductTable({
     (acc, p) => {
       acc.pieces += p.pieces || 0;
       acc.finishedKg += p.finishedKg || 0;
-      acc.scrapKg += p.scrapKg || 0;
-      acc.daigKg += p.daigKg || 0;
-      acc.materialCost += p.materialCost || 0;
       acc.overhead += p.overhead || 0;
       acc.totalCost += p.totalCost || 0;
       acc.unitsSold += p.unitsSoldPeriod || 0;
       acc.sellValue += p.sellValue || 0;
-      acc.soldCogs += p.soldCogs || 0;
       acc.profit += p.profit || 0;
       return acc;
     },
     {
       pieces: 0,
       finishedKg: 0,
-      scrapKg: 0,
-      daigKg: 0,
-      materialCost: 0,
       overhead: 0,
       totalCost: 0,
       unitsSold: 0,
       sellValue: 0,
-      soldCogs: 0,
       profit: 0,
     }
   );
-  const marginPct =
-    totals.sellValue > 0
-      ? Math.round((totals.profit / totals.sellValue) * 10000) / 100
-      : null;
-  const avgCostPerPiece = totals.pieces > 0 ? totals.totalCost / totals.pieces : 0;
+  const avgWeight =
+    totals.pieces > 0 ? totals.finishedKg / totals.pieces : null;
+  const avgCostPerPiece = totals.pieces > 0 ? totals.totalCost / totals.pieces : null;
   const avgCostPerKg =
     familyCostPerKg != null
       ? familyCostPerKg
@@ -235,7 +216,6 @@ function FamilyProductTable({
   const avgSellPerPiece =
     totals.unitsSold > 0 ? totals.sellValue / totals.unitsSold : null;
 
-  // Sticky header cells (vertical) + first column (horizontal).
   const headClass = cn(
     "sticky top-0 z-20 h-10 px-2.5 text-[11px] font-bold tracking-wide uppercase",
     headerBg,
@@ -246,7 +226,6 @@ function FamilyProductTable({
     "left-0 z-40 min-w-[11rem] max-w-[14rem] shadow-[4px_0_12px_-6px_rgba(0,0,0,0.45)]"
   );
   const numHead = cn(headClass, "text-right");
-  const salesHead = cn(numHead, "border-l border-white/30");
 
   function rowTone(profit: number) {
     const loss = profit < 0;
@@ -256,12 +235,11 @@ function FamilyProductTable({
     const sticky = loss
       ? "bg-red-600 shadow-[4px_0_12px_-6px_rgba(0,0,0,0.35)]"
       : "bg-emerald-600 shadow-[4px_0_12px_-6px_rgba(0,0,0,0.35)]";
-    return { fill, sticky, loss };
+    return { fill, sticky };
   }
 
   const numCell =
     "font-data px-2.5 py-2.5 text-right text-xs font-bold tabular-nums text-white";
-  const salesCell = cn(numCell, "border-l border-white/25");
 
   const totalLoss = totals.profit < 0;
   const totalFill = totalLoss
@@ -300,35 +278,22 @@ function FamilyProductTable({
           <p className="px-6 py-8 text-sm text-muted-foreground">{emptyLabel}</p>
         ) : (
           <Table
-            className="min-w-[1100px] border-separate border-spacing-0"
+            className="min-w-[720px] border-separate border-spacing-0"
             containerClassName="max-h-[min(70vh,42rem)] overflow-auto"
           >
             <TableHeader>
               <TableRow className={cn("hover:bg-transparent border-0", headerBg)}>
                 <TableHead className={stickyHead}>{labels.product}</TableHead>
-                <TableHead className={numHead}>{labels.pieces}</TableHead>
-                <TableHead className={numHead}>{labels.finishedKg}</TableHead>
-                <TableHead className={numHead}>
-                  {isDrum ? labels.daigKg : labels.scrapKg}
-                </TableHead>
-                <TableHead className={numHead}>{labels.materialCost}</TableHead>
-                <TableHead className={numHead}>{labels.overhead}</TableHead>
-                <TableHead className={numHead}>{labels.overheadPerKg}</TableHead>
-                <TableHead className={numHead}>{labels.totalCost}</TableHead>
-                <TableHead className={numHead}>{labels.costPerKg}</TableHead>
-                <TableHead className={numHead}>{labels.costPerPiece}</TableHead>
-                <TableHead className={salesHead}>{labels.unitsSold}</TableHead>
-                <TableHead className={numHead}>{labels.sellPerPiece}</TableHead>
-                <TableHead className={numHead}>{labels.soldPrice}</TableHead>
-                <TableHead className={numHead}>{labels.soldCost}</TableHead>
-                <TableHead className={numHead}>{labels.netProfit}</TableHead>
-                <TableHead className={numHead}>{labels.margin}</TableHead>
+                <TableHead className={numHead}>{labels.avgWeight}</TableHead>
+                <TableHead className={numHead}>{labels.productionCostPrice}</TableHead>
+                <TableHead className={numHead}>{labels.salePrice}</TableHead>
+                <TableHead className={numHead}>{labels.avgQuantity}</TableHead>
+                <TableHead className={numHead}>{labels.totalPrice}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((p) => {
                 const saleOnly = Boolean(p.saleOnly) || !(p.pieces > 0);
-                const produced = !saleOnly;
                 const tone = rowTone(p.profit || 0);
                 return (
                   <TableRow key={p.productId} className={cn("border-0", tone.fill)}>
@@ -348,61 +313,21 @@ function FamilyProductTable({
                       ) : null}
                     </TableCell>
                     <TableCell className={numCell}>
-                      {produced ? p.pieces : "—"}
-                    </TableCell>
-                    <TableCell className={numCell}>
-                      {produced ? formatKg(p.finishedKg ?? 0) : "—"}
-                    </TableCell>
-                    <TableCell className={numCell}>
-                      {produced
-                        ? formatKg(isDrum ? p.daigKg : p.scrapKg)
-                        : "—"}
-                    </TableCell>
-                    <TableCell className={numCell}>
-                      {produced ? formatMoney(p.materialCost) : "—"}
-                    </TableCell>
-                    <TableCell className={numCell}>
-                      {produced ? formatMoney(p.overhead) : "—"}
-                    </TableCell>
-                    <TableCell className={numCell}>
-                      {produced && p.overheadPerKg != null
-                        ? formatMoney(p.overheadPerKg)
-                        : produced && p.finishedKg
-                          ? formatMoney(p.overhead / p.finishedKg)
-                          : "—"}
-                    </TableCell>
-                    <TableCell className={numCell}>
-                      {produced ? formatMoney(p.totalCost) : "—"}
-                    </TableCell>
-                    <TableCell className={numCell}>
-                      {produced && p.costPerKg != null
-                        ? formatMoney(p.costPerKg)
-                        : produced && p.finishedKg
-                          ? formatMoney(p.totalCost / p.finishedKg)
-                          : "—"}
+                      {p.weightKg ? formatKg(p.weightKg) : "—"}
                     </TableCell>
                     <TableCell className={numCell}>
                       {p.costPerPiece > 0 ? formatMoney(p.costPerPiece) : "—"}
                     </TableCell>
-                    <TableCell className={salesCell}>
-                      {p.unitsSoldPeriod ?? 0}
-                    </TableCell>
                     <TableCell className={numCell}>
-                      {(p.unitsSoldPeriod || 0) > 0
+                      {p.sellPricePerPiece > 0
                         ? formatMoney(p.sellPricePerPiece)
                         : "—"}
                     </TableCell>
                     <TableCell className={numCell}>
-                      {formatMoney(p.sellValue)}
+                      {p.unitsSoldPeriod ?? 0}
                     </TableCell>
                     <TableCell className={numCell}>
-                      {formatMoney(p.soldCogs ?? 0)}
-                    </TableCell>
-                    <TableCell className={cn(numCell, "font-bold")}>
-                      {formatMoney(p.profit)}
-                    </TableCell>
-                    <TableCell className={cn(numCell, "font-bold")}>
-                      {p.marginPct != null ? `${p.marginPct}%` : "—"}
+                      {formatMoney(p.sellValue)}
                     </TableCell>
                   </TableRow>
                 );
@@ -418,46 +343,18 @@ function FamilyProductTable({
                 >
                   {totalLabel}
                 </TableCell>
-                <TableCell className={numCell}>{totals.pieces}</TableCell>
                 <TableCell className={numCell}>
-                  {formatKg(totals.finishedKg)}
+                  {avgWeight != null ? formatKg(avgWeight) : "—"}
                 </TableCell>
                 <TableCell className={numCell}>
-                  {formatKg(isDrum ? totals.daigKg : totals.scrapKg)}
+                  {avgCostPerPiece != null ? formatMoney(avgCostPerPiece) : "—"}
                 </TableCell>
-                <TableCell className={numCell}>
-                  {formatMoney(totals.materialCost)}
-                </TableCell>
-                <TableCell className={numCell}>
-                  {formatMoney(totals.overhead)}
-                </TableCell>
-                <TableCell className={numCell}>
-                  {avgOverheadPerKg != null ? formatMoney(avgOverheadPerKg) : "—"}
-                </TableCell>
-                <TableCell className={numCell}>
-                  {formatMoney(totals.totalCost)}
-                </TableCell>
-                <TableCell className={numCell}>
-                  {avgCostPerKg != null ? formatMoney(avgCostPerKg) : "—"}
-                </TableCell>
-                <TableCell className={numCell}>
-                  {formatMoney(avgCostPerPiece)}
-                </TableCell>
-                <TableCell className={salesCell}>{totals.unitsSold}</TableCell>
                 <TableCell className={numCell}>
                   {avgSellPerPiece != null ? formatMoney(avgSellPerPiece) : "—"}
                 </TableCell>
+                <TableCell className={numCell}>{totals.unitsSold}</TableCell>
                 <TableCell className={numCell}>
                   {formatMoney(totals.sellValue)}
-                </TableCell>
-                <TableCell className={numCell}>
-                  {formatMoney(totals.soldCogs)}
-                </TableCell>
-                <TableCell className={cn(numCell, "font-bold")}>
-                  {formatMoney(totals.profit)}
-                </TableCell>
-                <TableCell className={cn(numCell, "font-bold")}>
-                  {marginPct != null ? `${marginPct}%` : "—"}
                 </TableCell>
               </TableRow>
             </TableFooter>
@@ -545,23 +442,14 @@ export default function ProductionMarginPage() {
   };
 
   const productTableLabels = {
-    product: t("common.product"),
-    pieces: t("prodMargin.pieces"),
-    finishedKg: t("prodMargin.finishedKg"),
-    scrapKg: t("prodMargin.scrapKg"),
-    daigKg: t("prodMargin.daigKg"),
-    materialCost: t("prodMargin.materialCost"),
-    overhead: t("prodMargin.overhead"),
+    product: t("prodMargin.productName"),
+    avgWeight: t("prodMargin.avgWeight"),
+    productionCostPrice: t("prodMargin.productionCostPrice"),
+    salePrice: t("prodMargin.salePrice"),
+    totalPrice: t("prodMargin.totalPrice"),
+    avgQuantity: t("prodMargin.avgQuantity"),
     overheadPerKg: t("prodMargin.overheadPerKg"),
-    totalCost: t("prodMargin.totalCost"),
-    costPerPiece: t("prodMargin.costPerPiece"),
     costPerKg: t("prodMargin.costPerKg"),
-    unitsSold: t("prodMargin.unitsSold"),
-    sellPerPiece: t("prodMargin.sellPerPiece"),
-    soldPrice: t("prodMargin.soldTotal"),
-    soldCost: t("prodMargin.soldCost"),
-    netProfit: t("prodMargin.netProfit"),
-    margin: t("prodMargin.margin"),
   };
 
   return (
