@@ -1,0 +1,10 @@
+{
+  "name": "khan-engineerings",
+  "private": true,
+  "scripts": {
+    "desktop": "node desktop/launch.cjs",
+    "desktop:import": "node desktop/import-cloud-data.cjs",
+    "desktop:import:force": "node desktop/import-cloud-data.cjs --force",
+    "desktop:dist": "npm install --prefix desktop && npm run dist --prefix desktop"
+  }
+}

@@ -1,0 +1,52 @@
+name: Desktop installer
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "desktop-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            script: dist:win
+          - os: ubuntu-22.04
+            script: dist:linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+            desktop/package.json
+      - name: Install app packages
+        run: |
+          npm install --prefix backend
+          npm install --prefix frontend
+          npm install --prefix desktop
+      - name: Build installer
+        working-directory: desktop
+        run: npm run ${{ matrix.script }}
+        env:
+          NEXT_OUTPUT: standalone
+          NEXT_PUBLIC_API_URL: http://127.0.0.1:5000/api
+      - name: Upload installer
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('desktop-v{0}', github.run_number) }}
+          name: Khan Engineerings desktop ${{ github.ref_type == 'tag' && github.ref_name || github.run_number }}
+          files: desktop/dist/Khan-Engineerings*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

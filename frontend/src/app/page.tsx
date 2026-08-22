@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CornerFrame } from "@/components/layout/corner-frame";
+import Link from "next/link";
 
 /* --- Full email/password login (restore later) ---
 import { useForm } from "react-hook-form";
@@ -143,6 +144,12 @@ function LoginForm() {
               Unlock
             </Button>
           </form>
+          <Link
+            href="/download"
+            className="mt-6 block text-center text-xs text-muted-foreground underline"
+          >
+            Download desktop app
+          </Link>
         </div>
       </CornerFrame>
     </div>

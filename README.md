@@ -136,6 +136,21 @@ Spec: `docs/MANUFACTURING_ERP_TECH_SPEC.md`.
 
 **Not included:** Employees, Departments, Attendance.
 
+### Desktop app (offline, one PC)
+
+For a single office computer with no internet. Copies existing Atlas data onto that PC (read-only from the cloud). Atlas is not deleted.
+
+```bash
+npm install --prefix backend
+npm install --prefix frontend
+node desktop/import-cloud-data.cjs
+node desktop/launch.cjs
+```
+
+Windows: install Node.js 20+ and MongoDB Community, then run `desktop/start.bat`.
+
+Full notes: `desktop/README.md`.
+
 ### Local development
 
 Uses a **local MongoDB** (`mongodb://127.0.0.1:27017/khan-engineerings`) by default so testing never touches Atlas production data. Production URI lives in `backend/.env.production` (gitignored) and on Vercel.

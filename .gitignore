@@ -12,5 +12,10 @@ node_modules/
 
 .mongo-prod-dump/
 .mongo-dump-prod/
+.mongo-cloud-export/
+.mongo-cloud-export/
 .mongo-data/
 .mongo-logs/
+desktop/dist/
+desktop/out/
+desktop/resources/

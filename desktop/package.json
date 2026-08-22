@@ -1,0 +1,72 @@
+{
+  "name": "khan-engineerings-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Offline desktop app for Khan Engineerings",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "node launch.cjs",
+    "window": "electron .",
+    "import-data": "node import-cloud-data.cjs",
+    "pack:resources": "node prepare-pack.cjs",
+    "dist": "node prepare-pack.cjs && electron-builder --publish never",
+    "dist:win": "node prepare-pack.cjs && electron-builder --win nsis --publish never",
+    "dist:linux": "node prepare-pack.cjs && electron-builder --linux AppImage --publish never"
+  },
+  "devDependencies": {
+    "electron": "^33.4.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.khanengineerings.desktop",
+    "productName": "Khan Engineerings",
+    "copyright": "Khan Engineerings",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "splash.html",
+      "env.cjs",
+      "mongo.cjs",
+      "import-cloud-data.cjs"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/backend",
+        "to": "backend"
+      },
+      {
+        "from": "resources/frontend",
+        "to": "frontend"
+      },
+      {
+        "from": "resources/mongo",
+        "to": "mongo"
+      }
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "Khan-Engineerings-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Khan Engineerings"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Office",
+      "artifactName": "Khan-Engineerings.${ext}"
+    }
+  }
+}
