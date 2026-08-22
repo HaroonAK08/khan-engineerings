@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -64,10 +65,11 @@ function refName(value: Product["category"] | Product["size"]) {
 
 export default function ProductsPage() {
   const { t } = useI18n();
+  const searchParams = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
   const [stockByProduct, setStockByProduct] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(() => searchParams.get("q") || "");
   const [familyFilter, setFamilyFilter] = useState<"all" | "hub" | "drum">("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
@@ -120,6 +122,10 @@ export default function ProductsPage() {
     const t = setTimeout(load, 200);
     return () => clearTimeout(t);
   }, [load]);
+
+  useEffect(() => {
+    setQ(searchParams.get("q") || "");
+  }, [searchParams]);
 
   function openCreate() {
     setEditing(null);

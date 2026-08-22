@@ -29,38 +29,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PartyHistoryCalendar } from "@/components/party/party-history-calendar";
+import { PartyPendingByMonth } from "@/components/party/party-pending-by-month";
 import { useI18n } from "@/hooks/use-i18n";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
-import { toDateInput, todayInput } from "@/lib/date-range";
-
-function roundMoney(n: number) {
-  return Math.round(n * 100) / 100;
-}
-
-function entryDayKey(e: CustomerLedgerEntry) {
-  return toDateInput(new Date(e.entryDate));
-}
-
-function entryDelta(e: CustomerLedgerEntry) {
-  if (e.type === "payment") return -roundMoney(e.amount || 0);
-  if (e.type === "adjustment") {
-    const signed = e.signedAmount ?? 0;
-    if (signed <= 0) return 0;
-    return roundMoney(signed);
-  }
-  const b = e.builty && typeof e.builty === "object" ? e.builty : null;
-  return roundMoney(b?.totalAmount ?? e.amount ?? 0);
-}
-
-/** Net baqaya for all ledger rows on or before cutoff (range + earlier). */
-function balanceAsOf(entries: CustomerLedgerEntry[], cutoff: string) {
-  let running = 0;
-  for (const e of entries) {
-    if (entryDayKey(e) > cutoff) continue;
-    running = roundMoney(running + entryDelta(e));
-  }
-  return running;
-}
+import { todayInput } from "@/lib/date-range";
+import { computePeriodPending } from "@/lib/party-pending";
 
 function formatBaqaya(baqaya: number) {
   const abs = formatMoney(Math.abs(baqaya));
@@ -116,11 +89,12 @@ export default function CustomerDetailPage() {
   const [paidNotes, setPaidNotes] = useState("");
   const [savingPaid, setSavingPaid] = useState(false);
 
-  const pendingCutoff = dateTo || dateFrom;
-  const previousPendingShown = useMemo(() => {
-    if (!pendingCutoff) return recordedPreviousPending;
-    return balanceAsOf(entries, pendingCutoff);
-  }, [entries, pendingCutoff, recordedPreviousPending]);
+  const periodPending = useMemo(
+    () => computePeriodPending(entries, dateFrom, dateTo),
+    [entries, dateFrom, dateTo]
+  );
+  const previousPendingShown =
+    dateFrom || dateTo ? periodPending.previousRemaining : recordedPreviousPending;
 
   const load = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -341,6 +315,13 @@ export default function CustomerDetailPage() {
                 </span>
               </div>
             </div>
+          </div>
+          <div className="mt-4 border-t pt-4">
+            <PartyPendingByMonth
+              snapshot={periodPending}
+              dateFrom={dateFrom}
+              dateTo={dateTo}
+            />
           </div>
           {showPendingForm ? (
             <div className="mt-4 border-t pt-4">

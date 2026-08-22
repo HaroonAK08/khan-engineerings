@@ -459,6 +459,7 @@ export type BuiltyLineInput = {
   pricingMode: PricingMode;
   ratePerKg?: number;
   fixedAmount?: number;
+  weightKg?: number;
 };
 
 export async function createBuilty(body: {

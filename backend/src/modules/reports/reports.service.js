@@ -4,6 +4,9 @@ const Builty = require("../builty/builty.model");
 const Purchase = require("../purchases/purchase.model");
 const ProductionBatch = require("../production/production.model");
 const Product = require("../products/product.model");
+const Worker = require("../workers/worker.model");
+const Salesman = require("../salesmen/salesman.model");
+const PartyGroup = require("../party-groups/party-group.model");
 const CustomerLedgerEntry = require("../customers/customer-ledger.model");
 const CustomerPayment = require("../customers/customer-payment.model");
 const customerService = require("../customers/customer.service");
@@ -37,37 +40,81 @@ function periodLabel(dateFrom, dateTo) {
   return "All time";
 }
 
+function emptySearchResults() {
+  return {
+    customers: [],
+    suppliers: [],
+    orders: [],
+    purchases: [],
+    batches: [],
+    products: [],
+    workers: [],
+    salesmen: [],
+    groups: [],
+  };
+}
+
+function batchProductName(batch) {
+  const out = (batch.outputs || [])[0];
+  if (out?.product && typeof out.product === "object") return out.product.name || "";
+  if (batch.product && typeof batch.product === "object") return batch.product.name || "";
+  return "";
+}
+
+function batchQty(batch) {
+  const fromOutputs = (batch.outputs || []).reduce((sum, row) => sum + (row.quantity || 0), 0);
+  return fromOutputs || batch.goodUnits || 0;
+}
+
 async function globalSearch({ q, limit = 8 } = {}) {
   const term = (q || "").trim();
   if (!term || term.length < 2) {
-    return { q: term, results: { customers: [], suppliers: [], orders: [], purchases: [], batches: [], products: [] } };
+    return { q: term, results: emptySearchResults() };
   }
   const re = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
   const lim = Math.min(Math.max(Number(limit) || 8, 1), 25);
 
-  const [customers, suppliers, orders, purchases, batches, products] = await Promise.all([
+  const [customers, suppliers] = await Promise.all([
     Customer.find({ $or: [{ name: re }, { phone: re }, { email: re }] })
       .sort({ name: 1 })
       .limit(lim)
       .lean(),
-    Supplier.find({ $or: [{ name: re }, { phone: re }, { email: re }] })
+    Supplier.find({ $or: [{ name: re }, { nameUr: re }, { phone: re }, { email: re }] })
       .sort({ name: 1 })
       .limit(lim)
       .lean(),
+  ]);
+  const customerIds = customers.map((c) => c._id);
+  const supplierIds = suppliers.map((s) => s._id);
+
+  const [orders, purchases, batches, products, workers, salesmen, groups] = await Promise.all([
     Builty.find({
-      $or: [{ builtyNo: re }, { billNo: re }, { notes: re }],
+      $or: [
+        { builtyNo: re },
+        { billNo: re },
+        { notes: re },
+        ...(customerIds.length ? [{ customer: { $in: customerIds } }] : []),
+      ],
     })
       .populate("customer", "name")
       .sort({ builtyDate: -1 })
       .limit(lim)
       .lean(),
-    Purchase.find({ $or: [{ invoiceNo: re }, { notes: re }] })
+    Purchase.find({
+      $or: [
+        { invoiceNo: re },
+        { notes: re },
+        { vehicleNo: re },
+        ...(supplierIds.length ? [{ supplier: { $in: supplierIds } }] : []),
+      ],
+    })
       .populate("supplier", "name nameUr")
       .sort({ purchaseDate: -1 })
       .limit(lim)
       .lean(),
     ProductionBatch.find({ $or: [{ batchNo: re }, { notes: re }] })
       .populate("product", "name sku")
+      .populate("outputs.product", "name sku")
       .sort({ productionDate: -1 })
       .limit(lim)
       .lean(),
@@ -75,6 +122,15 @@ async function globalSearch({ q, limit = 8 } = {}) {
       .sort({ name: 1 })
       .limit(lim)
       .lean(),
+    Worker.find({ $or: [{ name: re }, { nameUr: re }, { job: re }] })
+      .sort({ name: 1 })
+      .limit(lim)
+      .lean(),
+    Salesman.find({ $or: [{ name: re }, { phone: re }] })
+      .sort({ name: 1 })
+      .limit(lim)
+      .lean(),
+    PartyGroup.find({ name: re }).sort({ name: 1 }).limit(lim).lean(),
   ]);
 
   return {
@@ -84,12 +140,12 @@ async function globalSearch({ q, limit = 8 } = {}) {
         id: c._id,
         label: c.name,
         meta: c.phone || c.email || "",
-        href: `/dashboard/customers/${c._id}`,
+        href: `/dashboard/party/customers/${c._id}`,
       })),
       suppliers: suppliers.map((s) => ({
         id: s._id,
         label: s.name,
-        meta: s.phone || s.email || "",
+        meta: s.phone || s.email || s.nameUr || "",
         href: `/dashboard/suppliers/${s._id}`,
       })),
       orders: orders.map((o) => ({
@@ -102,19 +158,37 @@ async function globalSearch({ q, limit = 8 } = {}) {
         id: p._id,
         label: p.invoiceNo || `Purchase ${fmtDate(p.purchaseDate)}`,
         meta: `${p.supplier?.name || ""} · ${p.quantityKg} kg`,
-        href: "/dashboard/inventory/purchases",
+        href: "/dashboard/inventory",
       })),
       batches: batches.map((b) => ({
         id: b._id,
         label: b.batchNo || String(b._id).slice(-6),
-        meta: `${b.product?.name || ""} · ${b.goodUnits} units`,
-        href: `/dashboard/production/${b._id}`,
+        meta: `${batchProductName(b)} · ${batchQty(b)} units`,
+        href: `/dashboard/production/history?q=${encodeURIComponent(b.batchNo || "")}`,
       })),
       products: products.map((p) => ({
         id: p._id,
         label: p.name,
         meta: p.sku || "",
-        href: "/dashboard/production/products",
+        href: `/dashboard/products?q=${encodeURIComponent(p.name)}`,
+      })),
+      workers: workers.map((w) => ({
+        id: w._id,
+        label: w.name,
+        meta: w.job || w.nameUr || "",
+        href: `/dashboard/expenses/salaries/${w._id}`,
+      })),
+      salesmen: salesmen.map((s) => ({
+        id: s._id,
+        label: s.name,
+        meta: s.phone || "",
+        href: `/dashboard/salesmen/${s._id}`,
+      })),
+      groups: groups.map((g) => ({
+        id: g._id,
+        label: g.name,
+        meta: g.notes || "",
+        href: `/dashboard/party/groups/${g._id}`,
       })),
     },
   };

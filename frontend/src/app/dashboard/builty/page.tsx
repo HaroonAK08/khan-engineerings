@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { History, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
@@ -31,10 +31,11 @@ import {
 export default function BuiltyPage() {
   const { t } = useI18n();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const month = useMemo(() => thisMonthRange(), []);
   const [rows, setRows] = useState<BuiltyRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(() => searchParams.get("q") || "");
   const [paymentStatus, setPaymentStatus] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -64,6 +65,10 @@ export default function BuiltyPage() {
     const timer = setTimeout(load, 200);
     return () => clearTimeout(timer);
   }, [load]);
+
+  useEffect(() => {
+    setQ(searchParams.get("q") || "");
+  }, [searchParams]);
 
   async function onDelete(row: BuiltyRow) {
     if (!confirm(t("builty.confirmDelete"))) return;

@@ -45,10 +45,11 @@ type Line = {
   pricingMode: PricingMode;
   ratePerKg: number;
   fixedAmount: number;
+  weightKg: number;
 };
 
 function emptyLine(): Line {
-  return { product: "", quantity: 1, pricingMode: "rate_kg", ratePerKg: 0, fixedAmount: 0 };
+  return { product: "", quantity: 1, pricingMode: "rate_kg", ratePerKg: 0, fixedAmount: 0, weightKg: 0 };
 }
 
 function applyPartyPrice(
@@ -87,9 +88,14 @@ function productIdOf(product: Builty["items"][number]["product"]) {
   return product._id || "";
 }
 
-function lineTotal(products: Product[], line: Line) {
+function lineWeightKg(products: Product[], line: Line) {
+  if (Number(line.weightKg) > 0) return Number(line.weightKg);
   const product = products.find((p) => p._id === line.product);
-  const weightKg = Number(product?.weightKg) || 0;
+  return Number(product?.weightKg) || 0;
+}
+
+function lineTotal(products: Product[], line: Line) {
+  const weightKg = lineWeightKg(products, line);
   const qty = Number(line.quantity) || 0;
   if (line.pricingMode === "fixed") {
     return Math.round(qty * (Number(line.fixedAmount) || 0) * 100) / 100;
@@ -153,6 +159,7 @@ function EditBuiltyForm() {
                 pricingMode: mode,
                 ratePerKg: Number(item.ratePerKg) || 0,
                 fixedAmount: mode === "fixed" ? Number(item.unitPrice) || 0 : 0,
+                weightKg: Number(item.weightKg) || 0,
               };
             })
           : [emptyLine()]
@@ -250,6 +257,7 @@ function EditBuiltyForm() {
               pricingMode,
               ratePerKg: pricingMode === "rate_kg" ? Number(row.rate) || 0 : 0,
               fixedAmount: pricingMode === "fixed" ? Number(row.amount) || 0 : 0,
+              weightKg: 0,
             });
           }
         }
@@ -347,7 +355,10 @@ function EditBuiltyForm() {
         last = null;
       }
     }
-    updateLine(index, applyPartyPrice(product, last, lines[index] || emptyLine()));
+    updateLine(index, {
+      ...applyPartyPrice(product, last, lines[index] || emptyLine()),
+      weightKg: Number(product.weightKg) || 0,
+    });
     setProductPickerIndex(null);
     setProductSearch("");
     setProductFamilyFilter("all");
@@ -383,6 +394,7 @@ function EditBuiltyForm() {
       product: l.product,
       quantity: Number(l.quantity),
       pricingMode: l.pricingMode,
+      weightKg: Number(l.weightKg) || undefined,
       ...(l.pricingMode === "rate_kg"
         ? { ratePerKg: Number(l.ratePerKg) }
         : { fixedAmount: Number(l.fixedAmount) }),
@@ -488,7 +500,7 @@ function EditBuiltyForm() {
           <CardContent className="flex flex-col gap-3">
             {lines.map((line, index) => {
               const selected = products.find((p) => p._id === line.product);
-              const weightKg = Number(selected?.weightKg) || 0;
+              const weightKg = lineWeightKg(products, line);
               const amount = lineTotal(products, line);
               const available = line.product ? stockByProduct[line.product] || 0 : 0;
               const originalItem = builty.items.find(

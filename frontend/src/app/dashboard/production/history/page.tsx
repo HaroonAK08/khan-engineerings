@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -122,6 +123,7 @@ function compareProductsByName(a: Product, b: Product) {
 
 export default function ProductionHistoryPage() {
   const { t } = useI18n();
+  const searchParams = useSearchParams();
   const [stock, setStock] = useState<StockSummary | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [batches, setBatches] = useState<ProductionBatch[]>([]);
@@ -227,6 +229,17 @@ export default function ProductionHistoryPage() {
       form.setValue("materialType", "daig");
     }
   }, [produceFamily, form]);
+
+  const q = searchParams.get("q") || "";
+  const visibleBatches = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return batches;
+    return batches.filter((b) => {
+      const name = batchProductName(b).toLowerCase();
+      const no = (b.batchNo || "").toLowerCase();
+      return name.includes(needle) || no.includes(needle);
+    });
+  }, [batches, q]);
 
   const produceProducts = useMemo(() => {
     let list = products;
@@ -338,7 +351,7 @@ export default function ProductionHistoryPage() {
             <div className="flex justify-center py-12">
               <Loader2 className="size-6 animate-spin text-primary" />
             </div>
-          ) : batches.length === 0 ? (
+          ) : visibleBatches.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">{t("prod.noRecent")}</p>
           ) : (
             <Table>
@@ -352,7 +365,7 @@ export default function ProductionHistoryPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {batches.map((b) => (
+                {visibleBatches.map((b) => (
                   <TableRow key={b._id} className={familyRowClass(batchFamily(b))}>
                     <TableCell className="text-sm">{batchProductName(b)}</TableCell>
                     <TableCell className="font-data text-right text-xs">{batchQty(b)}</TableCell>

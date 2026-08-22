@@ -33,6 +33,7 @@ import { LanguageToggle } from "./language-toggle";
 import { NAV_ITEMS } from "./nav-items";
 import { SidebarBrand, SidebarNav } from "./sidebar";
 import { VoiceHeaderControl } from "@/components/voice/voice-header-control";
+import { GlobalSearch } from "./global-search";
 
 function currentTitleKey(pathname: string | null): MessageKey {
   if (!pathname) return "nav.dashboard";
@@ -79,8 +80,8 @@ export function Topbar() {
   }
 
   return (
-    <header className="flex h-[4.75rem] shrink-0 items-center justify-between border-b border-sidebar-border bg-sidebar px-4 text-sidebar-foreground sm:px-6">
-      <div className="flex min-w-0 items-center gap-3">
+    <header className="flex h-[4.75rem] shrink-0 items-center gap-3 border-b border-sidebar-border bg-sidebar px-4 text-sidebar-foreground sm:px-6">
+      <div className="flex min-w-0 max-w-[42%] items-center gap-3 sm:max-w-[28%]">
         <Button
           variant="ghost"
           size="icon-sm"
@@ -100,7 +101,9 @@ export function Topbar() {
         </div>
       </div>
 
-      <div className="flex items-center gap-2 sm:gap-3">
+      <GlobalSearch />
+
+      <div className="flex shrink-0 items-center gap-2 sm:gap-3">
         <VoiceHeaderControl />
         {user && (
           <Badge

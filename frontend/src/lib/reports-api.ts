@@ -16,6 +16,9 @@ export type GlobalSearchResult = {
     purchases: SearchHit[];
     batches: SearchHit[];
     products: SearchHit[];
+    workers?: SearchHit[];
+    salesmen?: SearchHit[];
+    groups?: SearchHit[];
   };
 };
 
