@@ -37,7 +37,7 @@ type ProduceLine = {
   quantity: number;
   wastePercent: number;
   productionDate: string;
-  metalKg: number | "";
+  metalKg: string;
 };
 
 const productionSearchInputClass =
@@ -71,19 +71,19 @@ function linePreview(
   quantity: number,
   wastePercent: number,
   asOfDate?: string,
-  metalKgOverride?: number | ""
+  metalKgOverride?: string
 ) {
   const catalogMetal = defaultMetalKg(product, quantity, asOfDate);
   const qty = Number(quantity) || 0;
   const waste = Number(wastePercent);
+  const typed = Number(metalKgOverride);
   const metalKg =
-    Number(metalKgOverride) > 0 ? Math.round(Number(metalKgOverride) * 1000) / 1000 : catalogMetal;
+    Number.isFinite(typed) && typed > 0 ? Math.round(typed * 1000) / 1000 : catalogMetal;
   const wasteKg =
     Number.isFinite(waste) && waste >= 0 ? Math.round(metalKg * (waste / 100) * 1000) / 1000 : 0;
 
   return {
     metalKg,
-    catalogMetal,
     wasteKg,
     chargedKg: Math.round((metalKg + wasteKg) * 1000) / 1000,
     avgPieceKg: qty > 0 && metalKg > 0 ? Math.round((metalKg / qty) * 1000) / 1000 : 0,
@@ -135,7 +135,6 @@ function NewProductionForm() {
     setLines((prev) =>
       prev.map((line) => {
         const product = products.find((item) => item._id === line.productId) || null;
-        const auto = defaultMetalKg(product, line.quantity, nextDate);
         const waste =
           product?.family === "hub" || product?.family === "drum"
             ? wastePercentOnDate(wasteSettings, product.family, nextDate)
@@ -143,7 +142,6 @@ function NewProductionForm() {
         return {
           ...line,
           productionDate: nextDate,
-          metalKg: auto > 0 ? auto : "",
           wastePercent: waste,
         };
       })
@@ -283,14 +281,8 @@ function NewProductionForm() {
         if (lineIndex !== index) return line;
         const next = { ...line, ...patch };
         const product = products.find((item) => item._id === next.productId) || null;
-        if (
-          patch.metalKg === undefined &&
-          (patch.productId !== undefined ||
-            patch.quantity !== undefined ||
-            patch.productionDate !== undefined)
-        ) {
-          const auto = defaultMetalKg(product, next.quantity, next.productionDate);
-          next.metalKg = auto > 0 ? auto : "";
+        if (patch.productId !== undefined && patch.metalKg === undefined) {
+          next.metalKg = "";
         }
         if (
           patch.wastePercent === undefined &&
@@ -325,10 +317,9 @@ function NewProductionForm() {
 
   function selectProduct(index: number, product: Product) {
     const line = lines[index];
-    const auto = defaultMetalKg(product, line?.quantity || 1, line?.productionDate);
     updateLine(index, {
       productId: product._id,
-      metalKg: auto > 0 ? auto : "",
+      metalKg: "",
       wastePercent: wastePercentOnDate(wasteSettings, product.family, line?.productionDate),
     });
     setPickerIndex(null);
@@ -591,15 +582,17 @@ function NewProductionForm() {
                     <div className="flex flex-col gap-1.5">
                       <Label>{t("prod.calcMetal")} (kg)</Label>
                       <Input
-                        type="number"
-                        min={0.001}
-                        step="0.001"
-                        value={preview.metalKg > 0 ? preview.metalKg : ""}
+                        type="text"
+                        inputMode="decimal"
+                        value={line.metalKg}
                         onChange={(e) => {
-                          const raw = e.target.value;
-                          updateLine(index, {
-                            metalKg: raw === "" ? "" : Number(raw),
-                          });
+                          const raw = e.target.value.replace(/[^\d.]/g, "");
+                          const firstDot = raw.indexOf(".");
+                          const sanitized =
+                            firstDot === -1
+                              ? raw
+                              : raw.slice(0, firstDot + 1) + raw.slice(firstDot + 1).replace(/\./g, "");
+                          updateLine(index, { metalKg: sanitized });
                         }}
                       />
                     </div>

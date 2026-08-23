@@ -25,7 +25,7 @@ import { PartyPendingByMonth } from "@/components/party/party-pending-by-month";
 import { useI18n } from "@/hooks/use-i18n";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 import { todayInput } from "@/lib/date-range";
-import { computePeriodPending } from "@/lib/party-pending";
+import { computePeriodPending, prefixPendingParty } from "@/lib/party-pending";
 
 function isInternalNote(notes: string) {
   return /^sup-[a-z0-9-]+$/i.test(notes.trim());
@@ -51,8 +51,13 @@ export default function SupplierDetailPage() {
   const [loading, setLoading] = useState(true);
   const { dateFrom, dateTo, setDateFrom, setDateTo } = usePersistedDateRange();
   const periodPending = useMemo(
-    () => computePeriodPending(entries, dateFrom, dateTo),
-    [entries, dateFrom, dateTo]
+    () =>
+      prefixPendingParty(
+        computePeriodPending(entries, dateFrom, dateTo),
+        supplier?.name || "",
+        `/dashboard/suppliers/${id}`
+      ),
+    [entries, dateFrom, dateTo, supplier?.name, id]
   );
 
   const [showPurchaseForm, setShowPurchaseForm] = useState(false);

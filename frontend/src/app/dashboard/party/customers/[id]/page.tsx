@@ -33,7 +33,7 @@ import { PartyPendingByMonth } from "@/components/party/party-pending-by-month";
 import { useI18n } from "@/hooks/use-i18n";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 import { todayInput } from "@/lib/date-range";
-import { computePeriodPending } from "@/lib/party-pending";
+import { computePeriodPending, prefixPendingParty } from "@/lib/party-pending";
 
 function formatBaqaya(baqaya: number) {
   const abs = formatMoney(Math.abs(baqaya));
@@ -90,8 +90,13 @@ export default function CustomerDetailPage() {
   const [savingPaid, setSavingPaid] = useState(false);
 
   const periodPending = useMemo(
-    () => computePeriodPending(entries, dateFrom, dateTo),
-    [entries, dateFrom, dateTo]
+    () =>
+      prefixPendingParty(
+        computePeriodPending(entries, dateFrom, dateTo),
+        customer?.name || "",
+        `/dashboard/party/customers/${id}`
+      ),
+    [entries, dateFrom, dateTo, customer?.name, id]
   );
   const previousPendingShown =
     dateFrom || dateTo ? periodPending.previousRemaining : recordedPreviousPending;

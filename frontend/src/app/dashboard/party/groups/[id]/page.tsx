@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { parsePendingDetailKind } from "@/components/party/party-pending-detail-screen";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
@@ -50,6 +51,8 @@ export default function PartyGroupDetailPage() {
   const router = useRouter();
   const params = useParams();
   const id = String(params.id || "");
+  const searchParams = useSearchParams();
+  const viewingDetail = Boolean(parsePendingDetailKind(searchParams.get("pending")));
   const { dateFrom, dateTo, setDateFrom, setDateTo } = usePersistedDateRange();
   const [group, setGroup] = useState<PartyGroup | null>(null);
   const [ledgers, setLedgers] = useState<Record<string, CustomerLedgerEntry[]>>({});
@@ -94,7 +97,8 @@ export default function PartyGroupDetailPage() {
         party,
         snapshot: prefixPendingParty(
           computePeriodPending(ledgers[party._id] || [], dateFrom, dateTo),
-          party.name
+          party.name,
+          `/dashboard/party/customers/${party._id}`
         ),
       })),
     [parties, ledgers, dateFrom, dateTo]
@@ -149,6 +153,7 @@ export default function PartyGroupDetailPage() {
         </CardContent>
       </Card>
 
+      {viewingDetail ? null : (
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">{t("pgroup.col.parties")}</CardTitle>
@@ -211,6 +216,7 @@ export default function PartyGroupDetailPage() {
           )}
         </CardContent>
       </Card>
+      )}
     </div>
   );
 }
