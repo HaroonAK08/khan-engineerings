@@ -14,6 +14,7 @@ const {
   allocateThisMonthFirst,
   paidById,
 } = require("../../utils/allocate-payments");
+const { resolveWeightKg } = require("../../utils/product-weight");
 
 function toObjectId(id) {
   if (!id) return null;
@@ -49,7 +50,7 @@ function paymentStatusFor(amountPaid, totalAmount) {
  *  - rate_kg: lineTotal = quantity x product.weightKg x ratePerKg
  *  - fixed:   lineTotal = the amount the user typed for the whole line
  */
-async function normalizeItems(items) {
+async function normalizeItems(items, { asOfDate, useAsOfWeight = false } = {}) {
   if (!Array.isArray(items) || items.length === 0) {
     throw httpError("Add at least one product", 400);
   }
@@ -67,9 +68,10 @@ async function normalizeItems(items) {
 
     const mode = raw.pricingMode === "fixed" ? "fixed" : "rate_kg";
     const locked = Number(raw.weightKg);
-    const catalog = Number(product.weightKg);
+    const asOf = resolveWeightKg(product, asOfDate);
+    const catalog = Number.isFinite(asOf) && asOf > 0 ? asOf : Number(product.weightKg);
     const weightKg =
-      Number.isFinite(locked) && locked > 0
+      !useAsOfWeight && Number.isFinite(locked) && locked > 0
         ? locked
         : Number.isFinite(catalog)
           ? catalog
@@ -284,12 +286,12 @@ async function listBuilties({ q, customer, paymentStatus, dateFrom, dateTo } = {
 async function getBuilty(id) {
   const builty = await Builty.findById(id)
     .populate("customer", "name phone address")
-    .populate({ path: "items.product", select: "name sku unitLabel weightKg" });
+    .populate({ path: "items.product", select: "name sku unitLabel weightKg standardCost" });
   if (!builty) throw httpError("Builty not found", 404);
   await syncCustomerBuiltyPaymentStatuses(builty.customer?._id || builty.customer);
   const fresh = await Builty.findById(id)
     .populate("customer", "name phone address")
-    .populate({ path: "items.product", select: "name sku unitLabel weightKg" });
+    .populate({ path: "items.product", select: "name sku unitLabel weightKg standardCost" });
   const payments = await CustomerPayment.find({ builty: fresh._id }).sort({
     paymentDate: -1,
     createdAt: -1,
@@ -309,9 +311,11 @@ async function createBuilty(data) {
   }
 
   await customerService.getById(data.customer);
-  const { items, totalAmount } = await normalizeItems(data.items);
-
   const builtyDate = parseDate(data.builtyDate || new Date(), "Builty date");
+  const { items, totalAmount } = await normalizeItems(data.items, {
+    asOfDate: builtyDate,
+    useAsOfWeight: true,
+  });
 
   if (!wantsConfirmDuplicate(data)) {
     const { start, end } = dayRange(builtyDate);
@@ -430,7 +434,9 @@ async function updateBuilty(id, data) {
           ? Number(raw.weightKg)
           : weightByProduct.get(String(raw.product)) || undefined,
     }));
-    const { items, totalAmount } = await normalizeItems(withClaimed);
+    const { items, totalAmount } = await normalizeItems(withClaimed, {
+      asOfDate: builty.builtyDate,
+    });
     const warehouse =
       builty.warehouse || (await inventoryService.getDefaultWarehouse())._id;
 

@@ -7,7 +7,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 import { Loader2, Plus } from "lucide-react";
-import { apiError, formatMoney } from "@/lib/materials-api";
+import { apiError, formatMoney, formatKg, formatDate } from "@/lib/materials-api";
+import { todayInput } from "@/lib/date-range";
 import { getFinishedStock } from "@/lib/inventory-api";
 import { createProduct, listProducts, updateProduct } from "@/lib/production-api";
 import { familyBadgeClass, familyFilterChipClass, familyRowClass } from "@/lib/product-family";
@@ -42,6 +43,7 @@ const productSchema = z.object({
   unitLabel: z.string().optional(),
   family: z.enum(["hub", "drum"]),
   weightKg: z.number().min(0.001, "Weight (kg) is required"),
+  weightEffectiveFrom: z.string().optional(),
   pricePerKg: z.number().min(0).optional(),
   category: z.string().optional(),
   size: z.string().optional(),
@@ -84,6 +86,7 @@ export default function ProductsPage() {
       unitLabel: "pcs",
       family: "hub",
       weightKg: 0,
+      weightEffectiveFrom: todayInput(),
       pricePerKg: 0,
       category: "",
       size: "",
@@ -136,6 +139,7 @@ export default function ProductsPage() {
       unitLabel: "pcs",
       family: "hub",
       weightKg: 0,
+      weightEffectiveFrom: todayInput(),
       pricePerKg: 0,
       category: "",
       size: "",
@@ -154,6 +158,7 @@ export default function ProductsPage() {
       unitLabel: product.unitLabel || "pcs",
       family: product.family || "hub",
       weightKg: product.weightKg ?? 0,
+      weightEffectiveFrom: todayInput(),
       pricePerKg: product.pricePerKg ?? 0,
       category: refId(product.category),
       size: refId(product.size),
@@ -166,16 +171,27 @@ export default function ProductsPage() {
   async function onSubmit(values: ProductForm) {
     setSaving(true);
     try {
-      const body = {
-        ...values,
+      const { weightEffectiveFrom, ...rest } = values;
+      const body: Record<string, unknown> = {
+        ...rest,
         category: values.category || null,
         size: values.size || null,
       };
       if (editing) {
-        await updateProduct(editing._id, body);
+        const weightChanged =
+          Math.abs((Number(values.weightKg) || 0) - (Number(editing.weightKg) || 0)) > 0.0005;
+        if (weightChanged) {
+          if (!weightEffectiveFrom) {
+            toast.error(t("productsPage.weightFromRequired"));
+            setSaving(false);
+            return;
+          }
+          body.weightEffectiveFrom = weightEffectiveFrom;
+        }
+        await updateProduct(editing._id, body as Partial<Product>);
         toast.success(t("productsPage.updated"));
       } else {
-        await createProduct(body);
+        await createProduct(body as Partial<Product>);
         toast.success(t("productsPage.created"));
       }
       setDialogOpen(false);
@@ -288,6 +304,14 @@ export default function ProductsPage() {
                       {p.sku ? (
                         <div className="font-data break-all text-[10px] text-muted-foreground">{p.sku}</div>
                       ) : null}
+                      {Number(p.weightKg) > 0 ? (
+                        <div className="font-data text-[11px] text-muted-foreground">
+                          {formatKg(Number(p.weightKg))} kg
+                          {p.weightEffectiveFrom
+                            ? ` · ${t("productsPage.weightSince", { date: formatDate(p.weightEffectiveFrom) })}`
+                            : null}
+                        </div>
+                      ) : null}
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className={familyBadgeClass(p.family)}>
@@ -355,6 +379,24 @@ export default function ProductsPage() {
                 {...form.register("weightKg", { valueAsNumber: true })}
               />
             </div>
+            {editing ? (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="weightEffectiveFrom">{t("productsPage.weightFrom")}</Label>
+                <Input
+                  id="weightEffectiveFrom"
+                  type="date"
+                  {...form.register("weightEffectiveFrom")}
+                />
+                <p className="text-xs text-muted-foreground">{t("productsPage.weightFromHint")}</p>
+                {editing.weightEffectiveFrom ? (
+                  <p className="font-data text-[11px] text-muted-foreground">
+                    {t("productsPage.weightUpdated", {
+                      date: formatDate(editing.weightEffectiveFrom),
+                    })}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                 {t("common.cancel")}

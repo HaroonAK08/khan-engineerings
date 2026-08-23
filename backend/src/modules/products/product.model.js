@@ -15,6 +15,19 @@ const productSchema = new mongoose.Schema(
       index: true,
     },
     weightKg: { type: Number, min: 0, default: null },
+    /** Day this catalog weight started. Sales/production before this keep older snapshots. */
+    weightEffectiveFrom: { type: Date, default: null },
+    weightHistory: {
+      type: [
+        {
+          weightKg: { type: Number, required: true },
+          previousWeightKg: { type: Number, default: null },
+          effectiveFrom: { type: Date, required: true },
+          changedAt: { type: Date, default: Date.now },
+        },
+      ],
+      default: [],
+    },
     /** Weighted moving average make-cost; updated when batches finish (Phase B+) */
     standardCost: { type: Number, min: 0, default: 0 },
     /** Price per kg entered by the user; sellingPrice is always derived from weightKg * pricePerKg */

@@ -50,6 +50,7 @@ export type ProductRef = {
   sku?: string;
   unitLabel?: string;
   weightKg?: number;
+  standardCost?: number;
 };
 
 export type PricingMode = "rate_kg" | "fixed";

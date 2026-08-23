@@ -1,5 +1,7 @@
 const Product = require("./product.model");
 const { PRODUCT_FAMILY_IDS } = require("../domain/mfg.constants");
+const { parseEffectiveFrom } = require("../../utils/product-weight");
+const { applyProductWeightFromDate } = require("./apply-product-weight");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -108,7 +110,31 @@ async function update(id, data) {
     product.family = data.family;
   }
   if (data.weightKg !== undefined) {
-    product.weightKg = requirePositive(data.weightKg, "Weight (kg)");
+    const nextWeight = requirePositive(data.weightKg, "Weight (kg)");
+    const prevWeight = Number(product.weightKg);
+    const weightChanged =
+      !Number.isFinite(prevWeight) || Math.abs(prevWeight - nextWeight) > 0.0005;
+    if (weightChanged) {
+      const effectiveFrom = parseEffectiveFrom(
+        data.weightEffectiveFrom || data.weightFromDate,
+        "Weight from date"
+      );
+      product.weightHistory = [
+        ...(product.weightHistory || []),
+        {
+          weightKg: nextWeight,
+          previousWeightKg: Number.isFinite(prevWeight) ? prevWeight : null,
+          effectiveFrom,
+          changedAt: new Date(),
+        },
+      ].slice(-50);
+      product.weightEffectiveFrom = effectiveFrom;
+      product.weightKg = nextWeight;
+      await product.save();
+      await applyProductWeightFromDate(product._id, nextWeight, effectiveFrom);
+    } else {
+      product.weightKg = nextWeight;
+    }
   }
   if (data.standardCost !== undefined) {
     product.standardCost = optionalNonNeg(data.standardCost, "Standard cost") ?? 0;

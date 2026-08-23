@@ -8,6 +8,13 @@ export type Product = {
   unitLabel: string;
   family: ProductFamily;
   weightKg?: number | null;
+  weightEffectiveFrom?: string | null;
+  weightHistory?: Array<{
+    weightKg: number;
+    previousWeightKg?: number | null;
+    effectiveFrom: string;
+    changedAt?: string;
+  }>;
   standardCost?: number;
   pricePerKg?: number;
   sellingPrice?: number;

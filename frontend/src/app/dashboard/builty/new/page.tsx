@@ -20,6 +20,7 @@ import {
   type PricingMode,
 } from "@/lib/sales-api";
 import type { Product } from "@/types/production";
+import { productWeightOnDate } from "@/lib/product-weight";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -80,9 +81,9 @@ function applyPartyPrice(
   };
 }
 
-function lineTotal(products: Product[], line: Line) {
+function lineTotal(products: Product[], line: Line, asOfDate?: string) {
   const product = products.find((p) => p._id === line.product);
-  const weightKg = Number(product?.weightKg) || 0;
+  const weightKg = productWeightOnDate(product, asOfDate);
   const qty = Number(line.quantity) || 0;
   if (line.pricingMode === "fixed") {
     return Math.round(qty * (Number(line.fixedAmount) || 0) * 100) / 100;
@@ -302,8 +303,8 @@ function BuiltyForm() {
   }, [customers, customerSearch]);
 
   const total = useMemo(
-    () => Math.round(lines.reduce((s, l) => s + lineTotal(products, l), 0) * 100) / 100,
-    [lines, products]
+    () => Math.round(lines.reduce((s, l) => s + lineTotal(products, l, builtyDate), 0) * 100) / 100,
+    [lines, products, builtyDate]
   );
 
   const familySummary = useMemo(() => {
@@ -314,7 +315,7 @@ function BuiltyForm() {
       const product = products.find((p) => p._id === line.product);
       if (!product) continue;
       const qty = Number(line.quantity) || 0;
-      const amount = lineTotal(products, line);
+      const amount = lineTotal(products, line, builtyDate);
       if (product.family === "drum") {
         drum.qty += qty;
         drum.amount += amount;
@@ -334,7 +335,7 @@ function BuiltyForm() {
       },
       totalQty: hub.qty + drum.qty,
     };
-  }, [lines, products]);
+  }, [lines, products, builtyDate]);
 
   function updateLine(index: number, patch: Partial<Line>) {
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
@@ -594,8 +595,8 @@ function BuiltyForm() {
           <CardContent className="flex flex-col gap-3">
             {lines.map((line, index) => {
               const selected = products.find((p) => p._id === line.product);
-              const weightKg = Number(selected?.weightKg) || 0;
-              const amount = lineTotal(products, line);
+              const weightKg = productWeightOnDate(selected, builtyDate);
+              const amount = lineTotal(products, line, builtyDate);
               const available = selected ? stockByProduct[selected._id] || 0 : 0;
               return (
                 <div

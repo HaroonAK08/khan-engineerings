@@ -28,6 +28,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { StockSummary } from "@/types/materials";
 import type { Product } from "@/types/production";
+import { productWeightOnDate } from "@/lib/product-weight";
 
 type ProduceLine = {
   productId: string;
@@ -55,8 +56,13 @@ function emptyLine(productId = ""): ProduceLine {
   };
 }
 
-function linePreview(product: Product | null, quantity: number, wastePercent: number) {
-  const weight = Number(product?.weightKg) || 0;
+function linePreview(
+  product: Product | null,
+  quantity: number,
+  wastePercent: number,
+  asOfDate?: string
+) {
+  const weight = productWeightOnDate(product, asOfDate);
   const qty = Number(quantity) || 0;
   const waste = Number(wastePercent);
   const metalKg = Math.round(qty * weight * 1000) / 1000;
@@ -201,7 +207,7 @@ function NewProductionForm() {
     for (const line of lines) {
       quantity += Number(line.quantity) || 0;
       const product = products.find((item) => item._id === line.productId) || null;
-      const preview = linePreview(product, line.quantity, line.wastePercent);
+      const preview = linePreview(product, line.quantity, line.wastePercent, line.productionDate);
       if (product?.family === "drum") daig += preview.chargedKg;
       else if (product?.family === "hub") scrap += preview.chargedKg;
     }
@@ -339,7 +345,12 @@ function NewProductionForm() {
           <CardContent className="flex flex-col gap-3">
             {lines.map((line, index) => {
               const selectedProduct = products.find((product) => product._id === line.productId) || null;
-              const preview = linePreview(selectedProduct, line.quantity, line.wastePercent);
+              const preview = linePreview(
+                selectedProduct,
+                line.quantity,
+                line.wastePercent,
+                line.productionDate
+              );
               const materialType = selectedProduct?.family === "drum" ? "daig" : "scrap";
               const availableForMaterial =
                 materialType === "daig"

@@ -13,6 +13,7 @@ const {
   wantsConfirmDuplicate,
   sameDayDuplicateError,
 } = require("../../utils/sameDay");
+const { resolveWeightKg } = require("../../utils/product-weight");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -210,7 +211,8 @@ async function produce(data) {
   if (!product) throw httpError("Product not found", 404);
   if (product.isActive === false) throw httpError("Product is inactive", 400);
 
-  const weightKg = Number(product.weightKg);
+  const productionDate = parseDate(data.productionDate || new Date(), "Production date");
+  const weightKg = Number(resolveWeightKg(product, productionDate) || product.weightKg);
   if (!Number.isFinite(weightKg) || weightKg <= 0) {
     throw httpError(
       `Set weight (kg) on product "${product.name}" first — material use is calculated from piece weight.`,
@@ -245,8 +247,6 @@ async function produce(data) {
   const chargedKg = roundKg(metalKg + wasteKg);
 
   const available = await getAvailableMaterialKg(materialType);
-
-  const productionDate = parseDate(data.productionDate || new Date(), "Production date");
 
   if (!wantsConfirmDuplicate(data)) {
     const { start, end } = dayRange(productionDate);
@@ -417,7 +417,9 @@ async function recordFurnace(id, data) {
         400
       );
     }
-    const weightKg = Number(product.weightKg);
+    const weightKg = Number(
+      resolveWeightKg(product, batch.productionDate) || product.weightKg
+    );
     if (!Number.isFinite(weightKg) || weightKg <= 0) {
       throw httpError(
         `Set weight (kg) on product "${product.name}" first — waste is calculated from piece weights.`,

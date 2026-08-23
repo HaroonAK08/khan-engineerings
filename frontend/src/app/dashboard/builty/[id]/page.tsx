@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2 } from "lucide-react";
-import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
+import { apiError, formatDate, formatKg, formatMoney } from "@/lib/materials-api";
 import {
   customerName,
   getBuilty,
@@ -182,6 +182,8 @@ export default function BuiltyDetailPage() {
               <TableRow>
                 <TableHead>{t("orderNew.col.product")}</TableHead>
                 <TableHead className="text-right">{t("orderNew.col.qty")}</TableHead>
+                <TableHead className="text-right">{t("orderNew.col.weight")}</TableHead>
+                <TableHead className="text-right">{t("productsPage.makeCost")}</TableHead>
                 <TableHead className="text-right">{t("builtyDetail.claimed")}</TableHead>
                 <TableHead className="text-right">{t("builtyDetail.remaining")}</TableHead>
                 <TableHead>{t("builtyNew.pricingMode")}</TableHead>
@@ -193,10 +195,23 @@ export default function BuiltyDetailPage() {
               {builty.items.map((item, index) => {
                 const claimed = Number(item.claimedQuantity) || 0;
                 const remaining = Math.max(0, Number(item.quantity) - claimed);
+                const catalog =
+                  item.product && typeof item.product === "object" ? item.product : null;
+                const weightKg =
+                  Number(item.weightKg) > 0
+                    ? Number(item.weightKg)
+                    : Number(catalog?.weightKg) || 0;
+                const makeCost = Number(catalog?.standardCost) || 0;
                 return (
                   <TableRow key={item._id || index}>
                     <TableCell>{productName(item.product)}</TableCell>
                     <TableCell className="font-data text-right text-xs">{item.quantity}</TableCell>
+                    <TableCell className="font-data text-right text-xs">
+                      {weightKg > 0 ? `${formatKg(weightKg)} kg` : "—"}
+                    </TableCell>
+                    <TableCell className="font-data text-right text-xs">
+                      {makeCost > 0 ? formatMoney(makeCost) : "—"}
+                    </TableCell>
                     <TableCell className="font-data text-right text-xs">{claimed || "—"}</TableCell>
                     <TableCell className="font-data text-right text-xs">{remaining}</TableCell>
                     <TableCell className="font-data text-xs">
