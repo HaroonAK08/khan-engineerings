@@ -22,6 +22,30 @@ function parseDate(value, label = "Date") {
   return d;
 }
 
+function parseDayEnd(value, label = "Date") {
+  const raw = String(value || "").slice(0, 10);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  if (m) {
+    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 23, 59, 59, 999);
+  }
+  const d = parseDate(value, label);
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
+function parseMovementDate(value) {
+  if (!value) return new Date();
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate(), 12, 0, 0, 0);
+  }
+  const raw = String(value).slice(0, 10);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  if (m) {
+    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0, 0);
+  }
+  return parseDate(value, "movementDate");
+}
+
 function roundQty(n) {
   return Math.round(n * 1000) / 1000;
 }
@@ -45,6 +69,12 @@ async function recordMovement(data) {
   const quantity = Number(data.quantity);
   if (!Number.isFinite(quantity) || quantity <= 0) return null;
 
+  const movementDate = parseMovementDate(
+    data.movementDate || data.movementDate
+  );
+  const refType = data.refType || data.refType || "";
+  const refId = data.refId || data.refId || null;
+
   return StockMovement.create({
     itemType: data.itemType,
     direction: data.direction,
@@ -55,15 +85,21 @@ async function recordMovement(data) {
       (data.itemType === "finished_good" ? "pcs" : "kg"),
     product: data.product || null,
     warehouse: data.warehouse || null,
-    refType: data.refType || "",
-    refId: data.refId || null,
-    movementDate: data.movementDate ? parseDate(data.movementDate) : new Date(),
+    refType,
+    refId,
+    movementDate,
     notes: data.notes || "",
   });
 }
 
 async function deleteMovementsByRef(refType, refId) {
-  await StockMovement.deleteMany({ refType, refId });
+  if (!refId) return;
+  await StockMovement.deleteMany({
+    $or: [
+      { refType, refId },
+      { refType: refType, refId },
+    ],
+  });
 }
 
 /** Called when a raw material purchase is created */
@@ -162,25 +198,41 @@ async function onTurningBreakage() {
   // Breakage no longer returns to a reusable pool.
 }
 
+function finishedLinesFromBatch(batch) {
+  const lines = [];
+  for (const p of batch.outputProgress || []) {
+    const qty = Number(p.finishedQty || p.goodAfterTurning || 0);
+    if (qty > 0 && p.product) lines.push({ product: p.product, qty });
+  }
+  if (lines.length) return lines;
+  for (const o of batch.outputs || []) {
+    const qty = Number(o.quantity || 0);
+    if (qty > 0 && o.product) lines.push({ product: o.product, qty });
+  }
+  if (lines.length) return lines;
+  const qty = Number(batch.goodUnits || 0);
+  if (qty > 0 && batch.product) lines.push({ product: batch.product, qty });
+  return lines;
+}
+
 async function onBatchFinished(batch) {
   const wh = await getDefaultWarehouse();
-  for (const p of batch.outputProgress || []) {
-    const qty = p.finishedQty || p.goodAfterTurning || 0;
-    if (qty <= 0) continue;
-    const product = await Product.findById(p.product);
+  const date = batch.productionDate || new Date();
+  for (const line of finishedLinesFromBatch(batch)) {
+    const product = await Product.findById(line.product);
     const warehouseId = product?.defaultWarehouse || wh._id;
     await recordMovement({
       itemType: "finished_good",
       direction: "in",
       reason: "production_output",
-      quantity: qty,
+      quantity: line.qty,
       unit: "pcs",
-      product: p.product,
+      product: line.product,
       warehouse: warehouseId,
       refType: "production",
       refId: batch._id,
-      movementDate: batch.productionDate || new Date(),
-      notes: `Batch ${batch.batchNo} finished`,
+      movementDate: date,
+      notes: `Batch ${batch.batchNo || batch._id} finished`,
     });
   }
 }
@@ -319,9 +371,7 @@ async function getFinishedStock({ warehouse, category, q, asOf } = {}) {
   }
 
   if (asOf) {
-    const end = parseDate(asOf, "asOf");
-    end.setHours(23, 59, 59, 999);
-    match.movementDate = { $lte: end };
+    match.movementDate = { $lte: parseDayEnd(asOf, "asOf") };
   }
 
   const balances = await StockMovement.aggregate([
@@ -432,8 +482,7 @@ async function getFinishedStock({ warehouse, category, q, asOf } = {}) {
 }
 
 async function getRawStockAsOf(asOf) {
-  const end = parseDate(asOf, "asOf");
-  end.setHours(23, 59, 59, 999);
+  const end = parseDayEnd(asOf, "asOf");
 
   const rows = await StockMovement.aggregate([
     {
@@ -597,8 +646,7 @@ async function getInventoryReport({ asOf, dateFrom, dateTo } = {}) {
   const asOfValue =
     asOf ||
     `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-  const asOfEnd = parseDate(asOfValue, "asOf");
-  asOfEnd.setHours(23, 59, 59, 999);
+  const asOfEnd = parseDayEnd(asOfValue, "asOf");
 
   const monthStart = dateFrom
     ? parseDate(dateFrom, "dateFrom")
@@ -689,35 +737,159 @@ async function getInventoryReport({ asOf, dateFrom, dateTo } = {}) {
   };
 }
 
-/** Backfill movements for purchases/batches that predate Phase 5 */
+async function writeFinishedSale(builty) {
+  const wh = builty.warehouse || (await getDefaultWarehouse())._id;
+  const date = builty.builtyDate || new Date();
+  await deleteMovementsByRef("builty", builty._id);
+  await deleteMovementsByRef("builty_edit", builty._id);
+  await deleteMovementsByRef("builty_delete", builty._id);
+  for (const line of builty.items || []) {
+    await recordMovement({
+      itemType: "finished_good",
+      direction: "out",
+      reason: "sale",
+      quantity: line.quantity,
+      unit: "pcs",
+      product: line.product,
+      warehouse: wh,
+      refType: "builty",
+      refId: builty._id,
+      movementDate: date,
+      notes: `Builty ${builty.builtyNo || builty._id}`,
+    });
+  }
+}
+
+/** Rebuild finished-goods ledger from production + builties + claims so as-of dates match documents. */
+async function rebuildFinishedGoodsLedger() {
+  const Builty = require("../builty/builty.model");
+  const Claim = require("../claims/claim.model");
+  const wh = await getDefaultWarehouse();
+
+  await StockMovement.deleteMany({
+    itemType: "finished_good",
+    reason: { $in: ["production_output", "sale", "claim_return"] },
+  });
+  await StockMovement.deleteMany({
+    itemType: "finished_good",
+    reason: "adjustment",
+    notes: { $regex: /^Builty / },
+  });
+
+  const docs = [];
+  let productionIn = 0;
+  const batches = await ProductionBatch.find({ status: "completed" }).lean();
+  for (const batch of batches) {
+    const date = parseMovementDate(batch.productionDate);
+    for (const line of finishedLinesFromBatch(batch)) {
+      docs.push({
+        itemType: "finished_good",
+        direction: "in",
+        reason: "production_output",
+        quantity: roundQty(line.qty),
+        unit: "pcs",
+        product: line.product,
+        warehouse: wh._id,
+        refType: "production",
+        refId: batch._id,
+        movementDate: date,
+        notes: `Batch ${batch.batchNo || batch._id} finished`,
+      });
+      productionIn += line.qty;
+    }
+  }
+
+  const builties = await Builty.find().lean();
+  let saleOut = 0;
+  for (const builty of builties) {
+    const date = parseMovementDate(builty.builtyDate);
+    const warehouse = builty.warehouse || wh._id;
+    for (const line of builty.items || []) {
+      const qty = Number(line.quantity) || 0;
+      if (qty <= 0) continue;
+      docs.push({
+        itemType: "finished_good",
+        direction: "out",
+        reason: "sale",
+        quantity: roundQty(qty),
+        unit: "pcs",
+        product: line.product,
+        warehouse,
+        refType: "builty",
+        refId: builty._id,
+        movementDate: date,
+        notes: `Builty ${builty.builtyNo || builty._id}`,
+      });
+      saleOut += qty;
+    }
+  }
+
+  const claims = await Claim.find({ status: { $ne: "cancelled" } }).lean();
+  let claimIn = 0;
+  for (const claim of claims) {
+    const date = parseMovementDate(claim.claimDate);
+    for (const item of claim.items || []) {
+      if (item.disposition !== "returned") continue;
+      const qty = Number(item.quantity) || 0;
+      if (qty <= 0) continue;
+      docs.push({
+        itemType: "finished_good",
+        direction: "in",
+        reason: "claim_return",
+        quantity: roundQty(qty),
+        unit: "pcs",
+        product: item.product,
+        warehouse: wh._id,
+        refType: "claim",
+        refId: claim._id,
+        movementDate: date,
+        notes: `Claim ${claim.claimNo} returned to finished goods`,
+      });
+      claimIn += qty;
+    }
+  }
+
+  if (docs.length) {
+    await StockMovement.insertMany(docs, { ordered: false });
+  }
+
+  const asOf = await getFinishedStock({});
+  return {
+    productionIn,
+    saleOut,
+    claimIn,
+    hubUnits: asOf.hubUnits,
+    drumUnits: asOf.drumUnits,
+    totalUnits: asOf.totalUnits,
+  };
+}
+
+/** Backfill purchases that predate stock movements, then rebuild finished goods. */
 async function syncHistoryFromExisting() {
   const Purchase = require("../purchases/purchase.model");
   const purchases = await Purchase.find();
   let purchaseSynced = 0;
   for (const p of purchases) {
-    const exists = await StockMovement.findOne({ refType: "purchase", refId: p._id });
+    const exists = await StockMovement.findOne({
+      $or: [
+        { refType: "purchase", refId: p._id },
+        { refType: "purchase", refId: p._id },
+      ],
+    });
     if (!exists) {
       await onPurchaseCreated(p);
       purchaseSynced += 1;
     }
   }
 
-  const batches = await ProductionBatch.find().populate("product", "defaultWarehouse");
-  let batchSynced = 0;
-  for (const b of batches) {
-    const exists = await StockMovement.findOne({ refType: "production", refId: b._id });
-    if (!exists) {
-      await onBatchCreated(b);
-      batchSynced += 1;
-    }
-  }
-
-  return { purchaseSynced, batchSynced };
+  const finished = await rebuildFinishedGoodsLedger();
+  return { purchaseSynced, ...finished };
 }
 
 module.exports = {
   getDefaultWarehouse,
   recordMovement,
+  deleteMovementsByRef,
   onPurchaseCreated,
   onPurchaseUpdated,
   onPurchaseDeleted,
@@ -726,6 +898,8 @@ module.exports = {
   onTurningBreakage,
   onBatchFinished,
   onBatchDeleted,
+  writeFinishedSale,
+  rebuildFinishedGoodsLedger,
   crudList,
   createCategory,
   updateCategory,

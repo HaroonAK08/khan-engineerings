@@ -10,6 +10,7 @@
     "seed": "node src/scripts/seedAdmin.js",
     "seed:prod-db": "node --env-file=.env.production src/scripts/seedAdmin.js",
     "migrate:mfg": "node src/scripts/migrate-to-mfg-erp.js",
+    "rebuild:stock": "node src/scripts/rebuild-finished-stock.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

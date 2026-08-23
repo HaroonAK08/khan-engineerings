@@ -392,43 +392,12 @@ async function updateBuilty(id, data) {
     const warehouse =
       builty.warehouse || (await inventoryService.getDefaultWarehouse())._id;
 
-    for (const line of builty.items || []) {
-      await inventoryService.recordMovement({
-        itemType: "finished_good",
-        direction: "in",
-        reason: "adjustment",
-        quantity: line.quantity,
-        unit: "pcs",
-        product: line.product,
-        warehouse,
-        refType: "builty_edit",
-        refId: builty._id,
-        movementDate: new Date(),
-        notes: `Builty ${builty.builtyNo} edited (restore)`,
-      });
-    }
-
     await assertStockAvailable(items, warehouse);
-
-    for (const line of items) {
-      await inventoryService.recordMovement({
-        itemType: "finished_good",
-        direction: "out",
-        reason: "sale",
-        quantity: line.quantity,
-        unit: "pcs",
-        product: line.product,
-        warehouse,
-        refType: "builty",
-        refId: builty._id,
-        movementDate: builty.builtyDate,
-        notes: `Builty ${builty.builtyNo} edited`,
-      });
-    }
 
     builty.items = items;
     builty.totalAmount = totalAmount;
     builty.warehouse = warehouse;
+    await inventoryService.writeFinishedSale(builty);
 
     const invoiceUpdate = await CustomerLedgerEntry.updateMany(
       { builty: builty._id, type: "invoice" },
@@ -619,21 +588,9 @@ async function removeBuilty(id) {
     throw httpError("Cannot delete a paid builty.", 409);
   }
 
-  for (const line of builty.items) {
-    await inventoryService.recordMovement({
-      itemType: "finished_good",
-      direction: "in",
-      reason: "adjustment",
-      quantity: line.quantity,
-      unit: "pcs",
-      product: line.product,
-      warehouse: builty.warehouse,
-      refType: "builty_delete",
-      refId: builty._id,
-      movementDate: new Date(),
-      notes: `Builty ${builty.builtyNo} deleted`,
-    });
-  }
+  await inventoryService.deleteMovementsByRef("builty", builty._id);
+  await inventoryService.deleteMovementsByRef("builty_edit", builty._id);
+  await inventoryService.deleteMovementsByRef("builty_delete", builty._id);
 
   await CustomerLedgerEntry.deleteMany({ builty: builty._id });
   const customerId = builty.customer;
