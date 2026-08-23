@@ -1,6 +1,26 @@
 import type { CustomerLedgerEntry } from "@/lib/sales-api";
 import { toDateInput } from "@/lib/date-range";
 
+type PendingLedgerEntry = {
+  _id: string;
+  type: string;
+  amount: number;
+  signedAmount?: number | null;
+  entryDate: string;
+  notes?: string;
+  builty?: CustomerLedgerEntry["builty"];
+  purchase?:
+    | string
+    | null
+    | {
+        _id?: string;
+        invoiceNo?: string;
+        totalAmount?: number;
+        freightAmount?: number;
+        purchaseDate?: string;
+      };
+};
+
 export function roundMoney(n: number) {
   return Math.round(n * 100) / 100;
 }
@@ -43,17 +63,24 @@ function monthKey(day: string) {
   return day.slice(0, 7);
 }
 
-function chargeAmount(entry: CustomerLedgerEntry) {
+function chargeAmount(entry: PendingLedgerEntry) {
   if (entry.type === "payment") return 0;
   if (entry.type === "adjustment") {
     const signed = entry.signedAmount ?? 0;
     return signed > 0 ? roundMoney(signed) : 0;
   }
+  if (entry.type === "purchase") {
+    const purchase = entry.purchase && typeof entry.purchase === "object" ? entry.purchase : null;
+    if (purchase) {
+      return roundMoney((purchase.totalAmount || 0) + (purchase.freightAmount || 0));
+    }
+    return roundMoney(entry.amount || 0);
+  }
   const builty = entry.builty && typeof entry.builty === "object" ? entry.builty : null;
   return roundMoney(builty?.totalAmount ?? entry.amount ?? 0);
 }
 
-function paymentAmount(entry: CustomerLedgerEntry) {
+function paymentAmount(entry: PendingLedgerEntry) {
   if (entry.type === "payment") return roundMoney(entry.amount || 0);
   if (entry.type === "adjustment") {
     const signed = entry.signedAmount ?? 0;
@@ -62,13 +89,17 @@ function paymentAmount(entry: CustomerLedgerEntry) {
   return 0;
 }
 
-function chargeLabel(entry: CustomerLedgerEntry) {
+function chargeLabel(entry: PendingLedgerEntry) {
   if (entry.type === "adjustment") return entry.notes?.trim() || "Previous pending";
+  if (entry.type === "purchase") {
+    const purchase = entry.purchase && typeof entry.purchase === "object" ? entry.purchase : null;
+    return purchase?.invoiceNo || "Purchase";
+  }
   const builty = entry.builty && typeof entry.builty === "object" ? entry.builty : null;
   return builty?.builtyNo || "Builty";
 }
 
-function chargeHref(entry: CustomerLedgerEntry) {
+function chargeHref(entry: PendingLedgerEntry) {
   const builty = entry.builty && typeof entry.builty === "object" ? entry.builty : null;
   return builty?._id ? `/dashboard/builty/${builty._id}` : undefined;
 }
@@ -78,15 +109,22 @@ function applyPay(charges: PendingCharge[], payment: { date: string; amount: num
   if (left <= 0) return;
 
   const month = monthKey(payment.date);
-  const eligible = charges.filter((c) => c.remaining > 0.001 && c.date <= payment.date);
-  const sameMonth = eligible
+  const open = charges.filter((c) => c.remaining > 0.001);
+  const invoices = open.filter((c) => c.kind !== "adjustment");
+  const sameMonth = invoices
     .filter((c) => c.month === month)
     .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
-  const older = eligible
+  const older = invoices
     .filter((c) => c.month < month)
     .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+  const newer = invoices
+    .filter((c) => c.month > month)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+  const adjustments = open
+    .filter((c) => c.kind === "adjustment")
+    .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
 
-  for (const c of [...sameMonth, ...older]) {
+  for (const c of [...sameMonth, ...older, ...adjustments, ...newer]) {
     if (left <= 0) break;
     const take = Math.min(c.remaining, left);
     c.paid = roundMoney(c.paid + take);
@@ -95,7 +133,7 @@ function applyPay(charges: PendingCharge[], payment: { date: string; amount: num
   }
 }
 
-export function allocatePartyPending(entries: CustomerLedgerEntry[]): PendingCharge[] {
+export function allocatePartyPending(entries: PendingLedgerEntry[]): PendingCharge[] {
   const charges: PendingCharge[] = [];
   const payments: Array<{ date: string; amount: number; id: string }> = [];
 
@@ -128,7 +166,7 @@ export function allocatePartyPending(entries: CustomerLedgerEntry[]): PendingCha
 }
 
 export function computePeriodPending(
-  entries: CustomerLedgerEntry[],
+  entries: PendingLedgerEntry[],
   dateFrom?: string,
   dateTo?: string
 ): PeriodPending {

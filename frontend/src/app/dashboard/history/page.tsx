@@ -21,10 +21,12 @@ import { deleteFactoryExpense, listFactoryExpenses } from "@/lib/expenses-api";
 import { listMovements, type StockMovement } from "@/lib/inventory-api";
 import type { BatchExpense, ProductionBatch } from "@/types/production";
 import type { Purchase } from "@/types/materials";
+import { thisMonthRange, todayInput, toDateInput } from "@/lib/date-range";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -90,6 +92,21 @@ function batchQty(batch: ProductionBatch) {
   return fromOut || batch.goodUnits || 0;
 }
 
+function dayKey(value: string) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value).slice(0, 10);
+  return toDateInput(d);
+}
+
+function inRange(date: string, from: string, to: string) {
+  const day = dayKey(date);
+  if (!day) return true;
+  if (from && day < from) return false;
+  if (to && day > to) return false;
+  return true;
+}
+
 function expenseHref(category: string) {
   const c = String(category || "").toLowerCase();
   if (c.includes("electric")) return "/dashboard/expenses/electricity";
@@ -105,20 +122,30 @@ export default function HistoryPage() {
   const router = useRouter();
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const month = useMemo(() => thisMonthRange(), []);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<"all" | Kind>("all");
+  const [dateFrom, setDateFrom] = useState(month.from);
+  const [dateTo, setDateTo] = useState(month.to);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const rangeParams = useMemo(() => {
+    const params: { dateFrom?: string; dateTo?: string } = {};
+    if (dateFrom) params.dateFrom = dateFrom;
+    if (dateTo) params.dateTo = dateTo;
+    return params;
+  }, [dateFrom, dateTo]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const [builties, batches, purchases, expenses, movements, claimsRes] =
         await Promise.allSettled([
-          listBuilties(),
-          listBatches(),
-          listPurchases(),
-          listFactoryExpenses(),
-          listMovements({ reason: "adjustment" }),
+          listBuilties(rangeParams),
+          listBatches(rangeParams),
+          listPurchases(rangeParams),
+          listFactoryExpenses(rangeParams),
+          listMovements({ reason: "adjustment", ...rangeParams }),
           api.get<{ claims: ClaimRow[] }>("/claims"),
         ]);
 
@@ -207,7 +234,7 @@ export default function HistoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [t]);
+  }, [t, rangeParams]);
 
   useEffect(() => {
     void load();
@@ -217,6 +244,7 @@ export default function HistoryPage() {
     const term = q.trim().toLowerCase();
     return rows.filter((row) => {
       if (filter !== "all" && row.kind !== filter) return false;
+      if (!inRange(row.date, dateFrom, dateTo)) return false;
       if (!term) return true;
       return (
         row.title.toLowerCase().includes(term) ||
@@ -224,7 +252,7 @@ export default function HistoryPage() {
         t(kindLabelKey(row.kind)).toLowerCase().includes(term)
       );
     });
-  }, [rows, filter, q, t]);
+  }, [rows, filter, q, t, dateFrom, dateTo]);
 
   async function onDelete(row: HistoryRow) {
     if (!row.canDelete) return;
@@ -256,26 +284,84 @@ export default function HistoryPage() {
         <CardHeader className="gap-3">
           <CardTitle className="text-nameplate text-sm">{t("history.title")}</CardTitle>
           <CardDescription>{t("history.subtitle")}</CardDescription>
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-wrap gap-1">
-              {FILTERS.map((item) => (
-                <Button
-                  key={item.id}
-                  type="button"
-                  size="sm"
-                  variant={filter === item.id ? "default" : "outline"}
-                  onClick={() => setFilter(item.id)}
-                >
-                  {t(item.labelKey)}
-                </Button>
-              ))}
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-end gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={!dateFrom && !dateTo ? "default" : "outline"}
+                onClick={() => {
+                  setDateFrom("");
+                  setDateTo("");
+                }}
+              >
+                {t("common.all")}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={dateFrom === month.from && dateTo === month.to ? "default" : "outline"}
+                onClick={() => {
+                  setDateFrom(month.from);
+                  setDateTo(month.to);
+                }}
+              >
+                {t("common.thisMonth")}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={dateFrom === todayInput() && dateTo === todayInput() ? "default" : "outline"}
+                onClick={() => {
+                  const today = todayInput();
+                  setDateFrom(today);
+                  setDateTo(today);
+                }}
+              >
+                {t("common.today")}
+              </Button>
+              <div className="grid gap-1.5">
+                <Label htmlFor="history-from">{t("common.from")}</Label>
+                <Input
+                  id="history-from"
+                  type="date"
+                  className="w-auto"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="history-to">{t("common.to")}</Label>
+                <Input
+                  id="history-to"
+                  type="date"
+                  className="w-auto"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                />
+              </div>
             </div>
-            <Input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder={t("common.search")}
-              className="lg:max-w-64"
-            />
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-wrap gap-1">
+                {FILTERS.map((item) => (
+                  <Button
+                    key={item.id}
+                    type="button"
+                    size="sm"
+                    variant={filter === item.id ? "default" : "outline"}
+                    onClick={() => setFilter(item.id)}
+                  >
+                    {t(item.labelKey)}
+                  </Button>
+                ))}
+              </div>
+              <Input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder={t("common.search")}
+                className="lg:max-w-64"
+              />
+            </div>
           </div>
         </CardHeader>
         <CardContent>

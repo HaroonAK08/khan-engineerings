@@ -20,6 +20,7 @@ const inventoryService = require("../inventory/inventory.service");
 const financeService = require("../finance/finance.service");
 const mongoose = require("mongoose");
 const { buildExcel, buildExcelMulti, buildPdf, money, fmtDate, sendExcel, sendPdf } = require("./export.util");
+const { allocateThisMonthFirst } = require("../../utils/allocate-payments");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -1061,8 +1062,8 @@ function inDateRange(date, dateFrom, dateTo) {
 }
 
 /**
- * Receivables after party payments: payments settle previous pending first,
- * then oldest builties — same as party "Payment pending".
+ * Receivables after party payments: this month's builties first, then older,
+ * then previous pending — same as party payment pending.
  */
 async function getReceivablesReport({ dateFrom, dateTo, groupId, customerId } = {}) {
   const PartyGroup = require("../party-groups/party-group.model");
@@ -1099,7 +1100,7 @@ async function getReceivablesReport({ dateFrom, dateTo, groupId, customerId } = 
     }
   }
 
-  const [builties, adjustments, paymentsAgg, allGroups] = await Promise.all([
+  const [builties, adjustments, payments, creditAdjustments, allGroups] = await Promise.all([
     Builty.find({})
       .populate("customer", "name phone group")
       .populate({ path: "items.product", select: "name sku" })
@@ -1109,15 +1110,38 @@ async function getReceivablesReport({ dateFrom, dateTo, groupId, customerId } = 
       .populate("customer", "name phone group")
       .sort({ entryDate: 1, createdAt: 1 })
       .lean(),
-    CustomerPayment.aggregate([{ $group: { _id: "$customer", total: { $sum: "$amount" } } }]),
+    CustomerPayment.find({}).select("customer amount paymentDate").lean(),
+    CustomerLedgerEntry.find({ type: "adjustment", signedAmount: { $lt: 0 } })
+      .select("customer signedAmount entryDate")
+      .lean(),
     PartyGroup.find({}).select("name").lean(),
   ]);
 
   const groupNameMap = new Map(allGroups.map((g) => [String(g._id), g.name]));
 
-  const paidByCustomer = new Map(
-    paymentsAgg.map((p) => [String(p._id), roundMoney(p.total)])
-  );
+  const paymentsByCustomer = new Map();
+  for (const p of payments) {
+    const id = String(p.customer || "");
+    if (!id) continue;
+    const list = paymentsByCustomer.get(id) || [];
+    list.push({
+      id: String(p._id),
+      date: p.paymentDate,
+      amount: p.amount || 0,
+    });
+    paymentsByCustomer.set(id, list);
+  }
+  for (const a of creditAdjustments) {
+    const id = String(a.customer || "");
+    if (!id) continue;
+    const list = paymentsByCustomer.get(id) || [];
+    list.push({
+      id: String(a._id),
+      date: a.entryDate,
+      amount: Math.abs(a.signedAmount || 0),
+    });
+    paymentsByCustomer.set(id, list);
+  }
 
   const byCustomer = new Map();
 
@@ -1185,21 +1209,28 @@ async function getReceivablesReport({ dateFrom, dateTo, groupId, customerId } = 
 
   const records = [];
   for (const party of byCustomer.values()) {
-    let remaining = paidByCustomer.get(party.id) || 0;
-    const ordered = [
-      ...party.previousPending.sort(
-        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-      ),
-      ...party.builties.sort(
-        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-      ),
+    const charges = [
+      ...party.previousPending.map((item) => ({
+        ...item,
+        kind: "adjustment",
+        amount: item.totalAmount,
+      })),
+      ...party.builties.map((item) => ({
+        ...item,
+        kind: "invoice",
+        amount: item.totalAmount,
+      })),
     ];
+    const allocated = allocateThisMonthFirst(
+      charges,
+      paymentsByCustomer.get(party.id) || []
+    );
+    const byId = new Map(allocated.map((c) => [c.id, c]));
 
-    for (const item of ordered) {
-      const amountPaid = roundMoney(Math.min(remaining, item.totalAmount));
-      const balance = roundMoney(Math.max(0, item.totalAmount - amountPaid));
-      remaining = roundMoney(Math.max(0, remaining - amountPaid));
-
+    for (const item of [...party.previousPending, ...party.builties]) {
+      const row = byId.get(item.id);
+      const amountPaid = roundMoney(row?.paid || 0);
+      const balance = roundMoney(row?.remaining ?? item.totalAmount);
       if (balance <= 0) continue;
       if (!inDateRange(item.date, dateFrom, dateTo)) continue;
 

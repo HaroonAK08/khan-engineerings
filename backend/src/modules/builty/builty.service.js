@@ -10,6 +10,10 @@ const {
   wantsConfirmDuplicate,
   sameDayDuplicateError,
 } = require("../../utils/sameDay");
+const {
+  allocateThisMonthFirst,
+  paidById,
+} = require("../../utils/allocate-payments");
 
 function toObjectId(id) {
   if (!id) return null;
@@ -123,51 +127,70 @@ function summary(builty) {
 }
 
 async function refreshBuiltyTotals(builty) {
-  const payments = await CustomerPayment.find({ builty: builty._id });
-  const amountPaid = roundMoney(payments.reduce((sum, p) => sum + (p.amount || 0), 0));
-  builty.amountPaid = amountPaid;
-  builty.balance = roundMoney(Math.max(0, (builty.totalAmount || 0) - amountPaid));
-  builty.paymentStatus = paymentStatusFor(amountPaid, builty.totalAmount || 0);
-  await builty.save();
-  return builty;
+  await syncCustomerBuiltyPaymentStatuses(builty.customer?._id || builty.customer);
+  return Builty.findById(builty._id);
 }
 
 /**
- * Party payments settle previous pending first, then builties oldest → newest.
- * Each builty status becomes unpaid / partial / paid from how much is still left.
+ * Party payments first cover this month's builties, then older builties,
+ * then previous pending. Leftover credit can settle newer builties.
  */
 async function syncCustomerBuiltyPaymentStatuses(customerId) {
   const oid = toObjectId(customerId);
   if (!oid) return;
 
-  const [paymentsAgg, previousPendingAgg, builties] = await Promise.all([
-    CustomerPayment.aggregate([
-      { $match: { customer: oid } },
-      { $group: { _id: null, total: { $sum: "$amount" } } },
-    ]),
-    CustomerLedgerEntry.aggregate([
-      {
-        $match: {
-          customer: oid,
-          type: "adjustment",
-          signedAmount: { $gt: 0 },
-        },
-      },
-      { $group: { _id: null, total: { $sum: "$signedAmount" } } },
-    ]),
+  const [payments, adjustments, builties] = await Promise.all([
+    CustomerPayment.find({ customer: oid }).select("_id amount paymentDate").lean(),
+    CustomerLedgerEntry.find({
+      customer: oid,
+      type: "adjustment",
+    })
+      .select("_id signedAmount amount entryDate")
+      .lean(),
     Builty.find({ customer: oid }).sort({ builtyDate: 1, createdAt: 1 }),
   ]);
 
-  let remaining = roundMoney(paymentsAgg[0]?.total || 0);
-  const previousPending = roundMoney(previousPendingAgg[0]?.total || 0);
-  remaining = roundMoney(Math.max(0, remaining - previousPending));
+  const credits = payments.map((p) => ({
+    id: String(p._id),
+    date: p.paymentDate,
+    amount: p.amount || 0,
+  }));
+  for (const a of adjustments) {
+    if ((a.signedAmount || 0) < 0) {
+      credits.push({
+        id: String(a._id),
+        date: a.entryDate,
+        amount: Math.abs(a.signedAmount || 0),
+      });
+    }
+  }
+
+  const allocated = allocateThisMonthFirst(
+    [
+      ...builties.map((b) => ({
+        id: String(b._id),
+        date: b.builtyDate,
+        amount: b.totalAmount || 0,
+        kind: "invoice",
+      })),
+      ...adjustments
+        .filter((a) => (a.signedAmount || 0) > 0)
+        .map((a) => ({
+          id: String(a._id),
+          date: a.entryDate,
+          amount: a.signedAmount || a.amount || 0,
+          kind: "adjustment",
+        })),
+    ],
+    credits
+  );
+  const paid = paidById(allocated);
 
   for (const builty of builties) {
     const total = roundMoney(builty.totalAmount || 0);
-    const amountPaid = roundMoney(Math.min(remaining, total));
+    const amountPaid = roundMoney(Math.min(paid.get(String(builty._id)) || 0, total));
     const balance = roundMoney(Math.max(0, total - amountPaid));
     const paymentStatus = paymentStatusFor(amountPaid, total);
-    remaining = roundMoney(Math.max(0, remaining - amountPaid));
 
     const changed =
       roundMoney(builty.amountPaid || 0) !== amountPaid ||
@@ -181,6 +204,25 @@ async function syncCustomerBuiltyPaymentStatuses(customerId) {
       await builty.save();
     }
   }
+}
+
+async function resyncAllCustomerPaymentStatuses() {
+  const [fromBuilties, fromPayments, fromLedger] = await Promise.all([
+    Builty.distinct("customer"),
+    CustomerPayment.distinct("customer"),
+    CustomerLedgerEntry.distinct("customer"),
+  ]);
+  const ids = [
+    ...new Set(
+      [...fromBuilties, ...fromPayments, ...fromLedger]
+        .map((id) => String(id || ""))
+        .filter(Boolean)
+    ),
+  ];
+  for (const id of ids) {
+    await syncCustomerBuiltyPaymentStatuses(id);
+  }
+  return ids.length;
 }
 
 function itemSummary(builty) {
@@ -562,11 +604,6 @@ async function recordBuiltyPayment(id, data) {
     notes: data.notes?.trim() || "",
   });
 
-  builty.amountPaid = roundMoney(builty.amountPaid + amount);
-  builty.balance = roundMoney(Math.max(0, builty.totalAmount - builty.amountPaid));
-  builty.paymentStatus = paymentStatusFor(builty.amountPaid, builty.totalAmount);
-  await builty.save();
-
   await CustomerLedgerEntry.create({
     customer: builty.customer,
     type: "payment",
@@ -577,6 +614,7 @@ async function recordBuiltyPayment(id, data) {
     notes: data.notes?.trim() || `Payment on builty ${builty.builtyNo}`,
   });
 
+  await syncCustomerBuiltyPaymentStatuses(builty.customer);
   return getBuilty(builty._id);
 }
 
@@ -922,4 +960,5 @@ module.exports = {
   listLedger,
   getSalesReport,
   syncCustomerBuiltyPaymentStatuses,
+  resyncAllCustomerPaymentStatuses,
 };

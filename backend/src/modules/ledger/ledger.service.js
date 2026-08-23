@@ -7,6 +7,10 @@ const {
   wantsConfirmDuplicate,
   sameDayDuplicateError,
 } = require("../../utils/sameDay");
+const {
+  allocateThisMonthFirst,
+  paidById,
+} = require("../../utils/allocate-payments");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -42,37 +46,62 @@ async function syncPurchasePaid(purchaseId) {
   return Purchase.findById(purchaseId);
 }
 
-/** Pay supplier total: payments settle previous pending first, then oldest purchases. */
+/** Payments first cover this month's purchases, then older, then previous pending. */
 async function syncSupplierPurchaseBalances(supplierId) {
   const oid = toObjectId(supplierId);
   if (!oid) return;
 
-  const [payments, previousPendingAgg, purchases] = await Promise.all([
-    LedgerEntry.find({ supplier: oid, type: "payment" }),
-    LedgerEntry.aggregate([
-      {
-        $match: {
-          supplier: oid,
-          type: "adjustment",
-          signedAmount: { $gt: 0 },
-        },
-      },
-      { $group: { _id: null, total: { $sum: "$signedAmount" } } },
-    ]),
+  const [ledger, purchases] = await Promise.all([
+    LedgerEntry.find({
+      supplier: oid,
+      type: { $in: ["payment", "adjustment"] },
+    })
+      .select("_id type amount signedAmount entryDate")
+      .lean(),
     Purchase.find({ supplier: oid }).sort({ purchaseDate: 1, createdAt: 1 }),
   ]);
 
-  let remaining = roundMoney(payments.reduce((sum, p) => sum + (p.amount || 0), 0));
-  const previousPending = roundMoney(previousPendingAgg[0]?.total || 0);
-  remaining = roundMoney(Math.max(0, remaining - previousPending));
+  const credits = [];
+  const adjustments = [];
+  for (const e of ledger) {
+    if (e.type === "payment") {
+      credits.push({ id: String(e._id), date: e.entryDate, amount: e.amount || 0 });
+    } else if ((e.signedAmount || 0) < 0) {
+      credits.push({
+        id: String(e._id),
+        date: e.entryDate,
+        amount: Math.abs(e.signedAmount || 0),
+      });
+    } else if ((e.signedAmount || 0) > 0) {
+      adjustments.push(e);
+    }
+  }
+
+  const allocated = allocateThisMonthFirst(
+    [
+      ...purchases.map((p) => ({
+        id: String(p._id),
+        date: p.purchaseDate,
+        amount: (p.totalAmount || 0) + (p.freightAmount || 0),
+        kind: "invoice",
+      })),
+      ...adjustments.map((a) => ({
+        id: String(a._id),
+        date: a.entryDate,
+        amount: a.signedAmount || a.amount || 0,
+        kind: "adjustment",
+      })),
+    ],
+    credits
+  );
+  const paid = paidById(allocated);
 
   for (const purchase of purchases) {
     const payable = roundMoney(
       (purchase.totalAmount || 0) + (purchase.freightAmount || 0)
     );
-    const amountPaid = roundMoney(Math.min(remaining, payable));
+    const amountPaid = roundMoney(Math.min(paid.get(String(purchase._id)) || 0, payable));
     const balance = roundMoney(Math.max(0, payable - amountPaid));
-    remaining = roundMoney(Math.max(0, remaining - amountPaid));
 
     if (
       roundMoney(purchase.amountPaid || 0) !== amountPaid ||
@@ -83,6 +112,22 @@ async function syncSupplierPurchaseBalances(supplierId) {
       await purchase.save();
     }
   }
+}
+
+async function resyncAllSupplierPurchaseBalances() {
+  const [fromPurchases, fromLedger] = await Promise.all([
+    Purchase.distinct("supplier"),
+    LedgerEntry.distinct("supplier"),
+  ]);
+  const ids = [
+    ...new Set(
+      [...fromPurchases, ...fromLedger].map((id) => String(id || "")).filter(Boolean)
+    ),
+  ];
+  for (const id of ids) {
+    await syncSupplierPurchaseBalances(id);
+  }
+  return ids.length;
 }
 
 async function listBySupplier(supplierId, { dateFrom, dateTo } = {}) {
@@ -250,4 +295,5 @@ module.exports = {
   removeEntry,
   syncPurchasePaid,
   syncSupplierPurchaseBalances,
+  resyncAllSupplierPurchaseBalances,
 };

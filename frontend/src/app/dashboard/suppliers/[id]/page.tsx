@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
@@ -21,8 +21,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SupplierHistoryCalendar } from "@/components/suppliers/supplier-history-calendar";
+import { PartyPendingByMonth } from "@/components/party/party-pending-by-month";
 import { useI18n } from "@/hooks/use-i18n";
+import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 import { todayInput } from "@/lib/date-range";
+import { computePeriodPending } from "@/lib/party-pending";
 
 function isInternalNote(notes: string) {
   return /^sup-[a-z0-9-]+$/i.test(notes.trim());
@@ -46,6 +49,11 @@ export default function SupplierDetailPage() {
   });
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const { dateFrom, dateTo, setDateFrom, setDateTo } = usePersistedDateRange();
+  const periodPending = useMemo(
+    () => computePeriodPending(entries, dateFrom, dateTo),
+    [entries, dateFrom, dateTo]
+  );
 
   const [showPurchaseForm, setShowPurchaseForm] = useState(false);
   const [purchaseMaterial, setPurchaseMaterial] = useState<"scrap" | "daig">("scrap");
@@ -409,8 +417,34 @@ export default function SupplierDetailPage() {
             {showPendingForm ? t("common.cancel") : t("supplierDetail.addPreviousPending")}
           </Button>
         </CardHeader>
-        {showPendingForm ? (
-          <CardContent className="pt-0">
+        <CardContent className={showPendingForm ? "pt-0" : undefined}>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-1.5">
+              <Label>{t("common.from")}</Label>
+              <Input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>{t("common.to")}</Label>
+              <Input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="mt-4 border-t pt-4">
+            <PartyPendingByMonth
+              snapshot={periodPending}
+              dateFrom={dateFrom}
+              dateTo={dateTo}
+            />
+          </div>
+          {showPendingForm ? (
+            <div className="mt-4 border-t pt-4">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div className="flex flex-col gap-1.5">
                 <Label>{t("common.amount")}</Label>
@@ -448,8 +482,9 @@ export default function SupplierDetailPage() {
               {savingPending ? <Loader2 className="size-4 animate-spin" /> : null}
               {t("common.save")}
             </Button>
-          </CardContent>
-        ) : null}
+          </div>
+          ) : null}
+        </CardContent>
       </Card>
 
       <Card>
