@@ -1,5 +1,38 @@
 import { api } from "@/lib/api";
 
+export type WasteHistoryRow = {
+  family: "hub" | "drum";
+  percent: number;
+  previousPercent: number | null;
+  effectiveFrom: string;
+  changedAt?: string;
+};
+
+export type WasteSettings = {
+  hubPercent: number;
+  drumPercent: number;
+  hubEffectiveFrom: string | null;
+  drumEffectiveFrom: string | null;
+  history: WasteHistoryRow[];
+};
+
+export async function getWasteSettings() {
+  const { data } = await api.get<{ settings: WasteSettings }>("/settings/waste-percent");
+  return data.settings;
+}
+
+export async function setWastePercent(body: {
+  family: "hub" | "drum";
+  percent: number;
+  effectiveFrom: string;
+}) {
+  const { data } = await api.put<{
+    settings: WasteSettings;
+    applied: { updated: number };
+  }>("/settings/waste-percent", body);
+  return data;
+}
+
 export type PayrollPeriod = {
   month: string;
   paymentFrom: string;

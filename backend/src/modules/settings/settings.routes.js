@@ -6,6 +6,9 @@ const router = Router();
 
 router.use(requireAuth);
 
+router.get("/waste-percent", controller.getWasteSettings);
+router.put("/waste-percent", controller.setWastePercent);
+
 router.get("/payroll-periods", controller.listPayrollPeriods);
 router.get("/payroll-periods/:month", controller.getPayrollPeriod);
 router.put("/payroll-periods/:month", controller.upsertPayrollPeriod);

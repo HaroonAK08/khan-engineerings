@@ -13,6 +13,8 @@ import { useI18n } from "@/hooks/use-i18n";
 import { todayInput } from "@/lib/date-range";
 import { getStock, apiError, formatKg, withSameDayConfirm } from "@/lib/materials-api";
 import { listProducts, produce } from "@/lib/production-api";
+import { getWasteSettings, type WasteSettings } from "@/lib/settings-api";
+import { wastePercentOnDate } from "@/lib/waste-percent";
 import {
   VOICE_PRODUCE_ADD_EVENT,
   VOICE_PRODUCE_PENDING_KEY,
@@ -35,6 +37,7 @@ type ProduceLine = {
   quantity: number;
   wastePercent: number;
   productionDate: string;
+  metalKg: number | "";
 };
 
 const productionSearchInputClass =
@@ -53,26 +56,37 @@ function emptyLine(productId = ""): ProduceLine {
     quantity: 1,
     wastePercent: 6,
     productionDate: todayInput(),
+    metalKg: "",
   };
+}
+
+function defaultMetalKg(product: Product | null, quantity: number, asOfDate?: string) {
+  const weight = productWeightOnDate(product, asOfDate);
+  const qty = Number(quantity) || 0;
+  return Math.round(qty * weight * 1000) / 1000;
 }
 
 function linePreview(
   product: Product | null,
   quantity: number,
   wastePercent: number,
-  asOfDate?: string
+  asOfDate?: string,
+  metalKgOverride?: number | ""
 ) {
-  const weight = productWeightOnDate(product, asOfDate);
+  const catalogMetal = defaultMetalKg(product, quantity, asOfDate);
   const qty = Number(quantity) || 0;
   const waste = Number(wastePercent);
-  const metalKg = Math.round(qty * weight * 1000) / 1000;
+  const metalKg =
+    Number(metalKgOverride) > 0 ? Math.round(Number(metalKgOverride) * 1000) / 1000 : catalogMetal;
   const wasteKg =
     Number.isFinite(waste) && waste >= 0 ? Math.round(metalKg * (waste / 100) * 1000) / 1000 : 0;
 
   return {
     metalKg,
+    catalogMetal,
     wasteKg,
     chargedKg: Math.round((metalKg + wasteKg) * 1000) / 1000,
+    avgPieceKg: qty > 0 && metalKg > 0 ? Math.round((metalKg / qty) * 1000) / 1000 : 0,
   };
 }
 
@@ -91,13 +105,19 @@ function NewProductionForm() {
   const [pickerIndex, setPickerIndex] = useState<number | null>(null);
   const [productSearch, setProductSearch] = useState("");
   const [familyFilter, setFamilyFilter] = useState<"all" | "hub" | "drum">("all");
+  const [wasteSettings, setWasteSettings] = useState<WasteSettings | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [stockData, productData] = await Promise.all([getStock(), listProducts({ active: "true" })]);
+      const [stockData, productData, waste] = await Promise.all([
+        getStock(),
+        listProducts({ active: "true" }),
+        getWasteSettings().catch(() => null),
+      ]);
       setStock(stockData);
       setProducts(productData);
+      if (waste) setWasteSettings(waste);
     } catch (err) {
       toast.error(apiError(err, "Failed to load production"));
     } finally {
@@ -172,15 +192,35 @@ function NewProductionForm() {
   }, [applyVoicePayload]);
 
   useEffect(() => {
+    if (!wasteSettings) return;
+    setLines((prev) =>
+      prev.map((line) => {
+        const product = products.find((item) => item._id === line.productId);
+        if (product?.family !== "hub" && product?.family !== "drum") return line;
+        return {
+          ...line,
+          wastePercent: wastePercentOnDate(wasteSettings, product.family, line.productionDate),
+        };
+      })
+    );
+  }, [wasteSettings, products]);
+
+  useEffect(() => {
     if (initializedFromQuery.current || !initialProductId || products.length === 0) return;
     if (!products.some((product) => product._id === initialProductId)) return;
     initializedFromQuery.current = true;
-    setLines([emptyLine(initialProductId)]);
     const selected = products.find((product) => product._id === initialProductId);
+    const line = emptyLine(initialProductId);
     if (selected?.family === "hub" || selected?.family === "drum") {
+      line.wastePercent = wastePercentOnDate(
+        wasteSettings,
+        selected.family,
+        line.productionDate
+      );
       setFamilyFilter(selected.family);
     }
-  }, [initialProductId, products]);
+    setLines([line]);
+  }, [initialProductId, products, wasteSettings]);
 
   const produceProducts = useMemo(() => {
     let list = products.filter((product) => Number(product.weightKg) > 0);
@@ -207,7 +247,13 @@ function NewProductionForm() {
     for (const line of lines) {
       quantity += Number(line.quantity) || 0;
       const product = products.find((item) => item._id === line.productId) || null;
-      const preview = linePreview(product, line.quantity, line.wastePercent, line.productionDate);
+      const preview = linePreview(
+        product,
+        line.quantity,
+        line.wastePercent,
+        line.productionDate,
+        line.metalKg
+      );
       if (product?.family === "drum") daig += preview.chargedKg;
       else if (product?.family === "hub") scrap += preview.chargedKg;
     }
@@ -220,7 +266,34 @@ function NewProductionForm() {
   }, [lines, products]);
 
   function updateLine(index: number, patch: Partial<ProduceLine>) {
-    setLines((prev) => prev.map((line, lineIndex) => (lineIndex === index ? { ...line, ...patch } : line)));
+    setLines((prev) =>
+      prev.map((line, lineIndex) => {
+        if (lineIndex !== index) return line;
+        const next = { ...line, ...patch };
+        const product = products.find((item) => item._id === next.productId) || null;
+        if (
+          patch.metalKg === undefined &&
+          (patch.productId !== undefined ||
+            patch.quantity !== undefined ||
+            patch.productionDate !== undefined)
+        ) {
+          const auto = defaultMetalKg(product, next.quantity, next.productionDate);
+          next.metalKg = auto > 0 ? auto : "";
+        }
+        if (
+          patch.wastePercent === undefined &&
+          (patch.productId !== undefined || patch.productionDate !== undefined) &&
+          (product?.family === "hub" || product?.family === "drum")
+        ) {
+          next.wastePercent = wastePercentOnDate(
+            wasteSettings,
+            product.family,
+            next.productionDate
+          );
+        }
+        return next;
+      })
+    );
   }
 
   function addLine(productId = "") {
@@ -239,7 +312,13 @@ function NewProductionForm() {
   }
 
   function selectProduct(index: number, product: Product) {
-    updateLine(index, { productId: product._id });
+    const line = lines[index];
+    const auto = defaultMetalKg(product, line?.quantity || 1, line?.productionDate);
+    updateLine(index, {
+      productId: product._id,
+      metalKg: auto > 0 ? auto : "",
+      wastePercent: wastePercentOnDate(wasteSettings, product.family, line?.productionDate),
+    });
     setPickerIndex(null);
     setProductSearch("");
     setFamilyFilter(product.family);
@@ -288,6 +367,7 @@ function NewProductionForm() {
           wastePercent: Number(line.wastePercent),
           materialType: (product.family === "drum" ? "daig" : "scrap") as "scrap" | "daig",
           productionDate: line.productionDate,
+          ...(Number(line.metalKg) > 0 ? { metalKg: Number(line.metalKg) } : {}),
         };
 
         const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
@@ -349,7 +429,8 @@ function NewProductionForm() {
                 selectedProduct,
                 line.quantity,
                 line.wastePercent,
-                line.productionDate
+                line.productionDate,
+                line.metalKg
               );
               const materialType = selectedProduct?.family === "drum" ? "daig" : "scrap";
               const availableForMaterial =
@@ -474,7 +555,7 @@ function NewProductionForm() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
                     <div className="flex flex-col gap-1.5">
                       <Label>{t("prod.col.qty")}</Label>
                       <Input
@@ -483,6 +564,21 @@ function NewProductionForm() {
                         step={1}
                         value={line.quantity}
                         onChange={(e) => updateLine(index, { quantity: Number(e.target.value) })}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label>{t("prod.calcMetal")} (kg)</Label>
+                      <Input
+                        type="number"
+                        min={0.001}
+                        step="0.001"
+                        value={preview.metalKg > 0 ? preview.metalKg : ""}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          updateLine(index, {
+                            metalKg: raw === "" ? "" : Number(raw),
+                          });
+                        }}
                       />
                     </div>
                     <div className="flex flex-col gap-1.5">
@@ -514,9 +610,13 @@ function NewProductionForm() {
 
                   {selectedProduct && (
                     <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm text-muted-foreground">
-                      <p>
-                        {t("prod.calcMetal")}: {formatKg(preview.metalKg)} kg · {t("prod.calcWaste")}:{" "}
-                        {formatKg(preview.wasteKg)} kg
+                      <p className="text-xs">{t("prod.metalKgHint")}</p>
+                      <p className="mt-1">
+                        {t("prod.calcMetal")}: {formatKg(preview.metalKg)} kg
+                        {preview.avgPieceKg > 0
+                          ? ` (${formatKg(preview.avgPieceKg)} kg / pc)`
+                          : ""}{" "}
+                        · {t("prod.calcWaste")}: {formatKg(preview.wasteKg)} kg
                       </p>
                       <p className="mt-1 font-medium text-foreground">
                         {t("prod.calcDeduct")}: {formatKg(preview.chargedKg)} kg {t(`prod.${materialType}`)} ·{" "}

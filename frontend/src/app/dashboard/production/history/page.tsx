@@ -50,6 +50,7 @@ const produceSchema = z.object({
   productId: z.string().min(1, "Product is required"),
   quantity: z.number().int().min(1, "Quantity must be at least 1"),
   wastePercent: z.number().min(0).max(99),
+  metalKg: z.number().positive("Metal kg must be greater than 0"),
   materialType: z.enum(["scrap", "daig"]),
   productionDate: z.string().min(1),
 });
@@ -89,6 +90,16 @@ function batchWastePercent(batch: ProductionBatch) {
   const metal = Math.max(0, charged - waste);
   if (metal <= 0) return 6;
   return Math.round((waste / metal) * 1000) / 10;
+}
+
+function batchMetalKg(batch: ProductionBatch) {
+  const charged = Number(batch.inputs?.[0]?.quantityKg) || 0;
+  const waste = Number(batch.furnaceWasteKg) || 0;
+  const metal = Math.max(0, charged - waste);
+  if (metal > 0) return Math.round(metal * 1000) / 1000;
+  const qty = batchQty(batch);
+  const piece = Number(batch.outputs?.[0]?.weightKg) || 0;
+  return Math.round(qty * piece * 1000) / 1000;
 }
 
 function batchMaterialType(batch: ProductionBatch): "scrap" | "daig" {
@@ -142,6 +153,7 @@ export default function ProductionHistoryPage() {
       productId: "",
       quantity: 1,
       wastePercent: 6,
+      metalKg: 1,
       materialType: "scrap",
       productionDate: todayInput(),
     },
@@ -150,6 +162,7 @@ export default function ProductionHistoryPage() {
   const productId = form.watch("productId");
   const quantity = form.watch("quantity");
   const wastePercent = form.watch("wastePercent");
+  const metalKg = form.watch("metalKg");
   const materialType = form.watch("materialType");
 
   const selectedProduct = useMemo(
@@ -166,17 +179,20 @@ export default function ProductionHistoryPage() {
     const weight = Number(selectedProduct?.weightKg) || 0;
     const qty = Number(quantity) || 0;
     const waste = Number(wastePercent);
-    const metalKg = Math.round(qty * weight * 1000) / 1000;
+    const catalogMetal = Math.round(qty * weight * 1000) / 1000;
+    const metal =
+      Number(metalKg) > 0 ? Math.round(Number(metalKg) * 1000) / 1000 : catalogMetal;
     const wasteKg =
       Number.isFinite(waste) && waste >= 0
-        ? Math.round(metalKg * (waste / 100) * 1000) / 1000
+        ? Math.round(metal * (waste / 100) * 1000) / 1000
         : 0;
     return {
-      metalKg,
+      metalKg: metal,
       wasteKg,
-      chargedKg: Math.round((metalKg + wasteKg) * 1000) / 1000,
+      chargedKg: Math.round((metal + wasteKg) * 1000) / 1000,
+      avgPieceKg: qty > 0 && metal > 0 ? Math.round((metal / qty) * 1000) / 1000 : 0,
     };
-  }, [selectedProduct, quantity, wastePercent]);
+  }, [selectedProduct, quantity, wastePercent, metalKg]);
 
   const availableForMaterial = useMemo(() => {
     const base =
@@ -272,6 +288,7 @@ export default function ProductionHistoryPage() {
       productId: pid,
       quantity: batchQty(batch) || 1,
       wastePercent: batchWastePercent(batch),
+      metalKg: batchMetalKg(batch) || 1,
       materialType: batchMaterialType(batch),
       productionDate: toDateInput(batch.productionDate),
     });
@@ -304,6 +321,7 @@ export default function ProductionHistoryPage() {
         productId: values.productId,
         quantity: values.quantity,
         wastePercent: values.wastePercent,
+        metalKg: values.metalKg,
         materialType: values.materialType,
         productionDate: values.productionDate,
       });
@@ -536,6 +554,15 @@ export default function ProductionHistoryPage() {
                 />
               </div>
               <div className="flex flex-col gap-1.5">
+                <Label>{t("prod.calcMetal")} (kg)</Label>
+                <Input
+                  type="number"
+                  min={0.001}
+                  step="0.001"
+                  {...form.register("metalKg", { valueAsNumber: true })}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
                 <Label>{t("prod.wastePercent")}</Label>
                 <Input
                   type="number"
@@ -552,9 +579,11 @@ export default function ProductionHistoryPage() {
             </div>
             {selectedProduct && (
               <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm text-muted-foreground">
-                <p>
-                  {t("prod.calcMetal")}: {formatKg(preview.metalKg)} kg · {t("prod.calcWaste")}:{" "}
-                  {formatKg(preview.wasteKg)} kg
+                <p className="text-xs">{t("prod.metalKgHint")}</p>
+                <p className="mt-1">
+                  {t("prod.calcMetal")}: {formatKg(preview.metalKg)} kg
+                  {preview.avgPieceKg > 0 ? ` (${formatKg(preview.avgPieceKg)} kg / pc)` : ""} ·{" "}
+                  {t("prod.calcWaste")}: {formatKg(preview.wasteKg)} kg
                 </p>
                 <p className="mt-1 font-medium text-foreground">
                   {t("prod.calcDeduct")}: {formatKg(preview.chargedKg)} kg {materialType}

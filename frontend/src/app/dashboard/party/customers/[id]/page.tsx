@@ -379,8 +379,8 @@ export default function CustomerDetailPage() {
           </div>
           <Button
             type="button"
-            variant="outline"
-            size="sm"
+            variant={showPaidForm ? "outline" : "default"}
+            className={showPaidForm ? undefined : "bg-primary px-5 text-primary-foreground shadow-sm"}
             onClick={() => {
               setShowPaidForm((v) => {
                 const next = !v;

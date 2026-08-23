@@ -5,14 +5,17 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { History, Loader2, Plus, Search } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
-import { apiError, formatKg, getStock } from "@/lib/materials-api";
+import { apiError, formatDate, formatKg, getStock } from "@/lib/materials-api";
 import { getFinishedStock, type FinishedStockItem } from "@/lib/inventory-api";
 import { listProducts } from "@/lib/production-api";
+import { getWasteSettings, setWastePercent, type WasteSettings } from "@/lib/settings-api";
+import { todayInput } from "@/lib/date-range";
 import { familyBadgeClass, familyRowClass } from "@/lib/product-family";
 import type { StockSummary } from "@/types/materials";
 import type { Product } from "@/types/production";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -51,18 +54,30 @@ export default function ProductionPage() {
   const [loading, setLoading] = useState(true);
   const [familyFilter, setFamilyFilter] = useState<"all" | "hub" | "drum">("all");
   const [stockSearch, setStockSearch] = useState("");
+  const [wasteSettings, setWasteSettings] = useState<WasteSettings | null>(null);
+  const [hubWaste, setHubWaste] = useState("6");
+  const [drumWaste, setDrumWaste] = useState("6");
+  const [hubFrom, setHubFrom] = useState(todayInput());
+  const [drumFrom, setDrumFrom] = useState(todayInput());
+  const [savingWaste, setSavingWaste] = useState<"hub" | "drum" | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [stockData, productData, finished] = await Promise.all([
+      const [stockData, productData, finished, waste] = await Promise.all([
         getStock(),
         listProducts({ active: "true" }),
         getFinishedStock(),
+        getWasteSettings().catch(() => null),
       ]);
       setStock(stockData);
       setProducts(productData);
       setStockByProduct(qtyByProduct(finished.items || []));
+      if (waste) {
+        setWasteSettings(waste);
+        setHubWaste(String(waste.hubPercent ?? 6));
+        setDrumWaste(String(waste.drumPercent ?? 6));
+      }
     } catch (err) {
       toast.error(apiError(err, "Failed to load production"));
     } finally {
@@ -104,6 +119,31 @@ export default function ProductionPage() {
     }
     return total;
   }, [products, stockByProduct]);
+
+  async function applyWaste(family: "hub" | "drum") {
+    const percent = Number(family === "hub" ? hubWaste : drumWaste);
+    const from = family === "hub" ? hubFrom : drumFrom;
+    if (!Number.isFinite(percent) || percent < 0 || percent >= 100) {
+      toast.error(t("prod.wastePercent"));
+      return;
+    }
+    if (!from) {
+      toast.error(t("prod.wasteNeedDate"));
+      return;
+    }
+    setSavingWaste(family);
+    try {
+      const result = await setWastePercent({ family, percent, effectiveFrom: from });
+      setWasteSettings(result.settings);
+      toast.success(
+        `${t("prod.wasteApplied")}${result.applied?.updated ? ` · ${result.applied.updated}` : ""}`
+      );
+    } catch (err) {
+      toast.error(apiError(err, t("prod.wasteApplyFailed")));
+    } finally {
+      setSavingWaste(null);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -199,6 +239,73 @@ export default function ProductionPage() {
           </Card>
         </Link>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-nameplate text-sm">{t("prod.wasteSettings")}</CardTitle>
+          <CardDescription>{t("prod.wasteSettingsHint")}</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2">
+          {(["hub", "drum"] as const).map((family) => {
+            const percent = family === "hub" ? hubWaste : drumWaste;
+            const from = family === "hub" ? hubFrom : drumFrom;
+            const setPercent = family === "hub" ? setHubWaste : setDrumWaste;
+            const setFrom = family === "hub" ? setHubFrom : setDrumFrom;
+            const current =
+              family === "hub" ? wasteSettings?.hubPercent : wasteSettings?.drumPercent;
+            const since =
+              family === "hub" ? wasteSettings?.hubEffectiveFrom : wasteSettings?.drumEffectiveFrom;
+            return (
+              <div
+                key={family}
+                className={cn(
+                  "flex flex-col gap-3 rounded-lg border p-3",
+                  family === "hub" ? "bg-sky-500/5" : "bg-yellow-400/10"
+                )}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-medium">{family === "hub" ? t("prod.hub") : t("prod.drum")}</p>
+                  <p className="font-data text-xs text-muted-foreground">
+                    {t("prod.wasteCurrent", { percent: current ?? 6 })}
+                    {since ? ` · ${t("prod.wasteSince", { date: formatDate(String(since)) })}` : ""}
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <Label>{t("prod.wastePercent")}</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={99}
+                      step="0.1"
+                      value={percent}
+                      onChange={(e) => setPercent(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label>{t("prod.wasteFrom")}</Label>
+                    <Input
+                      type="date"
+                      value={from}
+                      onChange={(e) => setFrom(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-fit"
+                  disabled={savingWaste !== null}
+                  onClick={() => void applyWaste(family)}
+                >
+                  {savingWaste === family ? <Loader2 className="size-4 animate-spin" /> : null}
+                  {t("prod.wasteApply")}
+                </Button>
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

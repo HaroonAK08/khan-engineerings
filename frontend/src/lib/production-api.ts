@@ -66,6 +66,7 @@ export async function produce(body: {
   productId: string;
   quantity: number;
   wastePercent?: number;
+  metalKg?: number;
   materialType?: "scrap" | "daig";
   productionDate?: string;
   notes?: string;
@@ -105,6 +106,7 @@ export async function updateProduce(
     productId?: string;
     quantity?: number;
     wastePercent?: number;
+    metalKg?: number;
     materialType?: "scrap" | "daig";
     productionDate?: string;
     notes?: string;

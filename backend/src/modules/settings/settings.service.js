@@ -1,4 +1,5 @@
 const AppSetting = require("./settings.model");
+const { startOfLocalDay, parseEffectiveFrom } = require("../../utils/product-weight");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -124,6 +125,101 @@ async function upsertPayrollPeriod({ month, paymentFrom, paymentTo }) {
   return entry;
 }
 
+function defaultWastePercent() {
+  return 6;
+}
+
+function wasteSnapshot(doc) {
+  return {
+    hubPercent: Number(doc.wasteHubPercent) || defaultWastePercent(),
+    drumPercent: Number(doc.wasteDrumPercent) || defaultWastePercent(),
+    hubEffectiveFrom: doc.wasteHubFrom || null,
+    drumEffectiveFrom: doc.wasteDrumFrom || null,
+    history: (doc.wasteHistory || []).map((row) => ({
+      family: row.family,
+      percent: Number(row.percent),
+      previousPercent: row.previousPercent == null ? null : Number(row.previousPercent),
+      effectiveFrom: row.effectiveFrom,
+      changedAt: row.changedAt,
+    })),
+  };
+}
+
+function resolveWastePercent(settings, family, asOfDate) {
+  const fallback =
+    family === "drum"
+      ? Number(settings.drumPercent) || defaultWastePercent()
+      : Number(settings.hubPercent) || defaultWastePercent();
+  const history = (settings.history || [])
+    .filter((row) => row.family === family)
+    .sort((a, b) => new Date(a.effectiveFrom) - new Date(b.effectiveFrom));
+  if (!asOfDate || history.length === 0) return fallback;
+  const t = startOfLocalDay(asOfDate)?.getTime();
+  if (t == null) return fallback;
+  const first = history[0];
+  const firstAt = startOfLocalDay(first.effectiveFrom)?.getTime() || 0;
+  if (t < firstAt) {
+    const prev = Number(first.previousPercent);
+    return Number.isFinite(prev) ? prev : defaultWastePercent();
+  }
+  let percent = fallback;
+  for (const row of history) {
+    const at = startOfLocalDay(row.effectiveFrom)?.getTime();
+    if (at != null && t >= at) percent = Number(row.percent);
+  }
+  return Number.isFinite(percent) ? percent : defaultWastePercent();
+}
+
+async function getWasteSettings() {
+  const doc = await getAppSettings();
+  return wasteSnapshot(doc);
+}
+
+async function getWastePercentFor(family, asOfDate) {
+  if (family !== "hub" && family !== "drum") {
+    throw httpError("Family must be hub or drum", 400);
+  }
+  const settings = await getWasteSettings();
+  return resolveWastePercent(settings, family, asOfDate || new Date());
+}
+
+async function setWastePercent({ family, percent, effectiveFrom }) {
+  if (family !== "hub" && family !== "drum") {
+    throw httpError("Family must be hub or drum", 400);
+  }
+  const next = Number(percent);
+  if (!Number.isFinite(next) || next < 0 || next >= 100) {
+    throw httpError("Waste % must be between 0 and 99", 400);
+  }
+  const from = parseEffectiveFrom(effectiveFrom, "Waste from date");
+  const doc = await getAppSettings();
+  const previous =
+    family === "drum" ? Number(doc.wasteDrumPercent) || defaultWastePercent() : Number(doc.wasteHubPercent) || defaultWastePercent();
+
+  if (family === "drum") {
+    doc.wasteDrumPercent = next;
+    doc.wasteDrumFrom = from;
+  } else {
+    doc.wasteHubPercent = next;
+    doc.wasteHubFrom = from;
+  }
+  doc.wasteHistory = [
+    ...(doc.wasteHistory || []),
+    {
+      family,
+      percent: next,
+      previousPercent: previous,
+      effectiveFrom: from,
+      changedAt: new Date(),
+    },
+  ].slice(-80);
+  await doc.save();
+
+  const productionService = require("../production/production.service");
+  const applied = await productionService.applyFamilyWasteFromDate(family, next, from);
+  return { settings: wasteSnapshot(doc), applied };
+}
+
 async function deletePayrollPeriod(month) {
   const m = String(month || "").trim();
   if (!isMonthKey(m)) throw httpError("Month must be YYYY-MM", 400);
@@ -141,4 +237,8 @@ module.exports = {
   upsertPayrollPeriod,
   deletePayrollPeriod,
   monthKeyFromDate,
+  getWasteSettings,
+  getWastePercentFor,
+  resolveWastePercent,
+  setWastePercent,
 };

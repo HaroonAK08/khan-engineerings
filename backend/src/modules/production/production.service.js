@@ -13,7 +13,7 @@ const {
   wantsConfirmDuplicate,
   sameDayDuplicateError,
 } = require("../../utils/sameDay");
-const { resolveWeightKg } = require("../../utils/product-weight");
+const { resolveWeightKg, startOfLocalDay } = require("../../utils/product-weight");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -212,7 +212,7 @@ async function produce(data) {
   if (product.isActive === false) throw httpError("Product is inactive", 400);
 
   const productionDate = parseDate(data.productionDate || new Date(), "Production date");
-  const weightKg = Number(resolveWeightKg(product, productionDate) || product.weightKg);
+  let weightKg = Number(resolveWeightKg(product, productionDate) || product.weightKg);
   if (!Number.isFinite(weightKg) || weightKg <= 0) {
     throw httpError(
       `Set weight (kg) on product "${product.name}" first — material use is calculated from piece weight.`,
@@ -225,7 +225,8 @@ async function produce(data) {
 
   let wastePercent = data.wastePercent;
   if (wastePercent === undefined || wastePercent === null || wastePercent === "") {
-    wastePercent = 6;
+    const settingsService = require("../settings/settings.service");
+    wastePercent = await settingsService.getWastePercentFor(product.family, productionDate);
   }
   wastePercent = Number(wastePercent);
   if (!Number.isFinite(wastePercent) || wastePercent < 0 || wastePercent >= 100) {
@@ -242,7 +243,14 @@ async function produce(data) {
     throw httpError("Invalid material type", 400);
   }
 
-  const metalKg = roundKg(quantity * weightKg);
+  let metalKg = roundKg(quantity * weightKg);
+  if (data.metalKg !== undefined && data.metalKg !== null && data.metalKg !== "") {
+    metalKg = roundKg(Number(data.metalKg));
+    if (!Number.isFinite(metalKg) || metalKg <= 0) {
+      throw httpError("Metal in pieces (kg) must be greater than 0", 400);
+    }
+    weightKg = roundKg(metalKg / quantity);
+  }
   const wasteKg = roundKg(metalKg * (wastePercent / 100));
   const chargedKg = roundKg(metalKg + wasteKg);
 
@@ -716,7 +724,7 @@ async function updateProduce(id, data) {
     prevQty > 0
       ? (Number(batch.inputs?.[0]?.quantityKg) - Number(batch.furnaceWasteKg || 0)) / prevQty
       : 0;
-  const weightKg =
+  let weightKg =
     Number.isFinite(lockedWeight) && lockedWeight > 0
       ? lockedWeight
       : Number.isFinite(impliedWeight) && impliedWeight > 0
@@ -762,7 +770,14 @@ async function updateProduce(id, data) {
     throw httpError("Invalid material type", 400);
   }
 
-  const metalKg = roundKg(quantity * weightKg);
+  let metalKg = roundKg(quantity * weightKg);
+  if (data.metalKg !== undefined && data.metalKg !== null && data.metalKg !== "") {
+    metalKg = roundKg(Number(data.metalKg));
+    if (!Number.isFinite(metalKg) || metalKg <= 0) {
+      throw httpError("Metal in pieces (kg) must be greater than 0", 400);
+    }
+    weightKg = roundKg(metalKg / quantity);
+  }
   const wasteKg = roundKg(metalKg * (wastePercent / 100));
   const chargedKg = roundKg(metalKg + wasteKg);
 
@@ -1234,6 +1249,42 @@ async function getProductReport(productId, { dateFrom, dateTo } = {}) {
   };
 }
 
+async function applyFamilyWasteFromDate(family, percent, fromDate) {
+  if (!PRODUCT_FAMILY_IDS.includes(family)) {
+    throw httpError("Family must be hub or drum", 400);
+  }
+  const from = startOfLocalDay(fromDate);
+  if (!from) throw httpError("Waste from date is required", 400);
+  const nextPercent = Number(percent);
+  if (!Number.isFinite(nextPercent) || nextPercent < 0 || nextPercent >= 100) {
+    throw httpError("Waste % must be between 0 and 99", 400);
+  }
+
+  const batches = await ProductionBatch.find({
+    status: { $ne: "cancelled" },
+    productionDate: { $gte: from },
+    $or: [{ family }, { "outputs.family": family }],
+  });
+
+  let updated = 0;
+  for (const batch of batches) {
+    const batchFamily = batch.family || batch.outputs?.[0]?.family;
+    if (batchFamily !== family) continue;
+    const charged = Number(batch.inputs?.[0]?.quantityKg) || 0;
+    const waste = Number(batch.furnaceWasteKg) || 0;
+    let metalKg = roundKg(Math.max(0, charged - waste));
+    if (!(metalKg > 0)) {
+      const qty = Number(batch.outputs?.[0]?.quantity || batch.goodUnits) || 0;
+      const piece = Number(batch.outputs?.[0]?.weightKg) || 0;
+      metalKg = roundKg(qty * piece);
+    }
+    if (!(metalKg > 0)) continue;
+    await updateProduce(batch._id, { wastePercent: nextPercent, metalKg });
+    updated += 1;
+  }
+  return { updated };
+}
+
 module.exports = {
   produce,
   create,
@@ -1253,4 +1304,5 @@ module.exports = {
   getAvailableMaterialKg,
   sumNetConsumedKg,
   sumNetConsumedForMaterial,
+  applyFamilyWasteFromDate,
 };

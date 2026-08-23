@@ -40,9 +40,33 @@ async function deletePayrollPeriod(req, res, next) {
   }
 }
 
+async function getWasteSettings(req, res, next) {
+  try {
+    const settings = await settingsService.getWasteSettings();
+    res.json({ settings });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function setWastePercent(req, res, next) {
+  try {
+    const result = await settingsService.setWastePercent({
+      family: req.body.family,
+      percent: req.body.percent,
+      effectiveFrom: req.body.effectiveFrom,
+    });
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   listPayrollPeriods,
   getPayrollPeriod,
   upsertPayrollPeriod,
   deletePayrollPeriod,
+  getWasteSettings,
+  setWastePercent,
 };
