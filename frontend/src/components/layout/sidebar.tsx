@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { ChevronDown } from "lucide-react";
@@ -223,9 +224,11 @@ export function SidebarBrand() {
   return (
     <div className="border-b border-sidebar-border px-3 py-4">
       <div className="flex items-center gap-2.5">
-        <img
+        <Image
           src="/logo.png"
           alt={t("brand.khan")}
+          width={36}
+          height={36}
           className="size-9 shrink-0 rounded-lg object-contain"
         />
         <h1 className="text-nameplate text-base leading-snug text-sidebar-foreground">

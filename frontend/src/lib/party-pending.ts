@@ -227,6 +227,65 @@ export function computePeriodPending(
   };
 }
 
+export function prefixPendingParty(snapshot: PeriodPending, partyName: string): PeriodPending {
+  const tag = (line: PendingCharge) => ({
+    ...line,
+    label: `${partyName} · ${line.label}`,
+  });
+  return {
+    ...snapshot,
+    leftoverLines: snapshot.leftoverLines.map(tag),
+    months: snapshot.months.map((m) => ({
+      ...m,
+      lines: m.lines.map(tag),
+    })),
+  };
+}
+
+export function mergePeriodPending(snapshots: PeriodPending[]): PeriodPending {
+  const months = new Map<string, MonthPending>();
+  let previousRemaining = 0;
+  let periodSale = 0;
+  let periodPaid = 0;
+  let periodRemaining = 0;
+  let totalRemaining = 0;
+  const leftoverLines: PendingCharge[] = [];
+
+  for (const snap of snapshots) {
+    previousRemaining = roundMoney(previousRemaining + snap.previousRemaining);
+    periodSale = roundMoney(periodSale + snap.periodSale);
+    periodPaid = roundMoney(periodPaid + snap.periodPaid);
+    periodRemaining = roundMoney(periodRemaining + snap.periodRemaining);
+    totalRemaining = roundMoney(totalRemaining + snap.totalRemaining);
+    leftoverLines.push(...snap.leftoverLines);
+    for (const m of snap.months) {
+      const row = months.get(m.month) || {
+        month: m.month,
+        sale: 0,
+        paid: 0,
+        remaining: 0,
+        lines: [],
+      };
+      row.sale = roundMoney(row.sale + m.sale);
+      row.paid = roundMoney(row.paid + m.paid);
+      row.remaining = roundMoney(row.remaining + m.remaining);
+      row.lines.push(...m.lines);
+      months.set(m.month, row);
+    }
+  }
+
+  leftoverLines.sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
+  return {
+    previousRemaining,
+    periodSale,
+    periodPaid,
+    periodRemaining,
+    totalRemaining,
+    months: [...months.values()].sort((a, b) => b.month.localeCompare(a.month)),
+    leftoverLines,
+  };
+}
+
 export function formatMonthLabel(month: string, locale: string) {
   const [year, m] = month.split("-").map(Number);
   if (!year || !m) return month;

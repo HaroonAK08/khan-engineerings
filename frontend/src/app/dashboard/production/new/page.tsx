@@ -50,12 +50,12 @@ function compareProductsByName(a: Product, b: Product) {
   });
 }
 
-function emptyLine(productId = ""): ProduceLine {
+function emptyLine(productId = "", productionDate = todayInput()): ProduceLine {
   return {
     productId,
     quantity: 1,
     wastePercent: 6,
-    productionDate: todayInput(),
+    productionDate,
     metalKg: "",
   };
 }
@@ -106,6 +106,7 @@ function NewProductionForm() {
   const [productSearch, setProductSearch] = useState("");
   const [familyFilter, setFamilyFilter] = useState<"all" | "hub" | "drum">("all");
   const [wasteSettings, setWasteSettings] = useState<WasteSettings | null>(null);
+  const [productionDate, setProductionDate] = useState(todayInput());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -129,19 +130,39 @@ function NewProductionForm() {
     void load();
   }, [load]);
 
+  const applySharedDate = useCallback((nextDate: string) => {
+    setProductionDate(nextDate);
+    setLines((prev) =>
+      prev.map((line) => {
+        const product = products.find((item) => item._id === line.productId) || null;
+        const auto = defaultMetalKg(product, line.quantity, nextDate);
+        const waste =
+          product?.family === "hub" || product?.family === "drum"
+            ? wastePercentOnDate(wasteSettings, product.family, nextDate)
+            : line.wastePercent;
+        return {
+          ...line,
+          productionDate: nextDate,
+          metalKg: auto > 0 ? auto : "",
+          wastePercent: waste,
+        };
+      })
+    );
+  }, [products, wasteSettings]);
+
   const appendVoiceLines = useCallback((incoming: VoiceProduceFormLine[]) => {
     if (!incoming.length) return;
     setLines((prev) => {
       const mapped = incoming.map((row) => ({
-        ...emptyLine(row.productId),
+        ...emptyLine(row.productId, productionDate),
         quantity: Math.max(1, Math.round(Number(row.quantity) || 1)),
-        productionDate: row.productionDate || todayInput(),
+        productionDate,
       }));
       const onlyBlank =
         prev.length === 1 && !prev[0].productId && Number(prev[0].quantity) === 1;
       return onlyBlank ? mapped : [...prev, ...mapped];
     });
-  }, []);
+  }, [productionDate]);
 
   const applyVoicePayload = useCallback(
     (payload: VoiceProduceFormPayload | VoiceProduceFormLine[]) => {
@@ -150,23 +171,14 @@ function NewProductionForm() {
         ? { items: payload }
         : payload;
 
-      if (detail.productionDate && (!detail.items || !detail.items.length)) {
-        setLines((prev) =>
-          prev.map((line) => ({ ...line, productionDate: detail.productionDate! }))
-        );
-        return;
+      if (detail.productionDate) {
+        applySharedDate(detail.productionDate);
       }
-
       if (detail.items?.length) {
-        appendVoiceLines(
-          detail.items.map((row) => ({
-            ...row,
-            productionDate: row.productionDate || detail.productionDate,
-          }))
-        );
+        appendVoiceLines(detail.items);
       }
     },
-    [appendVoiceLines]
+    [appendVoiceLines, applySharedDate]
   );
 
   useEffect(() => {
@@ -210,7 +222,7 @@ function NewProductionForm() {
     if (!products.some((product) => product._id === initialProductId)) return;
     initializedFromQuery.current = true;
     const selected = products.find((product) => product._id === initialProductId);
-    const line = emptyLine(initialProductId);
+    const line = emptyLine(initialProductId, productionDate);
     if (selected?.family === "hub" || selected?.family === "drum") {
       line.wastePercent = wastePercentOnDate(
         wasteSettings,
@@ -220,7 +232,7 @@ function NewProductionForm() {
       setFamilyFilter(selected.family);
     }
     setLines([line]);
-  }, [initialProductId, products, wasteSettings]);
+  }, [initialProductId, products, wasteSettings, productionDate]);
 
   const produceProducts = useMemo(() => {
     let list = products.filter((product) => Number(product.weightKg) > 0);
@@ -297,7 +309,7 @@ function NewProductionForm() {
   }
 
   function addLine(productId = "") {
-    setLines((prev) => [...prev, emptyLine(productId)]);
+    setLines((prev) => [...prev, emptyLine(productId, productionDate)]);
   }
 
   function removeLine(index: number) {
@@ -343,8 +355,8 @@ function NewProductionForm() {
         toast.error(`Enter valid waste % in row ${index + 1}`);
         return;
       }
-      if (!line.productionDate) {
-        toast.error(`Select date in row ${index + 1}`);
+      if (!productionDate) {
+        toast.error(t("prod.date"));
         return;
       }
       if (!(Number(product.weightKg) > 0)) {
@@ -366,7 +378,7 @@ function NewProductionForm() {
           quantity: Number(line.quantity),
           wastePercent: Number(line.wastePercent),
           materialType: (product.family === "drum" ? "daig" : "scrap") as "scrap" | "daig",
-          productionDate: line.productionDate,
+          productionDate,
           ...(Number(line.metalKg) > 0 ? { metalKg: Number(line.metalKg) } : {}),
         };
 
@@ -418,9 +430,19 @@ function NewProductionForm() {
 
       <form onSubmit={onSubmit} className="flex flex-col gap-6">
         <Card>
-          <CardHeader>
-            <CardTitle className="text-nameplate text-sm">{t("prod.produceTitle")}</CardTitle>
-            <CardDescription>Create more than one production entry from the same page.</CardDescription>
+          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <CardTitle className="text-nameplate text-sm">{t("prod.produceTitle")}</CardTitle>
+              <CardDescription>Create more than one production entry from the same page.</CardDescription>
+            </div>
+            <div className="flex w-full flex-col gap-1.5 sm:w-56">
+              <Label>{t("prod.date")}</Label>
+              <Input
+                type="date"
+                value={productionDate}
+                onChange={(e) => applySharedDate(e.target.value)}
+              />
+            </div>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             {lines.map((line, index) => {
@@ -555,7 +577,7 @@ function NewProductionForm() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <div className="flex flex-col gap-1.5">
                       <Label>{t("prod.col.qty")}</Label>
                       <Input
@@ -590,14 +612,6 @@ function NewProductionForm() {
                         step={0.1}
                         value={line.wastePercent}
                         onChange={(e) => updateLine(index, { wastePercent: Number(e.target.value) })}
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <Label>{t("prod.date")}</Label>
-                      <Input
-                        type="date"
-                        value={line.productionDate}
-                        onChange={(e) => updateLine(index, { productionDate: e.target.value })}
                       />
                     </div>
                     <div className="flex flex-col gap-1.5">

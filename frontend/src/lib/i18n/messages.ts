@@ -91,6 +91,10 @@ const en = {
   "pgroup.loadFailed": "Failed to load groups",
   "pgroup.saveFailed": "Failed to save group",
   "pgroup.deleteFailed": "Failed to delete group",
+  "pgroup.pendingDateDesc":
+    "Pick dates to see leftover for the whole group: previous leftover, this period sale, paid, and leftover.",
+  "pgroup.col.periodLeftover": "This period leftover",
+  "pgroup.totalLeftover": "Group leftover",
 
   "builty.eyebrow": "Deliveries · payments",
   "builty.title": "Builty",
@@ -2124,6 +2128,10 @@ const ur: Record<MessageKey, string> = {
   "pgroup.loadFailed": "گروپس لوڈ نہیں ہو سکے",
   "pgroup.saveFailed": "گروپ محفوظ نہیں ہو سکا",
   "pgroup.deleteFailed": "گروپ حذف نہیں ہو سکا",
+  "pgroup.pendingDateDesc":
+    "تاریخیں چنیں — پورے گروپ کا پچھلا بقایا، اس مدت کی فروخت، ادا شدہ، اور بقایا دکھے گا۔",
+  "pgroup.col.periodLeftover": "اس مدت کا بقایا",
+  "pgroup.totalLeftover": "گروپ بقایا",
 
   "builty.eyebrow": "ڈیلیوری · ادائیگی",
   "builty.title": "بلٹی",

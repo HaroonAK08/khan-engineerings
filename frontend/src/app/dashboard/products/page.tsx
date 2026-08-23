@@ -53,16 +53,10 @@ const productSchema = z.object({
 
 type ProductForm = z.infer<typeof productSchema>;
 
-function refId(value: Product["category"]) {
+function refId(value: Product["category"] | Product["size"]) {
   if (!value) return "";
   if (typeof value === "string") return value;
   return value._id;
-}
-
-function refName(value: Product["category"] | Product["size"]) {
-  if (!value) return "—";
-  if (typeof value === "string") return value;
-  return value.name;
 }
 
 export default function ProductsPage() {

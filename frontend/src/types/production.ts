@@ -35,6 +35,7 @@ export type BatchOutput = {
   product: Product | string;
   quantity: number;
   family: ProductFamily;
+  weightKg?: number | null;
 };
 
 export type BatchStage = {

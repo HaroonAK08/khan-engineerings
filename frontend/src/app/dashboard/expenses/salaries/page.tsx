@@ -462,7 +462,7 @@ export default function SalariesPage() {
 
   const scrollPayToIdRef = useRef<string | null>(null);
 
-  function ensureWorkerVisibleForPay(worker: Worker) {
+  const ensureWorkerVisibleForPay = useCallback((worker: Worker) => {
     setSearch("");
     scrollPayToIdRef.current = worker._id;
 
@@ -472,7 +472,7 @@ export default function SalariesPage() {
       const kind = classifyHubLabour(worker);
       setOpenLabourGroup(kind === "common" ? "others" : kind);
     }
-  }
+  }, [scopeFilter]);
 
   useEffect(() => {
     const id = scrollPayToIdRef.current;
@@ -531,7 +531,7 @@ export default function SalariesPage() {
     }
 
     return () => window.removeEventListener(VOICE_SALARY_PAY_EVENT, onVoicePay);
-  }, [workers, scopeFilter]);
+  }, [workers, scopeFilter, ensureWorkerVisibleForPay]);
 
   function openEdit(w: Worker) {
     setPayingId(null);
