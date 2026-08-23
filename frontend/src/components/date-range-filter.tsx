@@ -76,6 +76,7 @@ export function DateRangeFilter({
           className={cn("w-auto", inputClassName)}
           value={dateFrom}
           onChange={(e) => setDateFrom(e.target.value)}
+          onInput={(e) => setDateFrom((e.target as HTMLInputElement).value)}
         />
       </div>
       <div className="grid gap-1.5">
@@ -86,6 +87,7 @@ export function DateRangeFilter({
           className={cn("w-auto", inputClassName)}
           value={dateTo}
           onChange={(e) => setDateTo(e.target.value)}
+          onInput={(e) => setDateTo((e.target as HTMLInputElement).value)}
         />
       </div>
     </div>

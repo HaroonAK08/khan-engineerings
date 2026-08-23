@@ -1,5 +1,5 @@
 import type { CustomerLedgerEntry } from "@/lib/sales-api";
-import { toDateInput } from "@/lib/date-range";
+import { calendarDay } from "@/lib/date-range";
 
 type PendingLedgerEntry = {
   _id: string;
@@ -70,7 +70,7 @@ export type PeriodPending = {
 };
 
 function dayKey(value: string) {
-  return toDateInput(new Date(value));
+  return calendarDay(value);
 }
 
 function monthKey(day: string) {

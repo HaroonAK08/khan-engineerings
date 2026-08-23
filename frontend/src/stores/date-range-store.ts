@@ -61,15 +61,15 @@ export const useDateRangeStore = create<DateRangeState>((set, get) => {
     },
     setDateFrom: (value) => {
       writeStored(value, get().dateTo);
-      set({ dateFrom: value });
+      set({ dateFrom: value, hydrated: true });
     },
     setDateTo: (value) => {
       writeStored(get().dateFrom, value);
-      set({ dateTo: value });
+      set({ dateTo: value, hydrated: true });
     },
     setRange: (from, to) => {
       writeStored(from, to);
-      set({ dateFrom: from, dateTo: to });
+      set({ dateFrom: from, dateTo: to, hydrated: true });
     },
     setThisMonth: () => {
       const range = currentMonthRange();

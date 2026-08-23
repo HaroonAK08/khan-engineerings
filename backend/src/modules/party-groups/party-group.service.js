@@ -227,6 +227,28 @@ async function remove(id) {
   return { ok: true };
 }
 
+async function listMemberLedgers(id) {
+  const group = await getWithMembers(id);
+  const parties = group.parties || [];
+  const ids = parties.map((p) => p._id);
+  const ledgers = Object.fromEntries(ids.map((partyId) => [String(partyId), []]));
+  if (!ids.length) return { group, ledgers };
+
+  const entries = await CustomerLedgerEntry.find({ customer: { $in: ids } })
+    .populate("builty", "builtyNo billNo totalAmount builtyDate")
+    .populate("payment", "amount method paymentDate notes")
+    .sort({ entryDate: 1, createdAt: 1 })
+    .lean();
+
+  for (const entry of entries) {
+    const customerId = String(entry.customer);
+    if (!ledgers[customerId]) ledgers[customerId] = [];
+    ledgers[customerId].push(entry);
+  }
+
+  return { group, ledgers };
+}
+
 function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -236,6 +258,7 @@ module.exports = {
   list,
   getById,
   getWithMembers,
+  listMemberLedgers,
   setMembers,
   update,
   remove,

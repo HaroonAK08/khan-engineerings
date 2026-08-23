@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
@@ -75,6 +75,7 @@ export default function CustomerDetailPage() {
   const [entries, setEntries] = useState<CustomerLedgerEntry[]>([]);
   const [claims, setClaims] = useState<PartyClaim[]>([]);
   const [loading, setLoading] = useState(true);
+  const loadSeq = useRef(0);
 
   const [showPendingForm, setShowPendingForm] = useState(false);
   const [pendingAmount, setPendingAmount] = useState("");
@@ -103,6 +104,7 @@ export default function CustomerDetailPage() {
 
   const load = useCallback(
     async (opts?: { silent?: boolean }) => {
+      const seq = ++loadSeq.current;
       if (!opts?.silent) setLoading(true);
       try {
         const [detail, ledger, claimsRes] = await Promise.all([
@@ -110,6 +112,7 @@ export default function CustomerDetailPage() {
           getCustomerLedger(id),
           api.get<{ claims: PartyClaim[] }>("/claims", { params: { customer: id } }),
         ]);
+        if (seq !== loadSeq.current) return;
         setCustomer(detail.customer);
         setBalance(detail.balance);
         setRecordedPreviousPending(detail.previousPending || 0);
@@ -124,10 +127,11 @@ export default function CustomerDetailPage() {
             (detail.previousPending || 0) + (detail.stats.totalSales || 0),
         });
       } catch (err) {
+        if (seq !== loadSeq.current) return;
         toast.error(apiError(err, t("customerDetail.loadFailed")));
         setCustomer(null);
       } finally {
-        if (!opts?.silent) setLoading(false);
+        if (seq === loadSeq.current && !opts?.silent) setLoading(false);
       }
     },
     [id, t]
@@ -300,6 +304,7 @@ export default function CustomerDetailPage() {
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
+                onInput={(e) => setDateFrom((e.target as HTMLInputElement).value)}
               />
             </div>
             <div className="grid gap-1.5">
@@ -308,6 +313,7 @@ export default function CustomerDetailPage() {
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
+                onInput={(e) => setDateTo((e.target as HTMLInputElement).value)}
               />
             </div>
             <div className="grid gap-1.5">
@@ -323,6 +329,7 @@ export default function CustomerDetailPage() {
           </div>
           <div className="mt-4 border-t pt-4">
             <PartyPendingByMonth
+              key={`${dateFrom}|${dateTo}`}
               snapshot={periodPending}
               dateFrom={dateFrom}
               dateTo={dateTo}

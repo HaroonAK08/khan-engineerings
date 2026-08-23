@@ -430,6 +430,7 @@ export default function SupplierDetailPage() {
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
+                onInput={(e) => setDateFrom((e.target as HTMLInputElement).value)}
               />
             </div>
             <div className="grid gap-1.5">
@@ -438,11 +439,13 @@ export default function SupplierDetailPage() {
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
+                onInput={(e) => setDateTo((e.target as HTMLInputElement).value)}
               />
             </div>
           </div>
           <div className="mt-4 border-t pt-4">
             <PartyPendingByMonth
+              key={`${dateFrom}|${dateTo}`}
               snapshot={periodPending}
               dateFrom={dateFrom}
               dateTo={dateTo}

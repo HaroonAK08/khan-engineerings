@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { parsePendingDetailKind } from "@/components/party/party-pending-detail-screen";
@@ -9,8 +9,7 @@ import { ArrowLeft, Loader2 } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
 import { apiError, formatMoney } from "@/lib/materials-api";
 import {
-  getCustomerLedger,
-  getPartyGroup,
+  getPartyGroupLedgers,
   type CustomerLedgerEntry,
   type PartyGroup,
 } from "@/lib/sales-api";
@@ -53,40 +52,48 @@ export default function PartyGroupDetailPage() {
   const id = String(params.id || "");
   const searchParams = useSearchParams();
   const viewingDetail = Boolean(parsePendingDetailKind(searchParams.get("pending")));
-  const { dateFrom, dateTo, setDateFrom, setDateTo } = usePersistedDateRange();
+  const { dateFrom, dateTo, setDateFrom, setDateTo, hydrated } = usePersistedDateRange();
   const [group, setGroup] = useState<PartyGroup | null>(null);
   const [ledgers, setLedgers] = useState<Record<string, CustomerLedgerEntry[]>>({});
   const [loading, setLoading] = useState(true);
+  const loadSeq = useRef(0);
 
-  const load = useCallback(async () => {
-    if (!id) return;
-    setLoading(true);
-    try {
-      const next = await getPartyGroup(id);
-      setGroup(next);
-      const parties = next.parties || [];
-      const rows = await Promise.all(
-        parties.map(async (party) => {
-          try {
-            const ledger = await getCustomerLedger(party._id);
-            return [party._id, ledger.entries] as const;
-          } catch {
-            return [party._id, [] as CustomerLedgerEntry[]] as const;
-          }
-        })
-      );
-      setLedgers(Object.fromEntries(rows));
-    } catch (err) {
-      toast.error(apiError(err, t("pgroup.loadFailed")));
-      setGroup(null);
-      setLedgers({});
-    } finally {
-      setLoading(false);
-    }
-  }, [id, t]);
+  const load = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!id) return;
+      const seq = ++loadSeq.current;
+      if (!opts?.silent) setLoading(true);
+      try {
+        const { group: next, ledgers: nextLedgers } = await getPartyGroupLedgers(id);
+        if (seq !== loadSeq.current) return;
+        setGroup(next);
+        setLedgers(nextLedgers);
+      } catch (err) {
+        if (seq !== loadSeq.current) return;
+        toast.error(apiError(err, t("pgroup.loadFailed")));
+        setGroup(null);
+        setLedgers({});
+      } finally {
+        if (seq === loadSeq.current && !opts?.silent) setLoading(false);
+      }
+    },
+    [id, t]
+  );
 
   useEffect(() => {
     void load();
+  }, [load]);
+
+  useEffect(() => {
+    function refresh() {
+      if (document.visibilityState === "visible") void load({ silent: true });
+    }
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh);
+    };
   }, [load]);
 
   const parties = useMemo(() => group?.parties || [], [group]);
@@ -134,20 +141,35 @@ export default function PartyGroupDetailPage() {
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5">
               <Label>{t("common.from")}</Label>
-              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+              <Input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                onInput={(e) => setDateFrom((e.target as HTMLInputElement).value)}
+              />
             </div>
             <div className="grid gap-1.5">
               <Label>{t("common.to")}</Label>
-              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+              <Input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                onInput={(e) => setDateTo((e.target as HTMLInputElement).value)}
+              />
             </div>
           </div>
           <div className="mt-4 border-t pt-4">
-            {loading ? (
+            {loading || !hydrated ? (
               <div className="flex justify-center py-10">
                 <Loader2 className="size-6 animate-spin text-primary" />
               </div>
             ) : (
-              <PartyPendingByMonth snapshot={groupPending} dateFrom={dateFrom} dateTo={dateTo} />
+              <PartyPendingByMonth
+                key={`${dateFrom}|${dateTo}`}
+                snapshot={groupPending}
+                dateFrom={dateFrom}
+                dateTo={dateTo}
+              />
             )}
           </div>
         </CardContent>
@@ -183,7 +205,7 @@ export default function PartyGroupDetailPage() {
               </TableHeader>
               <TableBody>
                 {partySnapshots.map(({ party, snapshot }) => {
-                  const balance = party.balance ?? snapshot.totalRemaining;
+                  const balance = snapshot.totalRemaining;
                   return (
                     <TableRow
                       key={party._id}

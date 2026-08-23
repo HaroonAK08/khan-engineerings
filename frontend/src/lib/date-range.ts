@@ -6,6 +6,21 @@ export function toDateInput(d: Date) {
   return `${y}-${m}-${day}`;
 }
 
+/** Calendar YYYY-MM-DD from an API date, without a timezone day shift. */
+export function calendarDay(value: string | Date | null | undefined) {
+  if (!value) return "";
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return "";
+    return toDateInput(value);
+  }
+  const raw = String(value).trim();
+  const isoDay = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (isoDay) return isoDay[1];
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return "";
+  return toDateInput(d);
+}
+
 export function todayInput() {
   return toDateInput(new Date());
 }

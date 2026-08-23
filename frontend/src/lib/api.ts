@@ -5,7 +5,7 @@ import { useAuthStore } from "@/stores/auth-store";
 export const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000/api",
   withCredentials: true,
-  timeout: 10_000,
+  timeout: 30_000,
 });
 
 api.interceptors.request.use((config) => {

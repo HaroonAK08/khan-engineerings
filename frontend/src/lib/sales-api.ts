@@ -242,6 +242,14 @@ export async function getPartyGroup(id: string) {
   return data.group;
 }
 
+export async function getPartyGroupLedgers(id: string) {
+  const { data } = await api.get<{
+    group: PartyGroup;
+    ledgers: Record<string, CustomerLedgerEntry[]>;
+  }>(`/party-groups/${id}/ledgers`);
+  return data;
+}
+
 export async function createPartyGroup(body: {
   name: string;
   notes?: string;

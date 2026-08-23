@@ -27,6 +27,15 @@ async function getOne(req, res, next) {
   }
 }
 
+async function getLedgers(req, res, next) {
+  try {
+    const result = await partyGroupService.listMemberLedgers(req.params.id);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function update(req, res, next) {
   try {
     const group = await partyGroupService.update(req.params.id, req.body);
@@ -45,4 +54,4 @@ async function remove(req, res, next) {
   }
 }
 
-module.exports = { create, list, getOne, update, remove };
+module.exports = { create, list, getOne, getLedgers, update, remove };

@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, Plus, Search, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronUp, Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -38,6 +38,7 @@ type ProduceLine = {
   wastePercent: number;
   productionDate: string;
   metalKg: string;
+  metalCustom: boolean;
 };
 
 const productionSearchInputClass =
@@ -57,6 +58,7 @@ function emptyLine(productId = "", productionDate = todayInput()): ProduceLine {
     wastePercent: 6,
     productionDate,
     metalKg: "",
+    metalCustom: false,
   };
 }
 
@@ -64,6 +66,13 @@ function defaultMetalKg(product: Product | null, quantity: number, asOfDate?: st
   const weight = productWeightOnDate(product, asOfDate);
   const qty = Number(quantity) || 0;
   return Math.round(qty * weight * 1000) / 1000;
+}
+
+const METAL_KG_STEP = 0.5;
+
+function bumpMetalKg(current: number, delta: number) {
+  const next = Math.round((Math.max(0, current) + delta) * 2) / 2;
+  return next > 0 ? String(next) : "";
 }
 
 function linePreview(
@@ -275,6 +284,13 @@ function NewProductionForm() {
     };
   }, [lines, products]);
 
+  function stepLineMetal(index: number, current: number, delta: number) {
+    updateLine(index, {
+      metalKg: bumpMetalKg(current, delta),
+      metalCustom: true,
+    });
+  }
+
   function updateLine(index: number, patch: Partial<ProduceLine>) {
     setLines((prev) =>
       prev.map((line, lineIndex) => {
@@ -283,6 +299,7 @@ function NewProductionForm() {
         const product = products.find((item) => item._id === next.productId) || null;
         if (patch.productId !== undefined && patch.metalKg === undefined) {
           next.metalKg = "";
+          next.metalCustom = false;
         }
         if (
           patch.wastePercent === undefined &&
@@ -320,6 +337,7 @@ function NewProductionForm() {
     updateLine(index, {
       productId: product._id,
       metalKg: "",
+      metalCustom: false,
       wastePercent: wastePercentOnDate(wasteSettings, product.family, line?.productionDate),
     });
     setPickerIndex(null);
@@ -445,6 +463,13 @@ function NewProductionForm() {
                 line.productionDate,
                 line.metalKg
               );
+              const shownMetal = line.metalCustom
+                ? line.metalKg
+                : preview.metalKg > 0
+                  ? String(preview.metalKg)
+                  : "";
+              const shownMetalN = Number(shownMetal);
+              const stepFrom = Number.isFinite(shownMetalN) && shownMetalN > 0 ? shownMetalN : 0;
               const materialType = selectedProduct?.family === "drum" ? "daig" : "scrap";
               const availableForMaterial =
                 materialType === "daig"
@@ -581,20 +606,52 @@ function NewProductionForm() {
                     </div>
                     <div className="flex flex-col gap-1.5">
                       <Label>{t("prod.calcMetal")} (kg)</Label>
-                      <Input
-                        type="text"
-                        inputMode="decimal"
-                        value={line.metalKg}
-                        onChange={(e) => {
-                          const raw = e.target.value.replace(/[^\d.]/g, "");
-                          const firstDot = raw.indexOf(".");
-                          const sanitized =
-                            firstDot === -1
-                              ? raw
-                              : raw.slice(0, firstDot + 1) + raw.slice(firstDot + 1).replace(/\./g, "");
-                          updateLine(index, { metalKg: sanitized });
-                        }}
-                      />
+                      <div className="flex">
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          className="min-w-0 flex-1 rounded-r-none"
+                          value={shownMetal}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => {
+                            const raw = e.target.value.replace(/[^\d.]/g, "");
+                            const firstDot = raw.indexOf(".");
+                            const sanitized =
+                              firstDot === -1
+                                ? raw
+                                : raw.slice(0, firstDot + 1) +
+                                  raw.slice(firstDot + 1).replace(/\./g, "");
+                            updateLine(index, { metalKg: sanitized, metalCustom: true });
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "ArrowUp") {
+                              e.preventDefault();
+                              stepLineMetal(index, stepFrom, METAL_KG_STEP);
+                            } else if (e.key === "ArrowDown") {
+                              e.preventDefault();
+                              stepLineMetal(index, stepFrom, -METAL_KG_STEP);
+                            }
+                          }}
+                        />
+                        <div className="flex w-8 shrink-0 flex-col overflow-hidden rounded-r-lg border border-l-0 border-input">
+                          <button
+                            type="button"
+                            className="flex h-[1.375rem] items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground"
+                            aria-label="Increase 0.5 kg"
+                            onClick={() => stepLineMetal(index, stepFrom, METAL_KG_STEP)}
+                          >
+                            <ChevronUp className="size-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            className="flex h-[1.375rem] items-center justify-center border-t border-input text-muted-foreground hover:bg-muted hover:text-foreground"
+                            aria-label="Decrease 0.5 kg"
+                            onClick={() => stepLineMetal(index, stepFrom, -METAL_KG_STEP)}
+                          >
+                            <ChevronDown className="size-3.5" />
+                          </button>
+                        </div>
+                      </div>
                     </div>
                     <div className="flex flex-col gap-1.5">
                       <Label>{t("prod.wastePercent")}</Label>
