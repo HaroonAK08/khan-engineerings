@@ -21,6 +21,7 @@ import {
   Zap,
   MoreHorizontal,
   FolderKanban,
+  History,
 } from "lucide-react";
 import type { MessageKey } from "@/lib/i18n/messages";
 
@@ -224,6 +225,14 @@ export const SEARCH_PAGES: SearchPage[] = [
     keywords: ["settings", "ترتیبات"],
     icon: Settings,
     group: "pages",
+  },
+  {
+    href: "/dashboard/history",
+    labelKey: "nav.history",
+    keywords: ["history", "log", "recent", "last", "ہسٹری"],
+    icon: History,
+    group: "pages",
+    featured: true,
   },
   {
     href: "/dashboard/reports",

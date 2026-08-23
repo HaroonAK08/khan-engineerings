@@ -20,6 +20,7 @@ import {
   FolderKanban,
   CalendarDays,
   Mic,
+  History,
 } from "lucide-react";
 import type { MessageKey } from "@/lib/i18n/messages";
 
@@ -100,4 +101,5 @@ export const NAV_ITEMS: NavItem[] = [
   { labelKey: "nav.suppliers", href: "/dashboard/suppliers", icon: Truck, ready: true },
   { labelKey: "nav.salesmen", href: "/dashboard/salesmen", icon: Handshake, ready: true },
   { labelKey: "nav.reports", href: "/dashboard/reports", icon: BarChart3, ready: true },
+  { labelKey: "nav.history", href: "/dashboard/history", icon: History, ready: true },
 ];

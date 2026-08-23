@@ -22,6 +22,7 @@ const en = {
   "nav.salesmen": "Salesmen",
   "nav.finance": "Finance",
   "nav.reports": "Reports",
+  "nav.history": "History",
   "nav.profile": "Profile",
   "nav.settings": "Settings",
   "nav.soon": "SOON",
@@ -1993,6 +1994,27 @@ const en = {
   "voice.examples": "Try an example",
   "voice.speakTip":
     "Tip: for names like TK 20 / 50 kg, say “slash” or “dash” between numbers — or fix it in the transcript box.",
+
+  "history.title": "History",
+  "history.subtitle": "Everything last saved — sales, production, purchases, claims, expenses. Open to edit or delete.",
+  "history.empty": "Nothing in this filter yet.",
+  "history.loadFailed": "Failed to load history",
+  "history.filter.all": "All",
+  "history.filter.sale": "Sales",
+  "history.filter.production": "Production",
+  "history.filter.purchase": "Purchases",
+  "history.filter.claim": "Claims",
+  "history.filter.expense": "Expenses",
+  "history.filter.stock": "Stock edits",
+  "history.type.sale": "Sale / builty",
+  "history.type.production": "Production",
+  "history.type.purchase": "Purchase",
+  "history.type.claim": "Claim",
+  "history.type.expense": "Expense",
+  "history.type.stock": "Stock edit",
+  "history.deleted": "Deleted",
+  "history.deleteFailed": "Could not delete",
+  "history.confirmDelete": "Delete this entry? This cannot be undone.",
 } as const;
 
 const ur: Record<MessageKey, string> = {
@@ -2015,6 +2037,7 @@ const ur: Record<MessageKey, string> = {
   "nav.salesmen": "سیلز مین",
   "nav.finance": "فنانس",
   "nav.reports": "رپورٹس",
+  "nav.history": "ہسٹری",
   "nav.profile": "پروفائل",
   "nav.settings": "ترتیبات",
   "nav.soon": "جلد",
@@ -3983,6 +4006,27 @@ const ur: Record<MessageKey, string> = {
   "voice.examples": "مثال آزمائیں",
   "voice.speakTip":
     "ٹپ: TK 20 / 50 kg جیسے نام میں نمبروں کے بیچ “slash” یا “dash” کہیں — یا ٹرانسکرپٹ میں درست کریں۔",
+
+  "history.title": "ہسٹری",
+  "history.subtitle": "آخری محفوظ شدہ سب کچھ — فروخت، پیداوار، خریداری، کلیم، اخراجات۔ ترمیم یا حذف کے لیے کھولیں۔",
+  "history.empty": "اس فلٹر میں ابھی کچھ نہیں۔",
+  "history.loadFailed": "ہسٹری لوڈ نہیں ہو سکی",
+  "history.filter.all": "سب",
+  "history.filter.sale": "فروخت",
+  "history.filter.production": "پیداوار",
+  "history.filter.purchase": "خریداری",
+  "history.filter.claim": "کلیمز",
+  "history.filter.expense": "اخراجات",
+  "history.filter.stock": "اسٹاک ترمیم",
+  "history.type.sale": "فروخت / بلٹی",
+  "history.type.production": "پیداوار",
+  "history.type.purchase": "خریداری",
+  "history.type.claim": "کلیم",
+  "history.type.expense": "اخراج",
+  "history.type.stock": "اسٹاک ترمیم",
+  "history.deleted": "حذف ہو گیا",
+  "history.deleteFailed": "حذف نہیں ہو سکا",
+  "history.confirmDelete": "یہ اندراج حذف کریں؟ یہ واپس نہیں آئے گا۔",
 };
 
 export const messages: Record<Locale, Record<MessageKey, string>> = {
