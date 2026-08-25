@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { clearAuthToken } from "@/lib/auth-token";
 import { LocaleBootstrap } from "@/components/layout/locale-bootstrap";
 import { useAuthStore } from "@/stores/auth-store";
+import { useTaxSplitStore } from "@/stores/tax-split-store";
 import type { AuthUser } from "@/types/auth";
 
 const queryClient = new QueryClient({
@@ -51,11 +52,25 @@ function AuthBootstrap({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function TaxSplitBootstrap() {
+  const status = useAuthStore((s) => s.status);
+  const hydrate = useTaxSplitStore((s) => s.hydrate);
+
+  useEffect(() => {
+    if (status === "authenticated") void hydrate();
+  }, [status, hydrate]);
+
+  return null;
+}
+
 export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <LocaleBootstrap>
-        <AuthBootstrap>{children}</AuthBootstrap>
+        <AuthBootstrap>
+          <TaxSplitBootstrap />
+          {children}
+        </AuthBootstrap>
       </LocaleBootstrap>
     </QueryClientProvider>
   );

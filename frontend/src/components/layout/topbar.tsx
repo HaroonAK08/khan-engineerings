@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOut, Menu, UserRound } from "lucide-react";
+import { LogOut, Menu, Settings, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { getInitials } from "@/lib/utils-user";
@@ -145,6 +145,13 @@ export function Topbar() {
             >
               <UserRound className="size-4" />
               {t("topbar.profile")}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => router.push("/dashboard/settings")}
+              className="cursor-pointer gap-2"
+            >
+              <Settings className="size-4" />
+              {t("topbar.settings")}
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={handleLogout}

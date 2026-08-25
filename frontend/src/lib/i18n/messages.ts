@@ -750,12 +750,18 @@ const en = {
   "prodMargin.castingCostKg": "Casting cost / kg",
   "prodMargin.khradCostKg": "Khrad cost / kg",
   "prodMargin.castingCostHint":
-    "Material + casting expenses / labour + other (50% tax & common)",
-  "prodMargin.khradCostHint": "Khrad labour + remaining expenses (50% tax & common)",
+    "Material + casting expenses / labour + other (50% common)",
+  "prodMargin.khradCostHint": "Khrad labour + remaining expenses (50% common)",
   "prodMargin.drumCastingCostHint":
+    "Material + chemicals, electricity, LPG, sheera, casting labour (50% common, others & other)",
+  "prodMargin.castingCostHintHalf":
+    "Material + casting expenses / labour + other (50% tax & common)",
+  "prodMargin.khradCostHintHalf": "Khrad labour + remaining expenses (50% tax & common)",
+  "prodMargin.drumCastingCostHintHalf":
     "Material + chemicals, electricity, LPG, sheera, casting labour (50% tax, common, others & other)",
   "prodMargin.castingCost": "Casting cost",
   "prodMargin.khradCost": "Khrad cost",
+  "prodMargin.taxByKg": "Tax / kg",
   "prodMargin.halfShare": "50%",
   "prodMargin.salariesKg": "Salaries / kg",
   "prodMargin.mfgExpensesKg": "Manufacture expenses / kg",
@@ -1225,11 +1231,23 @@ const en = {
   "settings.authValue": "JWT cookie · 7d TTL",
   "settings.company": "Company settings",
   "settings.companyValue": "Coming in a later phase",
+  "settings.taxSplit": "Tax split",
+  "settings.taxSplitDesc":
+    "Split tax rupees between Hub and Drum first. That share is then always 50/50 on casting and khrad.",
+  "settings.taxSplitHalf": "50 / 50",
+  "settings.taxSplitPerKg": "Per kg",
+  "settings.taxSplitHalfHint":
+    "Hub and Drum each get half the tax rupees, even if kg is different. Then each line splits that 50/50 on casting and khrad.",
+  "settings.taxSplitPerKgHint":
+    "Tax follows finished kg (more kg pays more). Then each line splits that 50/50 on casting and khrad.",
+  "settings.taxSplitSaved": "Tax split saved",
+  "settings.taxSplitFailed": "Could not save tax split",
 
   "topbar.ops": "KHAN ENGINEERINGS / OPS",
   "topbar.openNav": "Open navigation",
   "topbar.account": "Account",
   "topbar.profile": "Profile",
+  "topbar.settings": "Settings",
   "topbar.signOut": "Sign out",
   "topbar.signedOut": "Signed out",
   "topbar.switchToUrdu": "Switch to Urdu",
@@ -1911,6 +1929,7 @@ const en = {
   "prodMargin.materialCost": "Material cost",
   "prodMargin.scrapPlusDaig": "Scrap + daig at avg purchase rate",
   "prodMargin.mfgCost": "Total production cost",
+  "prodMargin.totalMfgCost": "Total manufacturing cost",
   "prodMargin.materialPlusOverhead": "Material + overhead allocated by finished kg",
   "prodMargin.sellValue": "Sold price",
   "prodMargin.catalogValue": "Total hub + drum sales this period",
@@ -2791,12 +2810,18 @@ const ur: Record<MessageKey, string> = {
   "prodMargin.rawMaterialKg": "خام مال / کلو",
   "prodMargin.castingCostKg": "کاسٹنگ لاگت / کلو",
   "prodMargin.khradCostKg": "کھراد لاگت / کلو",
-  "prodMargin.castingCostHint": "مواد + کاسٹنگ اخراجات / لیبر + ادر (50٪ ٹیکس اور مشترکہ)",
-  "prodMargin.khradCostHint": "کھراد لیبر + باقی اخراجات (50٪ ٹیکس اور مشترکہ)",
+  "prodMargin.castingCostHint": "مواد + کاسٹنگ اخراجات / لیبر + ادر (50٪ مشترکہ)",
+  "prodMargin.khradCostHint": "کھراد لیبر + باقی اخراجات (50٪ مشترکہ)",
   "prodMargin.drumCastingCostHint":
+    "مواد + کیمیکلز، بجلی، ایل پی جی، شیرہ، کاسٹنگ لیبر (50٪ مشترکہ، دیگر اور ادر)",
+  "prodMargin.castingCostHintHalf":
+    "مواد + کاسٹنگ اخراجات / لیبر + ادر (50٪ ٹیکس اور مشترکہ)",
+  "prodMargin.khradCostHintHalf": "کھراد لیبر + باقی اخراجات (50٪ ٹیکس اور مشترکہ)",
+  "prodMargin.drumCastingCostHintHalf":
     "مواد + کیمیکلز، بجلی، ایل پی جی، شیرہ، کاسٹنگ لیبر (50٪ ٹیکس، مشترکہ، دیگر اور ادر)",
   "prodMargin.castingCost": "کاسٹنگ لاگت",
   "prodMargin.khradCost": "کھراد لاگت",
+  "prodMargin.taxByKg": "ٹیکس / کلو",
   "prodMargin.halfShare": "50٪",
   "prodMargin.salariesKg": "تنخواہیں / کلو",
   "prodMargin.mfgExpensesKg": "مینوفیکچر اخراجات / کلو",
@@ -3266,11 +3291,23 @@ const ur: Record<MessageKey, string> = {
   "settings.authValue": "جے ڈبلیو ٹی کوکی · ۷ دن",
   "settings.company": "کمپنی ترتیبات",
   "settings.companyValue": "بعد کے مرحلے میں آئے گا",
+  "settings.taxSplit": "ٹیکس تقسیم",
+  "settings.taxSplitDesc":
+    "پہلے ٹیکس ہب اور ڈرم میں بانٹیں۔ پھر وہ حصہ کاسٹنگ اور کھراد پر ہمیشہ 50/50 ہوتا ہے۔",
+  "settings.taxSplitHalf": "50 / 50",
+  "settings.taxSplitPerKg": "فی کلو",
+  "settings.taxSplitHalfHint":
+    "ہب اور ڈرم کو برابر ٹیکس روپے ملتے ہیں، چاہے کلو مختلف ہو۔ پھر ہر لائن پر کاسٹنگ اور کھراد 50/50۔",
+  "settings.taxSplitPerKgHint":
+    "ٹیکس تیار کلو کے حساب سے ہے (زیادہ کلو زیادہ ادا)۔ پھر ہر لائن پر کاسٹنگ اور کھراد 50/50۔",
+  "settings.taxSplitSaved": "ٹیکس تقسیم محفوظ ہو گئی",
+  "settings.taxSplitFailed": "ٹیکس تقسیم محفوظ نہیں ہو سکی",
 
   "topbar.ops": "خان انجینئرنگز / آپریشنز",
   "topbar.openNav": "مینو کھولیں",
   "topbar.account": "اکاؤنٹ",
   "topbar.profile": "پروفائل",
+  "topbar.settings": "ترتیبات",
   "topbar.signOut": "سائن آؤٹ",
   "topbar.signedOut": "سائن آؤٹ ہو گیا",
   "topbar.switchToUrdu": "اردو میں تبدیل کریں",
@@ -3951,6 +3988,7 @@ const ur: Record<MessageKey, string> = {
   "prodMargin.materialCost": "مواد کی لاگت",
   "prodMargin.scrapPlusDaig": "اوسط خرید ریٹ پر اسکریپ + ڈیگ",
   "prodMargin.mfgCost": "کل پیداواری لاگت",
+  "prodMargin.totalMfgCost": "کل مینوفیکچرنگ لاگت",
   "prodMargin.materialPlusOverhead": "مواد + اوور ہیڈ تیار کلو پر مختص",
   "prodMargin.sellValue": "فروخت قیمت",
   "prodMargin.catalogValue": "اس مدت کی کل ہب + ڈرم فروخت",

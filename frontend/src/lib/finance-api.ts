@@ -263,7 +263,11 @@ export type ChannelManufactureLine = {
   expenseLines?: ChannelManufactureDetailLine[];
 };
 
-export async function getProductionMargin(params?: { dateFrom?: string; dateTo?: string }) {
+export async function getProductionMargin(params?: {
+  dateFrom?: string;
+  dateTo?: string;
+  taxSplit?: "half" | "per_kg";
+}) {
   const { data } = await api.get<ProductionMarginReport>("/finance/production-margin", {
     params,
   });
@@ -495,7 +499,11 @@ export type PartySalesMarginReport = {
   };
 };
 
-export async function getPartySalesMargin(params?: { dateFrom?: string; dateTo?: string }) {
+export async function getPartySalesMargin(params?: {
+  dateFrom?: string;
+  dateTo?: string;
+  taxSplit?: "half" | "per_kg";
+}) {
   const { data } = await api.get<PartySalesMarginReport>("/finance/party-sales-margin", {
     params,
   });

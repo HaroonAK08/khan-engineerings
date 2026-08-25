@@ -14,6 +14,7 @@ import {
   type ProductionMarginReport,
 } from "@/lib/finance-api";
 import { splitCastingKhrad } from "@/lib/casting-khrad";
+import { useTaxSplitStore } from "@/stores/tax-split-store";
 import { channelColors } from "@/lib/channel-colors";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { ChargesCalculator } from "@/components/finance/charges-calculator";
@@ -46,6 +47,7 @@ function FamilyCard({
     unitsSold: string;
     material: string;
     overhead: string;
+    totalMfgCost: string;
     costPerKg: string;
     sellValue: string;
     profit: string;
@@ -106,6 +108,14 @@ function FamilyCard({
           </p>
           <p className={cn("font-data mt-1 text-lg", valueTone)}>
             {formatMoney(data.overhead)}
+          </p>
+        </div>
+        <div>
+          <p className={cn("font-data text-[10px] tracking-[0.12em] uppercase", labelTone)}>
+            {labels.totalMfgCost}
+          </p>
+          <p className={cn("font-data mt-1 text-lg", valueTone)}>
+            {formatMoney(data.totalCost)}
           </p>
         </div>
         <div>
@@ -479,6 +489,7 @@ function FamilyProductTable({
 
 export default function ProductionMarginPage() {
   const { t } = useI18n();
+  const taxMode = useTaxSplitStore((s) => s.mode);
   const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
   const [report, setReport] = useState<ProductionMarginReport | null>(null);
   const [partyMargin, setPartyMargin] = useState<PartySalesMarginReport | null>(null);
@@ -489,8 +500,8 @@ export default function ProductionMarginPage() {
     setLoading(true);
     try {
       const [data, party] = await Promise.all([
-        getProductionMargin({ dateFrom, dateTo }),
-        getPartySalesMargin({ dateFrom, dateTo }),
+        getProductionMargin({ dateFrom, dateTo, taxSplit: taxMode }),
+        getPartySalesMargin({ dateFrom, dateTo, taxSplit: taxMode }),
       ]);
       setReport(data);
       setPartyMargin(party);
@@ -499,7 +510,7 @@ export default function ProductionMarginPage() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, hydrated, t]);
+  }, [dateFrom, dateTo, taxMode, hydrated, t]);
 
   useEffect(() => {
     const timer = setTimeout(load, 200);
@@ -547,6 +558,7 @@ export default function ProductionMarginPage() {
     unitsSold: t("prodMargin.unitsSold"),
     material: t("prodMargin.materialCost"),
     overhead: t("prodMargin.overhead"),
+    totalMfgCost: t("prodMargin.totalMfgCost"),
     costPerKg: t("prodMargin.costPerKg"),
     sellValue: t("prodMargin.sellValue"),
     profit: t("prodMargin.netProfit"),
@@ -842,14 +854,14 @@ export default function ProductionMarginPage() {
                 label: t("prodMargin.castingCostKg"),
                 value:
                   hubSplit.castingPerKg != null ? formatMoney(hubSplit.castingPerKg) : "—",
-                hint: t("prodMargin.castingCostHint"),
+                hint: t("prodMargin.castingCostHintHalf"),
                 accent: "bg-sky-500",
                 fill: "hub",
               },
               {
                 label: t("prodMargin.khradCostKg"),
                 value: hubSplit.khradPerKg != null ? formatMoney(hubSplit.khradPerKg) : "—",
-                hint: t("prodMargin.khradCostHint"),
+                hint: t("prodMargin.khradCostHintHalf"),
                 accent: "bg-sky-500",
                 fill: "hub",
               },
@@ -904,7 +916,7 @@ export default function ProductionMarginPage() {
                 label: t("prodMargin.castingCostKg"),
                 value:
                   drumSplit.castingPerKg != null ? formatMoney(drumSplit.castingPerKg) : "—",
-                hint: t("prodMargin.drumCastingCostHint"),
+                hint: t("prodMargin.drumCastingCostHintHalf"),
                 accent: "bg-yellow-300",
                 fill: "drum",
               },
@@ -912,7 +924,7 @@ export default function ProductionMarginPage() {
                 label: t("prodMargin.khradCostKg"),
                 value:
                   drumSplit.khradPerKg != null ? formatMoney(drumSplit.khradPerKg) : "—",
-                hint: t("prodMargin.khradCostHint"),
+                hint: t("prodMargin.khradCostHintHalf"),
                 accent: "bg-yellow-300",
                 fill: "drum",
               },
@@ -1106,6 +1118,13 @@ export default function ProductionMarginPage() {
                                   split.khradLines,
                                   split.khradPerKg
                                 )}
+                                {split.sharedLines.length > 0
+                                  ? renderSplitSection(
+                                      t("prodMargin.taxByKg"),
+                                      split.sharedLines,
+                                      split.sharedPerKg
+                                    )
+                                  : null}
                                 <div
                                   className={cn(
                                     "mt-1 flex justify-between gap-2 rounded-sm border-t-2 px-1.5 py-2 text-sm font-extrabold",

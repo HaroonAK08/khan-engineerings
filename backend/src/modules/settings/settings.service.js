@@ -220,6 +220,25 @@ async function setWastePercent({ family, percent, effectiveFrom }) {
   return { settings: wasteSnapshot(doc), applied };
 }
 
+function normalizeTaxSplit(value) {
+  return value === "half" ? "half" : "per_kg";
+}
+
+async function getTaxSplit() {
+  const doc = await getAppSettings();
+  return { mode: normalizeTaxSplit(doc.taxSplitMode) };
+}
+
+async function setTaxSplit(mode) {
+  if (mode !== "half" && mode !== "per_kg") {
+    throw httpError("Tax split must be half or per_kg", 400);
+  }
+  const doc = await getAppSettings();
+  doc.taxSplitMode = mode;
+  await doc.save();
+  return { mode };
+}
+
 async function deletePayrollPeriod(month) {
   const m = String(month || "").trim();
   if (!isMonthKey(m)) throw httpError("Month must be YYYY-MM", 400);
@@ -241,4 +260,6 @@ module.exports = {
   getWastePercentFor,
   resolveWastePercent,
   setWastePercent,
+  getTaxSplit,
+  setTaxSplit,
 };

@@ -222,7 +222,7 @@ export const SEARCH_PAGES: SearchPage[] = [
   {
     href: "/dashboard/settings",
     labelKey: "nav.settings",
-    keywords: ["settings", "ترتیبات"],
+    keywords: ["settings", "ترتیبات", "tax", "tax split", "50/50", "per kg", "ٹیکس"],
     icon: Settings,
     group: "pages",
   },

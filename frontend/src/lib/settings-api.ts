@@ -75,6 +75,18 @@ export async function savePayrollPeriod(body: {
   return data.period;
 }
 
+export type TaxSplitMode = "half" | "per_kg";
+
+export async function getTaxSplit() {
+  const { data } = await api.get<{ mode: TaxSplitMode }>("/settings/tax-split");
+  return data.mode === "half" ? "half" : "per_kg";
+}
+
+export async function setTaxSplit(mode: TaxSplitMode) {
+  const { data } = await api.put<{ mode: TaxSplitMode }>("/settings/tax-split", { mode });
+  return data.mode === "half" ? "half" : "per_kg";
+}
+
 export async function deletePayrollPeriod(month: string) {
   const { data } = await api.delete<{ deleted: boolean; month: string }>(
     `/settings/payroll-periods/${month}`

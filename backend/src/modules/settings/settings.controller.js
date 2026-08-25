@@ -49,6 +49,24 @@ async function getWasteSettings(req, res, next) {
   }
 }
 
+async function getTaxSplit(req, res, next) {
+  try {
+    const result = await settingsService.getTaxSplit();
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function setTaxSplit(req, res, next) {
+  try {
+    const result = await settingsService.setTaxSplit(req.body.mode);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function setWastePercent(req, res, next) {
   try {
     const result = await settingsService.setWastePercent({
@@ -69,4 +87,6 @@ module.exports = {
   deletePayrollPeriod,
   getWasteSettings,
   setWastePercent,
+  getTaxSplit,
+  setTaxSplit,
 };

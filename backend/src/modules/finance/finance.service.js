@@ -36,6 +36,35 @@ function roundKg(n) {
   return Math.round((n || 0) * 1000) / 1000;
 }
 
+function splitCommonTax(amount, mode, hubKg, drumKg) {
+  const out = { hub: 0, drum: 0, common: 0 };
+  if (!(amount > 0)) return out;
+  if (mode === "half") {
+    if (hubKg > 0 && drumKg > 0) {
+      const hubShare = roundMoney(amount / 2);
+      out.hub = hubShare;
+      out.drum = roundMoney(amount - hubShare);
+      return out;
+    }
+    if (hubKg > 0) {
+      out.hub = roundMoney(amount);
+      return out;
+    }
+    if (drumKg > 0) {
+      out.drum = roundMoney(amount);
+      return out;
+    }
+  }
+  out.common = roundMoney(amount);
+  return out;
+}
+
+function addScopePools(target, extra) {
+  target.hub = roundMoney((target.hub || 0) + (extra.hub || 0));
+  target.drum = roundMoney((target.drum || 0) + (extra.drum || 0));
+  target.common = roundMoney((target.common || 0) + (extra.common || 0));
+}
+
 function periodBounds({ dateFrom, dateTo } = {}) {
   const now = new Date();
   const from = dateFrom
@@ -620,6 +649,10 @@ async function getProductionMargin(query = {}) {
   const { from, to } = periodBounds(query);
   const settingsService = require("../settings/settings.service");
   const salaryBounds = await settingsService.resolveSalaryBounds(from, to);
+  const taxMode =
+    query.taxSplit === "half" || query.taxSplit === "per_kg"
+      ? query.taxSplit
+      : (await settingsService.getTaxSplit()).mode;
   const expenseMatch = settingsService.expenseMatchWithSalaryWindow(
     from,
     to,
@@ -1044,21 +1077,23 @@ async function getProductionMargin(query = {}) {
     common: salaryPools.common,
   };
   let electricityCommon = 0;
+  let taxHeld = 0;
   for (const row of expenseByScopeCategory) {
     const scope =
       row._id?.scope === "hub" || row._id?.scope === "drum" ? row._id.scope : "common";
     const amount = row.amount || 0;
     const category = row._id?.category || "";
     if (category === "fixed_salary") continue;
+    if (category === "taxes") {
+      taxHeld = roundMoney(taxHeld + amount);
+      continue;
+    }
     if (category === "electricity" && scope === "common") {
       electricityCommon = roundMoney(electricityCommon + amount);
     } else {
       overheadPools[scope] = roundMoney((overheadPools[scope] || 0) + amount);
     }
   }
-  const overheadTotal = roundMoney(
-    overheadPools.hub + overheadPools.drum + overheadPools.common + electricityCommon
-  );
 
   // Produced rows drive cost allocation; sold-only rows are merged after for complete sold totals.
   const producedRows = [...byProductMap.values()].filter((r) => r.pieces > 0);
@@ -1069,6 +1104,11 @@ async function getProductionMargin(query = {}) {
     producedRows.filter((r) => r.family === "drum").reduce((s, r) => s + (r.finishedKg || 0), 0)
   );
   const allFinishedKg = roundKg(hubFinishedKg + drumFinishedKg);
+  const taxPools = splitCommonTax(taxHeld, taxMode, hubFinishedKg, drumFinishedKg);
+  addScopePools(overheadPools, taxPools);
+  const overheadTotal = roundMoney(
+    overheadPools.hub + overheadPools.drum + overheadPools.common + electricityCommon
+  );
   const electricityWeightTotal = producedRows.reduce((s, r) => {
     const kg = r.finishedKg || 0;
     const intensity =
@@ -1254,6 +1294,9 @@ async function getProductionMargin(query = {}) {
     if (category === "fixed_salary") {
       continue;
     }
+    if (category === "taxes") {
+      continue;
+    }
     if (category === "electricity" && scope === "common") {
       mfgElectricity = roundMoney(mfgElectricity + amount);
       continue;
@@ -1265,6 +1308,11 @@ async function getProductionMargin(query = {}) {
     mfgCategoryPools[category][scope] = roundMoney(
       (mfgCategoryPools[category][scope] || 0) + amount
     );
+  }
+  addScopePools(mfgExpensePools, taxPools);
+  if (taxHeld > 0) {
+    if (!mfgCategoryPools.taxes) mfgCategoryPools.taxes = { hub: 0, drum: 0, common: 0 };
+    addScopePools(mfgCategoryPools.taxes, taxPools);
   }
 
   function allocateBucketPerKg(pools, electricityAmount) {

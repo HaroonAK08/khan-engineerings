@@ -25,7 +25,7 @@ const HUB_CASTING_SALARY_IDS = new Set(["casting_labour", "others_salaries"]);
 const DRUM_CASTING_SALARY_IDS = new Set(["casting_labour"]);
 
 /** Always 50/50 for both families. */
-const SHARED_HALF_SPLIT_IDS = new Set(["taxes", "common_salaries"]);
+const SHARED_HALF_SPLIT_IDS = new Set(["common_salaries", "taxes"]);
 
 /** Drum-only: Others salaries + Other expense split 50/50. */
 const DRUM_HALF_SALARY_IDS = new Set(["others_salaries"]);
@@ -43,24 +43,34 @@ export type CastingKhradLine = ChannelManufactureDetailLine & {
 export type CastingKhradSplit = {
   castingPerKg: number | null;
   khradPerKg: number | null;
+  sharedPerKg: number | null;
   castingLines: CastingKhradLine[];
   khradLines: CastingKhradLine[];
+  sharedLines: CastingKhradLine[];
 };
 
 function rulesFor(family: Family) {
+  const halfExpenseIds =
+    family === "drum"
+      ? new Set([...SHARED_HALF_SPLIT_IDS, ...DRUM_HALF_EXPENSE_IDS])
+      : new Set(SHARED_HALF_SPLIT_IDS);
+  const halfSalaryIds =
+    family === "drum"
+      ? new Set([...SHARED_HALF_SPLIT_IDS, ...DRUM_HALF_SALARY_IDS])
+      : new Set(SHARED_HALF_SPLIT_IDS);
   if (family === "drum") {
     return {
       castingExpenses: DRUM_CASTING_EXPENSE_IDS,
       castingSalaries: DRUM_CASTING_SALARY_IDS,
-      halfExpenseIds: new Set([...SHARED_HALF_SPLIT_IDS, ...DRUM_HALF_EXPENSE_IDS]),
-      halfSalaryIds: new Set([...SHARED_HALF_SPLIT_IDS, ...DRUM_HALF_SALARY_IDS]),
+      halfExpenseIds,
+      halfSalaryIds,
     };
   }
   return {
     castingExpenses: HUB_CASTING_EXPENSE_IDS,
     castingSalaries: HUB_CASTING_SALARY_IDS,
-    halfExpenseIds: SHARED_HALF_SPLIT_IDS,
-    halfSalaryIds: SHARED_HALF_SPLIT_IDS,
+    halfExpenseIds,
+    halfSalaryIds,
   };
 }
 
@@ -97,7 +107,8 @@ export function splitCastingKhrad(
   const { castingExpenses, castingSalaries, halfExpenseIds, halfSalaryIds } = rulesFor(family);
   const castingLines: CastingKhradLine[] = [];
   const khradLines: CastingKhradLine[] = [];
-  const totals = { casting: 0, khrad: 0 };
+  const sharedLines: CastingKhradLine[] = [];
+  const totals = { casting: 0, khrad: 0, shared: 0 };
   let hasAny = false;
 
   if (line?.materialPerKg != null && line.materialPerKg > 0) {
@@ -130,7 +141,7 @@ export function splitCastingKhrad(
   for (const s of line?.salaryLines || []) {
     if (!(s.perKg > 0)) continue;
     hasAny = true;
-  if (halfSalaryIds.has(s.id)) {
+    if (halfSalaryIds.has(s.id)) {
       pushHalf(
         { casting: castingLines, khrad: khradLines },
         totals,
@@ -163,15 +174,19 @@ export function splitCastingKhrad(
     return {
       castingPerKg: null,
       khradPerKg: null,
+      sharedPerKg: null,
       castingLines: [],
       khradLines: [],
+      sharedLines: [],
     };
   }
 
   return {
     castingPerKg: totals.casting > 0 ? totals.casting : null,
     khradPerKg: totals.khrad > 0 ? totals.khrad : null,
+    sharedPerKg: totals.shared > 0 ? totals.shared : null,
     castingLines,
     khradLines,
+    sharedLines,
   };
 }

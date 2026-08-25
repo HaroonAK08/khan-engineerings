@@ -31,6 +31,11 @@ const settingsSchema = new mongoose.Schema(
     wasteHubFrom: { type: Date, default: null },
     wasteDrumFrom: { type: Date, default: null },
     wasteHistory: { type: [wasteHistorySchema], default: [] },
+    taxSplitMode: {
+      type: String,
+      enum: ["half", "per_kg"],
+      default: "per_kg",
+    },
   },
   { timestamps: true }
 );
