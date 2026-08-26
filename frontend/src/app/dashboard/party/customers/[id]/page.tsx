@@ -30,6 +30,10 @@ import {
 } from "@/components/ui/table";
 import { PartyHistoryCalendar } from "@/components/party/party-history-calendar";
 import { PartyPendingByMonth } from "@/components/party/party-pending-by-month";
+import {
+  LedgerKindToggle,
+  type LedgerEntryKind,
+} from "@/components/party/ledger-kind-toggle";
 import { useI18n } from "@/hooks/use-i18n";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 import { todayInput } from "@/lib/date-range";
@@ -77,13 +81,14 @@ export default function CustomerDetailPage() {
   const [loading, setLoading] = useState(true);
   const loadSeq = useRef(0);
 
-  const [showPendingForm, setShowPendingForm] = useState(false);
+  const [showPendingForm, setShowPendingForm] = useState(true);
   const [pendingAmount, setPendingAmount] = useState("");
   const [pendingDate, setPendingDate] = useState(todayInput());
   const [pendingNotes, setPendingNotes] = useState("");
   const [savingPending, setSavingPending] = useState(false);
 
   const [showPaidForm, setShowPaidForm] = useState(false);
+  const [paidKind, setPaidKind] = useState<LedgerEntryKind>("payment");
   const [paidAmount, setPaidAmount] = useState("");
   const [paidDate, setPaidDate] = useState(todayInput());
   const [paidMethod, setPaidMethod] = useState("cash");
@@ -183,25 +188,42 @@ export default function CustomerDetailPage() {
     }
     setSavingPaid(true);
     try {
-      const body = {
-        amount,
-        paymentDate: paidDate,
-        method: paidMethod,
-        notes: paidNotes.trim() || undefined,
-      };
-      const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
-        recordCustomerPayment(id, { ...body, confirmDuplicate })
-      );
-      if (cancelled) return;
-      toast.success(t("customerDetail.paymentRecorded"));
+      if (paidKind === "previous_pending") {
+        await recordCustomerAdjustment(id, {
+          amount,
+          entryDate: paidDate,
+          notes: paidNotes.trim() || "Previous pending",
+        });
+        toast.success(t("customerDetail.previousPendingRecorded"));
+      } else {
+        const body = {
+          amount,
+          paymentDate: paidDate,
+          method: paidMethod,
+          notes: paidNotes.trim() || undefined,
+        };
+        const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
+          recordCustomerPayment(id, { ...body, confirmDuplicate })
+        );
+        if (cancelled) return;
+        toast.success(t("customerDetail.paymentRecorded"));
+      }
       setPaidAmount("");
       setPaidNotes("");
       setPaidDate(todayInput());
       setPaidMethod("cash");
+      setPaidKind("payment");
       setShowPaidForm(false);
       await load({ silent: true });
     } catch (err) {
-      toast.error(apiError(err, t("customerDetail.paymentFailed")));
+      toast.error(
+        apiError(
+          err,
+          paidKind === "previous_pending"
+            ? t("customerDetail.previousPendingFailed")
+            : t("customerDetail.paymentFailed")
+        )
+      );
     } finally {
       setSavingPaid(false);
     }
@@ -286,8 +308,7 @@ export default function CustomerDetailPage() {
           </div>
           <Button
             type="button"
-            variant="outline"
-            size="sm"
+            variant={showPendingForm ? "outline" : "default"}
             onClick={() => {
               setShowPendingForm((v) => !v);
               setShowPaidForm(false);
@@ -297,6 +318,49 @@ export default function CustomerDetailPage() {
           </Button>
         </CardHeader>
         <CardContent className={showPendingForm ? "pt-0" : undefined}>
+          {showPendingForm ? (
+            <div className="mb-4 rounded-lg border bg-muted/20 p-3">
+              <p className="mb-3 text-sm font-medium">{t("customerDetail.addPreviousPending")}</p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="flex flex-col gap-1.5">
+                  <Label>{t("common.amount")}</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    value={pendingAmount}
+                    onChange={(e) => setPendingAmount(e.target.value)}
+                    placeholder="0"
+                    autoFocus
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>{t("common.date")}</Label>
+                  <Input
+                    type="date"
+                    value={pendingDate}
+                    onChange={(e) => setPendingDate(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>{t("common.notes")}</Label>
+                  <Input
+                    value={pendingNotes}
+                    onChange={(e) => setPendingNotes(e.target.value)}
+                  />
+                </div>
+              </div>
+              <Button
+                type="button"
+                className="mt-3 gap-2"
+                disabled={savingPending}
+                onClick={() => void onAddPreviousPending()}
+              >
+                {savingPending ? <Loader2 className="size-4 animate-spin" /> : null}
+                {t("common.save")}
+              </Button>
+            </div>
+          ) : null}
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="grid gap-1.5">
               <Label>{t("common.from")}</Label>
@@ -335,47 +399,6 @@ export default function CustomerDetailPage() {
               dateTo={dateTo}
             />
           </div>
-          {showPendingForm ? (
-            <div className="mt-4 border-t pt-4">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div className="flex flex-col gap-1.5">
-                  <Label>{t("common.amount")}</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    value={pendingAmount}
-                    onChange={(e) => setPendingAmount(e.target.value)}
-                    placeholder="0"
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label>{t("common.date")}</Label>
-                  <Input
-                    type="date"
-                    value={pendingDate}
-                    onChange={(e) => setPendingDate(e.target.value)}
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label>{t("common.notes")}</Label>
-                  <Input
-                    value={pendingNotes}
-                    onChange={(e) => setPendingNotes(e.target.value)}
-                  />
-                </div>
-              </div>
-              <Button
-                type="button"
-                className="mt-3 gap-2"
-                disabled={savingPending}
-                onClick={() => void onAddPreviousPending()}
-              >
-                {savingPending ? <Loader2 className="size-4 animate-spin" /> : null}
-                {t("common.save")}
-              </Button>
-            </div>
-          ) : null}
         </CardContent>
       </Card>
 
@@ -396,10 +419,12 @@ export default function CustomerDetailPage() {
             onClick={() => {
               setShowPaidForm((v) => {
                 const next = !v;
-                if (next) setPaidAmount(balance > 0 ? String(balance) : "");
+                if (next) {
+                  setPaidKind("payment");
+                  setPaidAmount(balance > 0 ? String(balance) : "");
+                }
                 return next;
               });
-              setShowPendingForm(false);
             }}
           >
             {showPaidForm ? t("common.cancel") : t("customerDetail.addPayment")}
@@ -407,6 +432,15 @@ export default function CustomerDetailPage() {
         </CardHeader>
         {showPaidForm ? (
           <CardContent className="pt-0">
+            <div className="mb-3 flex flex-col gap-1.5">
+              <Label>{t("customerDetail.entryKind")}</Label>
+              <LedgerKindToggle
+                value={paidKind}
+                onChange={setPaidKind}
+                paymentLabel={t("customerDetail.kindPayment")}
+                pendingLabel={t("customerDetail.kindPreviousPending")}
+              />
+            </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="flex flex-col gap-1.5">
                 <Label>{t("common.amount")}</Label>
@@ -427,6 +461,7 @@ export default function CustomerDetailPage() {
                   onChange={(e) => setPaidDate(e.target.value)}
                 />
               </div>
+              {paidKind === "payment" ? (
               <div className="flex flex-col gap-1.5">
                 <Label>{t("common.method")}</Label>
                 <select
@@ -439,6 +474,7 @@ export default function CustomerDetailPage() {
                   <option value="online">{t("common.online")}</option>
                 </select>
               </div>
+              ) : null}
               <div className="flex flex-col gap-1.5">
                 <Label>{t("common.notes")}</Label>
                 <Input value={paidNotes} onChange={(e) => setPaidNotes(e.target.value)} />

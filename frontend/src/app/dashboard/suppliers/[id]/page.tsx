@@ -22,6 +22,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SupplierHistoryCalendar } from "@/components/suppliers/supplier-history-calendar";
 import { PartyPendingByMonth } from "@/components/party/party-pending-by-month";
+import {
+  LedgerKindToggle,
+  type LedgerEntryKind,
+} from "@/components/party/ledger-kind-toggle";
 import { useI18n } from "@/hooks/use-i18n";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 import { todayInput } from "@/lib/date-range";
@@ -68,13 +72,14 @@ export default function SupplierDetailPage() {
   const [purchaseNotes, setPurchaseNotes] = useState("");
   const [savingPurchase, setSavingPurchase] = useState(false);
 
-  const [showPendingForm, setShowPendingForm] = useState(false);
+  const [showPendingForm, setShowPendingForm] = useState(true);
   const [pendingAmount, setPendingAmount] = useState("");
   const [pendingDate, setPendingDate] = useState(todayInput());
   const [pendingNotes, setPendingNotes] = useState("");
   const [savingPending, setSavingPending] = useState(false);
 
   const [showPay, setShowPay] = useState(false);
+  const [payKind, setPayKind] = useState<LedgerEntryKind>("payment");
   const [payAmount, setPayAmount] = useState("");
   const [payDate, setPayDate] = useState(todayInput());
   const [payNotes, setPayNotes] = useState("");
@@ -205,23 +210,40 @@ export default function SupplierDetailPage() {
     }
     setSavingPay(true);
     try {
-      const body = {
-        amount,
-        entryDate: payDate,
-        notes: payNotes.trim() || undefined,
-      };
-      const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
-        recordPayment(id, { ...body, confirmDuplicate })
-      );
-      if (cancelled) return;
-      toast.success(t("supplierDetail.paymentRecorded"));
+      if (payKind === "previous_pending") {
+        await recordAdjustment(id, {
+          amount,
+          entryDate: payDate,
+          notes: payNotes.trim() || "Previous pending",
+        });
+        toast.success(t("supplierDetail.previousPendingRecorded"));
+      } else {
+        const body = {
+          amount,
+          entryDate: payDate,
+          notes: payNotes.trim() || undefined,
+        };
+        const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
+          recordPayment(id, { ...body, confirmDuplicate })
+        );
+        if (cancelled) return;
+        toast.success(t("supplierDetail.paymentRecorded"));
+      }
       setPayAmount("");
       setPayNotes("");
       setPayDate(todayInput());
+      setPayKind("payment");
       setShowPay(false);
       await load({ silent: true });
     } catch (err) {
-      toast.error(apiError(err, t("supplierDetail.paymentFailed")));
+      toast.error(
+        apiError(
+          err,
+          payKind === "previous_pending"
+            ? t("supplierDetail.previousPendingFailed")
+            : t("supplierDetail.paymentFailed")
+        )
+      );
     } finally {
       setSavingPay(false);
     }
@@ -411,8 +433,7 @@ export default function SupplierDetailPage() {
           </div>
           <Button
             type="button"
-            variant="outline"
-            size="sm"
+            variant={showPendingForm ? "outline" : "default"}
             onClick={() => {
               setShowPendingForm((v) => !v);
               setShowPurchaseForm(false);
@@ -423,6 +444,49 @@ export default function SupplierDetailPage() {
           </Button>
         </CardHeader>
         <CardContent className={showPendingForm ? "pt-0" : undefined}>
+          {showPendingForm ? (
+            <div className="mb-4 rounded-lg border bg-muted/20 p-3">
+              <p className="mb-3 text-sm font-medium">{t("supplierDetail.addPreviousPending")}</p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="flex flex-col gap-1.5">
+                  <Label>{t("common.amount")}</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    value={pendingAmount}
+                    onChange={(e) => setPendingAmount(e.target.value)}
+                    placeholder="0"
+                    autoFocus
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>{t("common.date")}</Label>
+                  <Input
+                    type="date"
+                    value={pendingDate}
+                    onChange={(e) => setPendingDate(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>{t("common.notes")}</Label>
+                  <Input
+                    value={pendingNotes}
+                    onChange={(e) => setPendingNotes(e.target.value)}
+                  />
+                </div>
+              </div>
+              <Button
+                type="button"
+                className="mt-3 gap-2"
+                disabled={savingPending}
+                onClick={() => void onAddPreviousPending()}
+              >
+                {savingPending ? <Loader2 className="size-4 animate-spin" /> : null}
+                {t("common.save")}
+              </Button>
+            </div>
+          ) : null}
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5">
               <Label>{t("common.from")}</Label>
@@ -451,47 +515,6 @@ export default function SupplierDetailPage() {
               dateTo={dateTo}
             />
           </div>
-          {showPendingForm ? (
-            <div className="mt-4 border-t pt-4">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div className="flex flex-col gap-1.5">
-                <Label>{t("common.amount")}</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  value={pendingAmount}
-                  onChange={(e) => setPendingAmount(e.target.value)}
-                  placeholder="0"
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label>{t("common.date")}</Label>
-                <Input
-                  type="date"
-                  value={pendingDate}
-                  onChange={(e) => setPendingDate(e.target.value)}
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label>{t("common.notes")}</Label>
-                <Input
-                  value={pendingNotes}
-                  onChange={(e) => setPendingNotes(e.target.value)}
-                />
-              </div>
-            </div>
-            <Button
-              type="button"
-              className="mt-3 gap-2"
-              disabled={savingPending}
-              onClick={() => void onAddPreviousPending()}
-            >
-              {savingPending ? <Loader2 className="size-4 animate-spin" /> : null}
-              {t("common.save")}
-            </Button>
-          </div>
-          ) : null}
         </CardContent>
       </Card>
 
@@ -511,9 +534,11 @@ export default function SupplierDetailPage() {
             size="sm"
             onClick={() => {
               setShowPay((v) => !v);
-              setShowPendingForm(false);
               setShowPurchaseForm(false);
-              if (!showPay) setPayAmount(balance > 0 ? String(balance) : "");
+              if (!showPay) {
+                setPayKind("payment");
+                setPayAmount(balance > 0 ? String(balance) : "");
+              }
             }}
           >
             {showPay ? t("common.cancel") : t("supplierDetail.addPayment")}
@@ -521,6 +546,15 @@ export default function SupplierDetailPage() {
         </CardHeader>
         {showPay ? (
           <CardContent className="pt-0">
+            <div className="mb-3 flex flex-col gap-1.5">
+              <Label>{t("supplierDetail.entryKind")}</Label>
+              <LedgerKindToggle
+                value={payKind}
+                onChange={setPayKind}
+                paymentLabel={t("supplierDetail.kindPayment")}
+                pendingLabel={t("supplierDetail.kindPreviousPending")}
+              />
+            </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div className="flex flex-col gap-1.5">
                 <Label>{t("common.amount")}</Label>
