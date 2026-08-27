@@ -130,6 +130,19 @@ export type CustomerPayment = {
   notes: string;
 };
 
+export type CustomerInstrument = {
+  _id: string;
+  customer: string | { _id: string; name: string };
+  kind: "cheque" | "promise";
+  amount: number;
+  recordedDate: string;
+  dueDate: string;
+  notes: string;
+  status: "pending" | "received";
+  receivedDate?: string | null;
+  payment?: string | null;
+};
+
 export type CustomerLedgerEntry = {
   _id: string;
   type: "invoice" | "payment" | "adjustment";
@@ -246,8 +259,12 @@ export async function getPartyGroupLedgers(id: string) {
   const { data } = await api.get<{
     group: PartyGroup;
     ledgers: Record<string, CustomerLedgerEntry[]>;
+    instruments?: Record<string, CustomerInstrument[]>;
   }>(`/party-groups/${id}/ledgers`);
-  return data;
+  return {
+    ...data,
+    instruments: data.instruments || {},
+  };
 }
 
 export async function createPartyGroup(body: {
@@ -337,10 +354,12 @@ export async function deleteCustomer(id: string) {
 }
 
 export async function getCustomerLedger(id: string) {
-  const { data } = await api.get<{ entries: CustomerLedgerEntry[]; balance: number }>(
-    `/customers/${id}/ledger`
-  );
-  return data;
+  const { data } = await api.get<{
+    entries: CustomerLedgerEntry[];
+    balance: number;
+    instruments?: CustomerInstrument[];
+  }>(`/customers/${id}/ledger`);
+  return { ...data, instruments: data.instruments || [] };
 }
 
 export async function updateCustomerLedgerEntry(
@@ -373,6 +392,69 @@ export async function recordCustomerAdjustment(
     stats?: { orderCount: number; totalSales: number; totalPaid: number; totalDue?: number };
   }>(`/customers/${id}/adjustments`, body);
   return data;
+}
+
+export async function listDueCustomerInstruments() {
+  const { data } = await api.get<{ instruments: CustomerInstrument[] }>(
+    "/customers/instruments/due"
+  );
+  return data.instruments || [];
+}
+
+export async function createCustomerInstrument(
+  customerId: string,
+  body: {
+    kind: "cheque" | "promise";
+    amount: number;
+    recordedDate: string;
+    dueDate: string;
+    notes?: string;
+  }
+) {
+  const { data } = await api.post<{ instrument: CustomerInstrument }>(
+    `/customers/${customerId}/instruments`,
+    body
+  );
+  return data.instrument;
+}
+
+export async function updateCustomerInstrument(
+  customerId: string,
+  instrumentId: string,
+  body: {
+    kind?: "cheque" | "promise";
+    amount?: number;
+    recordedDate?: string;
+    dueDate?: string;
+    notes?: string;
+  }
+) {
+  const { data } = await api.patch<{ instrument: CustomerInstrument }>(
+    `/customers/${customerId}/instruments/${instrumentId}`,
+    body
+  );
+  return data.instrument;
+}
+
+export async function receiveCustomerInstrument(
+  customerId: string,
+  instrumentId: string,
+  body: {
+    receivedDate: string;
+    method?: string;
+    notes?: string;
+    confirmDuplicate?: boolean;
+  }
+) {
+  const { data } = await api.post<{
+    instrument: CustomerInstrument;
+    balance: number;
+  }>(`/customers/${customerId}/instruments/${instrumentId}/receive`, body);
+  return data;
+}
+
+export async function deleteCustomerInstrument(customerId: string, instrumentId: string) {
+  await api.delete(`/customers/${customerId}/instruments/${instrumentId}`);
 }
 
 export async function recordCustomerPayment(

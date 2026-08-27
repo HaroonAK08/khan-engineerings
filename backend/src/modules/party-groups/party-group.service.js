@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const PartyGroup = require("./party-group.model");
 const Customer = require("../customers/customer.model");
 const CustomerLedgerEntry = require("../customers/customer-ledger.model");
+const CustomerInstrument = require("../customers/customer-instrument.model");
 
 const IK_GROUP_NAMES = new Set(["i k", "ik", "machi goth"]);
 
@@ -232,21 +233,32 @@ async function listMemberLedgers(id) {
   const parties = group.parties || [];
   const ids = parties.map((p) => p._id);
   const ledgers = Object.fromEntries(ids.map((partyId) => [String(partyId), []]));
-  if (!ids.length) return { group, ledgers };
+  const instruments = Object.fromEntries(ids.map((partyId) => [String(partyId), []]));
+  if (!ids.length) return { group, ledgers, instruments };
 
-  const entries = await CustomerLedgerEntry.find({ customer: { $in: ids } })
-    .populate("builty", "builtyNo billNo totalAmount builtyDate")
-    .populate("payment", "amount method paymentDate notes")
-    .sort({ entryDate: 1, createdAt: 1 })
-    .lean();
+  const [entries, instrumentRows] = await Promise.all([
+    CustomerLedgerEntry.find({ customer: { $in: ids } })
+      .populate("builty", "builtyNo billNo totalAmount builtyDate")
+      .populate("payment", "amount method paymentDate notes")
+      .sort({ entryDate: 1, createdAt: 1 })
+      .lean(),
+    CustomerInstrument.find({ customer: { $in: ids } })
+      .sort({ dueDate: 1, createdAt: 1 })
+      .lean(),
+  ]);
 
   for (const entry of entries) {
     const customerId = String(entry.customer);
     if (!ledgers[customerId]) ledgers[customerId] = [];
     ledgers[customerId].push(entry);
   }
+  for (const row of instrumentRows) {
+    const customerId = String(row.customer);
+    if (!instruments[customerId]) instruments[customerId] = [];
+    instruments[customerId].push(row);
+  }
 
-  return { group, ledgers };
+  return { group, ledgers, instruments };
 }
 
 function escapeRegex(value) {

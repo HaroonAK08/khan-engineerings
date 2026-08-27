@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LogOut, Menu, Settings, UserRound } from "lucide-react";
+import { ChequePromiseDueBell } from "@/components/party/cheque-promise-due-bell";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { getInitials } from "@/lib/utils-user";
@@ -104,6 +105,7 @@ export function Topbar() {
       <GlobalSearch />
 
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+        <ChequePromiseDueBell />
         <VoiceHeaderControl />
         {user && (
           <Badge

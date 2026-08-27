@@ -391,3 +391,17 @@ html.locale-ur .gap-1\.5 {
 .animate-scan-sweep {
   animation: scan-sweep 3s linear infinite;
 }
+
+@keyframes cheque-due-blink {
+  0%,
+  100% {
+    background-color: color-mix(in oklch, var(--color-amber-400) 22%, transparent);
+  }
+  50% {
+    background-color: color-mix(in oklch, var(--color-orange-500) 42%, transparent);
+  }
+}
+
+.animate-cheque-due {
+  animation: cheque-due-blink 1.15s ease-in-out infinite;
+}

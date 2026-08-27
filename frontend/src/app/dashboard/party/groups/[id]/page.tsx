@@ -10,9 +10,12 @@ import { useI18n } from "@/hooks/use-i18n";
 import { apiError, formatMoney } from "@/lib/materials-api";
 import {
   getPartyGroupLedgers,
+  type CustomerInstrument,
   type CustomerLedgerEntry,
   type PartyGroup,
 } from "@/lib/sales-api";
+import { PartyChequePromiseSummary } from "@/components/party/party-cheque-promise-summary";
+import { summarizeInstruments } from "@/lib/party-instruments";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -55,6 +58,7 @@ export default function PartyGroupDetailPage() {
   const { dateFrom, dateTo, setDateFrom, setDateTo, hydrated } = usePersistedDateRange();
   const [group, setGroup] = useState<PartyGroup | null>(null);
   const [ledgers, setLedgers] = useState<Record<string, CustomerLedgerEntry[]>>({});
+  const [instruments, setInstruments] = useState<Record<string, CustomerInstrument[]>>({});
   const [loading, setLoading] = useState(true);
   const loadSeq = useRef(0);
 
@@ -64,15 +68,18 @@ export default function PartyGroupDetailPage() {
       const seq = ++loadSeq.current;
       if (!opts?.silent) setLoading(true);
       try {
-        const { group: next, ledgers: nextLedgers } = await getPartyGroupLedgers(id);
+        const { group: next, ledgers: nextLedgers, instruments: nextInstruments } =
+          await getPartyGroupLedgers(id);
         if (seq !== loadSeq.current) return;
         setGroup(next);
         setLedgers(nextLedgers);
+        setInstruments(nextInstruments || {});
       } catch (err) {
         if (seq !== loadSeq.current) return;
         toast.error(apiError(err, t("pgroup.loadFailed")));
         setGroup(null);
         setLedgers({});
+        setInstruments({});
       } finally {
         if (seq === loadSeq.current && !opts?.silent) setLoading(false);
       }
@@ -114,6 +121,11 @@ export default function PartyGroupDetailPage() {
   const groupPending = useMemo(
     () => mergePeriodPending(partySnapshots.map((row) => row.snapshot)),
     [partySnapshots]
+  );
+
+  const allInstruments = useMemo(
+    () => Object.values(instruments).flat(),
+    [instruments]
   );
 
   return (
@@ -164,12 +176,17 @@ export default function PartyGroupDetailPage() {
                 <Loader2 className="size-6 animate-spin text-primary" />
               </div>
             ) : (
-              <PartyPendingByMonth
-                key={`${dateFrom}|${dateTo}`}
-                snapshot={groupPending}
-                dateFrom={dateFrom}
-                dateTo={dateTo}
-              />
+              <>
+                <div className="mb-4">
+                  <PartyChequePromiseSummary instruments={allInstruments} />
+                </div>
+                <PartyPendingByMonth
+                  key={`${dateFrom}|${dateTo}`}
+                  snapshot={groupPending}
+                  dateFrom={dateFrom}
+                  dateTo={dateTo}
+                />
+              </>
             )}
           </div>
         </CardContent>
@@ -200,12 +217,14 @@ export default function PartyGroupDetailPage() {
                   <TableHead>{t("cus.col.phone")}</TableHead>
                   <TableHead className="text-end">{t("customerDetail.previousLeftover")}</TableHead>
                   <TableHead className="text-end">{t("pgroup.col.periodLeftover")}</TableHead>
+                  <TableHead className="text-end">{t("pgroup.col.chequePromise")}</TableHead>
                   <TableHead className="text-end">{t("pgroup.col.pending")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {partySnapshots.map(({ party, snapshot }) => {
                   const balance = snapshot.totalRemaining;
+                  const chequePending = summarizeInstruments(instruments[party._id] || []);
                   return (
                     <TableRow
                       key={party._id}
@@ -226,6 +245,17 @@ export default function PartyGroupDetailPage() {
                       </TableCell>
                       <TableCell className={`font-data text-end text-sm ${pendingClass(snapshot.periodRemaining)}`}>
                         {formatPending(snapshot.periodRemaining)}
+                      </TableCell>
+                      <TableCell
+                        className={`font-data text-end text-sm ${
+                          chequePending.dueCount > 0
+                            ? "animate-cheque-due font-medium text-amber-700 dark:text-amber-400"
+                            : chequePending.pendingTotal > 0.001
+                              ? "font-medium text-amber-700 dark:text-amber-400"
+                              : "text-muted-foreground"
+                        }`}
+                      >
+                        {formatMoney(chequePending.pendingTotal)}
                       </TableCell>
                       <TableCell className={`font-data text-end text-sm font-medium ${pendingClass(balance)}`}>
                         {formatPending(balance)}

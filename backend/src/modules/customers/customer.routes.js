@@ -10,6 +10,15 @@ router.use(requireAuth);
 router.get("/", controller.list);
 router.post("/", controller.create);
 
+router.get("/instruments/due", async (req, res, next) => {
+  try {
+    const instruments = await customerService.listDueInstruments();
+    res.json({ instruments });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/:id/ledger", async (req, res, next) => {
   try {
     const result = await customerService.listLedger(req.params.id);
@@ -54,6 +63,62 @@ router.post("/:id/payments", async (req, res, next) => {
   try {
     const result = await customerService.recordPayment(req.params.id, req.body);
     res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/:id/instruments", async (req, res, next) => {
+  try {
+    const instruments = await customerService.listInstruments(req.params.id);
+    res.json({ instruments });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:id/instruments", async (req, res, next) => {
+  try {
+    const instrument = await customerService.createInstrument(req.params.id, req.body);
+    res.status(201).json({ instrument });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.patch("/:id/instruments/:instrumentId", async (req, res, next) => {
+  try {
+    const instrument = await customerService.updateInstrument(
+      req.params.id,
+      req.params.instrumentId,
+      req.body
+    );
+    res.json({ instrument });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:id/instruments/:instrumentId/receive", async (req, res, next) => {
+  try {
+    const result = await customerService.receiveInstrument(
+      req.params.id,
+      req.params.instrumentId,
+      req.body
+    );
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete("/:id/instruments/:instrumentId", async (req, res, next) => {
+  try {
+    const result = await customerService.removeInstrument(
+      req.params.id,
+      req.params.instrumentId
+    );
+    res.json(result);
   } catch (err) {
     next(err);
   }

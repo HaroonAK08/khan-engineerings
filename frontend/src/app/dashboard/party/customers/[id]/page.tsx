@@ -8,11 +8,13 @@ import { ArrowLeft, Loader2, Plus } from "lucide-react";
 import { api } from "@/lib/api";
 import { apiError, formatDate, formatMoney, withSameDayConfirm } from "@/lib/materials-api";
 import {
+  createCustomerInstrument,
   getCustomer,
   getCustomerLedger,
   recordCustomerAdjustment,
   recordCustomerPayment,
   type Customer,
+  type CustomerInstrument,
   type CustomerLedgerEntry,
 } from "@/lib/sales-api";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +30,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { PartyChequePromiseSummary } from "@/components/party/party-cheque-promise-summary";
 import { PartyHistoryCalendar } from "@/components/party/party-history-calendar";
 import { PartyPendingByMonth } from "@/components/party/party-pending-by-month";
 import {
@@ -77,6 +80,7 @@ export default function CustomerDetailPage() {
     totalDue: 0,
   });
   const [entries, setEntries] = useState<CustomerLedgerEntry[]>([]);
+  const [instruments, setInstruments] = useState<CustomerInstrument[]>([]);
   const [claims, setClaims] = useState<PartyClaim[]>([]);
   const [loading, setLoading] = useState(true);
   const loadSeq = useRef(0);
@@ -92,8 +96,17 @@ export default function CustomerDetailPage() {
   const [paidAmount, setPaidAmount] = useState("");
   const [paidDate, setPaidDate] = useState(todayInput());
   const [paidMethod, setPaidMethod] = useState("cash");
+  const [paidChequeDate, setPaidChequeDate] = useState("");
   const [paidNotes, setPaidNotes] = useState("");
   const [savingPaid, setSavingPaid] = useState(false);
+
+  const [showInstrumentForm, setShowInstrumentForm] = useState(false);
+  const [instrumentKind, setInstrumentKind] = useState<"cheque" | "promise">("cheque");
+  const [instrumentAmount, setInstrumentAmount] = useState("");
+  const [instrumentRecorded, setInstrumentRecorded] = useState(todayInput());
+  const [instrumentDue, setInstrumentDue] = useState("");
+  const [instrumentNotes, setInstrumentNotes] = useState("");
+  const [savingInstrument, setSavingInstrument] = useState(false);
 
   const periodPending = useMemo(
     () =>
@@ -122,6 +135,7 @@ export default function CustomerDetailPage() {
         setBalance(detail.balance);
         setRecordedPreviousPending(detail.previousPending || 0);
         setEntries(ledger.entries);
+        setInstruments(ledger.instruments || []);
         setClaims(claimsRes.data.claims || []);
         setStats({
           orderCount: detail.stats.orderCount || 0,
@@ -195,6 +209,20 @@ export default function CustomerDetailPage() {
           notes: paidNotes.trim() || "Previous pending",
         });
         toast.success(t("customerDetail.previousPendingRecorded"));
+      } else if (paidMethod === "cheque") {
+        const chequeDate = paidChequeDate || paidDate;
+        if (!chequeDate) {
+          toast.error(t("customerDetail.pickDate"));
+          return;
+        }
+        await createCustomerInstrument(id, {
+          kind: "cheque",
+          amount,
+          recordedDate: paidDate,
+          dueDate: chequeDate,
+          notes: paidNotes.trim() || undefined,
+        });
+        toast.success(t("customerDetail.chequePromiseSaved"));
       } else {
         const body = {
           amount,
@@ -212,6 +240,7 @@ export default function CustomerDetailPage() {
       setPaidNotes("");
       setPaidDate(todayInput());
       setPaidMethod("cash");
+      setPaidChequeDate("");
       setPaidKind("payment");
       setShowPaidForm(false);
       await load({ silent: true });
@@ -226,6 +255,40 @@ export default function CustomerDetailPage() {
       );
     } finally {
       setSavingPaid(false);
+    }
+  }
+
+  async function onAddInstrument() {
+    const amount = Number(instrumentAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error(t("customerDetail.enterAmount"));
+      return;
+    }
+    if (!instrumentDue) {
+      toast.error(t("customerDetail.pickDate"));
+      return;
+    }
+    setSavingInstrument(true);
+    try {
+      await createCustomerInstrument(id, {
+        kind: instrumentKind,
+        amount,
+        recordedDate: instrumentRecorded || todayInput(),
+        dueDate: instrumentDue,
+        notes: instrumentNotes.trim() || undefined,
+      });
+      toast.success(t("customerDetail.chequePromiseSaved"));
+      setInstrumentAmount("");
+      setInstrumentNotes("");
+      setInstrumentDue("");
+      setInstrumentRecorded(todayInput());
+      setInstrumentKind("cheque");
+      setShowInstrumentForm(false);
+      await load({ silent: true });
+    } catch (err) {
+      toast.error(apiError(err, t("customerDetail.chequePromiseFailed")));
+    } finally {
+      setSavingInstrument(false);
     }
   }
 
@@ -295,6 +358,8 @@ export default function CustomerDetailPage() {
           </Card>
         ))}
       </div>
+
+      <PartyChequePromiseSummary instruments={instruments} />
 
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -467,7 +532,13 @@ export default function CustomerDetailPage() {
                 <select
                   className="h-9 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
                   value={paidMethod}
-                  onChange={(e) => setPaidMethod(e.target.value)}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setPaidMethod(next);
+                    if (next === "cheque" && !paidChequeDate) {
+                      setPaidChequeDate(paidDate);
+                    }
+                  }}
                 >
                   <option value="cash">{t("common.cash")}</option>
                   <option value="cheque">{t("common.cheque")}</option>
@@ -475,11 +546,26 @@ export default function CustomerDetailPage() {
                 </select>
               </div>
               ) : null}
+              {paidKind === "payment" && paidMethod === "cheque" ? (
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("customerDetail.chequeDate")}</Label>
+                <Input
+                  type="date"
+                  value={paidChequeDate}
+                  onChange={(e) => setPaidChequeDate(e.target.value)}
+                />
+              </div>
+              ) : null}
               <div className="flex flex-col gap-1.5">
                 <Label>{t("common.notes")}</Label>
                 <Input value={paidNotes} onChange={(e) => setPaidNotes(e.target.value)} />
               </div>
             </div>
+            {paidKind === "payment" && paidMethod === "cheque" ? (
+              <p className="mt-2 text-sm text-amber-700 dark:text-amber-400">
+                {t("customerDetail.chequePaymentHint")}
+              </p>
+            ) : null}
             <Button
               type="button"
               className="mt-3 gap-2"
@@ -487,6 +573,91 @@ export default function CustomerDetailPage() {
               onClick={() => void onAddPayment()}
             >
               {savingPaid ? <Loader2 className="size-4 animate-spin" /> : null}
+              {t("common.save")}
+            </Button>
+          </CardContent>
+        ) : null}
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle className="text-nameplate text-sm">
+              {t("customerDetail.chequePromise")}
+            </CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t("customerDetail.chequePromiseDesc")}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant={showInstrumentForm ? "outline" : "default"}
+            onClick={() => setShowInstrumentForm((v) => !v)}
+          >
+            {showInstrumentForm ? t("common.cancel") : t("customerDetail.addChequePromise")}
+          </Button>
+        </CardHeader>
+        {showInstrumentForm ? (
+          <CardContent className="pt-0">
+            <div className="mb-3 flex h-9 overflow-hidden rounded-lg border border-input">
+              <button
+                type="button"
+                className={`flex-1 px-3 text-sm ${instrumentKind === "cheque" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+                onClick={() => setInstrumentKind("cheque")}
+              >
+                {t("customerDetail.kindCheque")}
+              </button>
+              <button
+                type="button"
+                className={`flex-1 px-3 text-sm ${instrumentKind === "promise" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+                onClick={() => setInstrumentKind("promise")}
+              >
+                {t("customerDetail.kindPromise")}
+              </button>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("common.amount")}</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  value={instrumentAmount}
+                  onChange={(e) => setInstrumentAmount(e.target.value)}
+                  placeholder="0"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("common.date")}</Label>
+                <Input
+                  type="date"
+                  value={instrumentRecorded}
+                  onChange={(e) => setInstrumentRecorded(e.target.value)}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("customerDetail.dueDate")}</Label>
+                <Input
+                  type="date"
+                  value={instrumentDue}
+                  onChange={(e) => setInstrumentDue(e.target.value)}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("common.notes")}</Label>
+                <Input
+                  value={instrumentNotes}
+                  onChange={(e) => setInstrumentNotes(e.target.value)}
+                />
+              </div>
+            </div>
+            <Button
+              type="button"
+              className="mt-3 gap-2"
+              disabled={savingInstrument}
+              onClick={() => void onAddInstrument()}
+            >
+              {savingInstrument ? <Loader2 className="size-4 animate-spin" /> : null}
               {t("common.save")}
             </Button>
           </CardContent>
@@ -572,6 +743,7 @@ export default function CustomerDetailPage() {
         <PartyHistoryCalendar
           customerId={id}
           entries={entries}
+          instruments={instruments}
           onChanged={() => load({ silent: true })}
         />
       </div>

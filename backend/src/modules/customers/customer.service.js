@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const Customer = require("./customer.model");
 const CustomerLedgerEntry = require("./customer-ledger.model");
 const CustomerPayment = require("./customer-payment.model");
+const CustomerInstrument = require("./customer-instrument.model");
 const Builty = require("../builty/builty.model");
 const PartyGroup = require("../party-groups/party-group.model");
 const {
@@ -127,8 +128,11 @@ async function listLedger(customerId) {
     .populate("builty", "builtyNo billNo totalAmount builtyDate")
     .populate("payment", "amount method paymentDate notes")
     .sort({ entryDate: -1, createdAt: -1 });
-  const balance = await getBalance(customerId);
-  return { entries, balance };
+  const [balance, instruments] = await Promise.all([
+    getBalance(customerId),
+    CustomerInstrument.find({ customer: customerId }).sort({ dueDate: 1, createdAt: 1 }),
+  ]);
+  return { entries, balance, instruments };
 }
 
 function roundMoney(n) {
@@ -299,6 +303,10 @@ async function removeLedgerEntry(customerId, entryId) {
 
   if (entry.type === "payment" && entry.payment) {
     await CustomerPayment.deleteOne({ _id: entry.payment });
+    await CustomerInstrument.updateMany(
+      { payment: entry.payment },
+      { $set: { status: "pending", receivedDate: null, payment: null } }
+    );
   }
   await entry.deleteOne();
 
@@ -334,7 +342,119 @@ async function remove(id) {
     throw httpError("Cannot delete party with builties. Deactivate instead.", 409);
   }
   await CustomerLedgerEntry.deleteMany({ customer: id });
+  await CustomerInstrument.deleteMany({ customer: id });
   await customer.deleteOne();
+  return { ok: true };
+}
+
+async function listInstruments(customerId) {
+  await getById(customerId);
+  return CustomerInstrument.find({ customer: customerId }).sort({ dueDate: 1, createdAt: 1 });
+}
+
+async function listDueInstruments() {
+  const now = new Date();
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+  return CustomerInstrument.find({
+    status: "pending",
+    dueDate: { $lte: end },
+  })
+    .populate("customer", "name")
+    .sort({ dueDate: 1, createdAt: 1 })
+    .lean();
+}
+
+async function createInstrument(customerId, data = {}) {
+  await getById(customerId);
+  const kind = data.kind === "promise" ? "promise" : data.kind === "cheque" ? "cheque" : null;
+  if (!kind) throw httpError("Kind must be cheque or promise", 400);
+  const n = roundMoney(Number(data.amount));
+  if (!Number.isFinite(n) || n <= 0) {
+    throw httpError("Amount must be greater than 0", 400);
+  }
+  const instrument = await CustomerInstrument.create({
+    customer: customerId,
+    kind,
+    amount: n,
+    recordedDate: parseDate(data.recordedDate || new Date(), "Recorded date"),
+    dueDate: parseDate(data.dueDate, "Cheque/promise date"),
+    notes: data.notes?.trim() || "",
+    status: "pending",
+  });
+  return instrument;
+}
+
+async function updateInstrument(customerId, instrumentId, data = {}) {
+  await getById(customerId);
+  const row = await CustomerInstrument.findOne({ _id: instrumentId, customer: customerId });
+  if (!row) throw httpError("Cheque/promise not found", 404);
+  if (row.status === "received") {
+    throw httpError("This cheque/promise is already received", 400);
+  }
+  if (data.kind === "cheque" || data.kind === "promise") row.kind = data.kind;
+  if (data.amount !== undefined) {
+    const n = roundMoney(Number(data.amount));
+    if (!Number.isFinite(n) || n <= 0) {
+      throw httpError("Amount must be greater than 0", 400);
+    }
+    row.amount = n;
+  }
+  if (data.recordedDate !== undefined) {
+    row.recordedDate = parseDate(data.recordedDate, "Recorded date");
+  }
+  if (data.dueDate !== undefined) {
+    row.dueDate = parseDate(data.dueDate, "Cheque/promise date");
+  }
+  if (data.notes !== undefined) row.notes = String(data.notes).trim();
+  await row.save();
+  return row;
+}
+
+async function receiveInstrument(customerId, instrumentId, data = {}) {
+  await getById(customerId);
+  const row = await CustomerInstrument.findOne({ _id: instrumentId, customer: customerId });
+  if (!row) throw httpError("Cheque/promise not found", 404);
+  if (row.status === "received") {
+    throw httpError("This cheque/promise is already received", 400);
+  }
+
+  const method =
+    data.method || (row.kind === "cheque" ? "cheque" : "cash");
+  const result = await recordPayment(customerId, {
+    amount: data.amount !== undefined ? data.amount : row.amount,
+    paymentDate: data.receivedDate || data.paymentDate || new Date(),
+    method,
+    notes:
+      data.notes?.trim() ||
+      row.notes ||
+      (row.kind === "cheque" ? "Cheque received" : "Promise received"),
+    confirmDuplicate: data.confirmDuplicate,
+  });
+
+  row.status = "received";
+  row.receivedDate = parseDate(
+    data.receivedDate || data.paymentDate || new Date(),
+    "Received date"
+  );
+  row.payment = result.payment._id;
+  await row.save();
+  return {
+    instrument: row,
+    payment: result.payment,
+    balance: result.balance,
+    previousPending: result.previousPending,
+    stats: result.stats,
+  };
+}
+
+async function removeInstrument(customerId, instrumentId) {
+  await getById(customerId);
+  const row = await CustomerInstrument.findOne({ _id: instrumentId, customer: customerId });
+  if (!row) throw httpError("Cheque/promise not found", 404);
+  if (row.status === "received") {
+    throw httpError("Delete the payment from history instead", 400);
+  }
+  await row.deleteOne();
   return { ok: true };
 }
 
@@ -349,6 +469,12 @@ module.exports = {
   recordPayment,
   updateLedgerEntry,
   removeLedgerEntry,
+  listInstruments,
+  listDueInstruments,
+  createInstrument,
+  updateInstrument,
+  receiveInstrument,
+  removeInstrument,
   update,
   remove,
 };
