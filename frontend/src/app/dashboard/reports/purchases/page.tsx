@@ -38,7 +38,7 @@ export default function PurchaseReportsPage() {
   const { t } = useI18n();
   const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
   const [supplierId, setSupplierId] = useState("");
-  const [view, setView] = useState<ReportViewMode>("whole");
+  const [view, setView] = useState<ReportViewMode>("party");
   const [report, setReport] = useState<PurchaseReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<"pdf" | null>(null);

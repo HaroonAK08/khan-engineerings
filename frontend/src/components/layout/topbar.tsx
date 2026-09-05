@@ -34,7 +34,7 @@ import { LanguageToggle } from "./language-toggle";
 import { NAV_ITEMS } from "./nav-items";
 import { SidebarBrand, SidebarNav } from "./sidebar";
 import { VoiceHeaderControl } from "@/components/voice/voice-header-control";
-import { GlobalSearch } from "./global-search";
+import { SimpleCalculator } from "./simple-calculator";
 
 function currentTitleKey(pathname: string | null): MessageKey {
   if (!pathname) return "nav.dashboard";
@@ -82,7 +82,7 @@ export function Topbar() {
 
   return (
     <header className="flex h-[4.75rem] shrink-0 items-center gap-3 border-b border-sidebar-border bg-sidebar px-4 text-sidebar-foreground sm:px-6">
-      <div className="flex min-w-0 max-w-[42%] items-center gap-3 sm:max-w-[28%]">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
         <Button
           variant="ghost"
           size="icon-sm"
@@ -93,18 +93,14 @@ export function Topbar() {
           <Menu className="size-5" />
         </Button>
         <div className="min-w-0">
-          {/* <p className="font-data text-[10px] tracking-[0.2em] text-sidebar-foreground/50">
-            {t("topbar.ops")}
-          </p> */}
           <h2 className="text-nameplate truncate text-xl leading-snug">
             {t(currentTitleKey(pathname))}
           </h2>
         </div>
       </div>
 
-      <GlobalSearch />
-
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+        <SimpleCalculator />
         <ChequePromiseDueBell />
         <VoiceHeaderControl />
         {user && (

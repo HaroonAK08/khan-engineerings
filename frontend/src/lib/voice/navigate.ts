@@ -131,6 +131,11 @@ export const VOICE_ROUTES: VoiceRoute[] = [
     label: "Monthly finance",
     words: ["monthly", "monthly finance"],
   },
+  {
+    href: "/dashboard/finance/year-progress",
+    label: "Year progress",
+    words: ["year progress", "yearly progress", "year finance"],
+  },
 ];
 
 export function matchVoiceRoute(text: string): VoiceRoute | null {

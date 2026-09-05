@@ -9,7 +9,8 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, Search } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
-import { todayInput } from "@/lib/date-range";
+import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
+import { calendarDay, todayInput } from "@/lib/date-range";
 import { apiError, formatDate, formatKg, getStock } from "@/lib/materials-api";
 import {
   deleteBatch,
@@ -19,6 +20,7 @@ import {
 } from "@/lib/production-api";
 import type { StockSummary } from "@/types/materials";
 import type { Product, ProductionBatch } from "@/types/production";
+import { DateRangeFilter } from "@/components/date-range-filter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -45,6 +47,7 @@ import {
   familyRowClass,
 } from "@/lib/product-family";
 import { cn } from "@/lib/utils";
+import type { MessageKey } from "@/lib/i18n/messages";
 
 const produceSchema = z.object({
   productId: z.string().min(1, "Product is required"),
@@ -107,22 +110,25 @@ function batchMaterialType(batch: ProductionBatch): "scrap" | "daig" {
   return t === "daig" ? "daig" : "scrap";
 }
 
-function batchFamily(batch: ProductionBatch) {
+function batchFamily(batch: ProductionBatch): "hub" | "drum" {
   if (batch.family === "hub" || batch.family === "drum") return batch.family;
   const out = batch.outputs?.[0];
   if (out?.family === "hub" || out?.family === "drum") return out.family;
   const product = out?.product;
-  if (product && typeof product === "object" && (product.family === "hub" || product.family === "drum")) {
+  if (
+    product &&
+    typeof product === "object" &&
+    (product.family === "hub" || product.family === "drum")
+  ) {
     return product.family;
   }
   return batchMaterialType(batch) === "daig" ? "drum" : "hub";
 }
 
-function toDateInput(value?: string) {
+function toDateInputValue(value?: string) {
   if (!value) return todayInput();
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return todayInput();
-  return d.toISOString().slice(0, 10);
+  const day = calendarDay(value);
+  return day || todayInput();
 }
 
 function compareProductsByName(a: Product, b: Product) {
@@ -132,9 +138,53 @@ function compareProductsByName(a: Product, b: Product) {
   });
 }
 
+type DayTotals = {
+  day: string;
+  hubQty: number;
+  drumQty: number;
+  totalQty: number;
+  usedKg: number;
+  batches: ProductionBatch[];
+};
+
+function summarizeBatches(list: ProductionBatch[]) {
+  let hubQty = 0;
+  let drumQty = 0;
+  let usedKg = 0;
+  for (const b of list) {
+    const qty = batchQty(b);
+    if (batchFamily(b) === "drum") drumQty += qty;
+    else hubQty += qty;
+    usedKg += batchUsedKg(b);
+  }
+  return {
+    hubQty,
+    drumQty,
+    totalQty: hubQty + drumQty,
+    usedKg: Math.round(usedKg * 1000) / 1000,
+  };
+}
+
+function groupBatchesByDay(list: ProductionBatch[]): DayTotals[] {
+  const map = new Map<string, ProductionBatch[]>();
+  for (const b of list) {
+    const day = calendarDay(b.productionDate) || "—";
+    const rows = map.get(day) || [];
+    rows.push(b);
+    map.set(day, rows);
+  }
+  return [...map.entries()]
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([day, dayBatches]) => {
+      const totals = summarizeBatches(dayBatches);
+      return { day, batches: dayBatches, ...totals };
+    });
+}
+
 export default function ProductionHistoryPage() {
   const { t } = useI18n();
   const searchParams = useSearchParams();
+  const { dateFrom, dateTo, hydrated, isAll } = usePersistedDateRange();
   const [stock, setStock] = useState<StockSummary | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [batches, setBatches] = useState<ProductionBatch[]>([]);
@@ -144,6 +194,7 @@ export default function ProductionHistoryPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [produceFamily, setProduceFamily] = useState<"all" | "hub" | "drum">("all");
+  const [listFamily, setListFamily] = useState<"all" | "hub" | "drum">("all");
   const [productSearch, setProductSearch] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -208,12 +259,22 @@ export default function ProductionHistoryPage() {
   }, [materialType, stock, editingBatch]);
 
   const load = useCallback(async () => {
+    if (!hydrated) return;
     setLoading(true);
     try {
+      const params: {
+        status: string;
+        dateFrom?: string;
+        dateTo?: string;
+        family?: string;
+      } = { status: "completed" };
+      if (dateFrom) params.dateFrom = dateFrom;
+      if (dateTo) params.dateTo = dateTo;
+      if (listFamily !== "all") params.family = listFamily;
       const [stockData, productData, batchData] = await Promise.all([
         getStock(),
         listProducts({ active: "true" }),
-        listBatches({ status: "completed" }),
+        listBatches(params),
       ]);
       setStock(stockData);
       setProducts(productData);
@@ -223,7 +284,7 @@ export default function ProductionHistoryPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [hydrated, dateFrom, dateTo, listFamily]);
 
   useEffect(() => {
     const timer = setTimeout(load, 150);
@@ -232,10 +293,7 @@ export default function ProductionHistoryPage() {
 
   useEffect(() => {
     if (!selectedProduct) return;
-    form.setValue(
-      "materialType",
-      selectedProduct.family === "drum" ? "daig" : "scrap"
-    );
+    form.setValue("materialType", selectedProduct.family === "drum" ? "daig" : "scrap");
   }, [selectedProduct, form]);
 
   useEffect(() => {
@@ -257,17 +315,19 @@ export default function ProductionHistoryPage() {
     });
   }, [batches, q]);
 
+  const periodSummary = useMemo(() => summarizeBatches(visibleBatches), [visibleBatches]);
+  const dayGroups = useMemo(() => groupBatchesByDay(visibleBatches), [visibleBatches]);
+
   const produceProducts = useMemo(() => {
     let list = products;
     if (produceFamily !== "all") {
       list = list.filter((p) => p.family === produceFamily);
     }
-    const q = productSearch.trim().toLowerCase();
-    if (q) {
+    const search = productSearch.trim().toLowerCase();
+    if (search) {
       list = list.filter(
         (p) =>
-          p.name.toLowerCase().includes(q) ||
-          p.family.toLowerCase().includes(q)
+          p.name.toLowerCase().includes(search) || p.family.toLowerCase().includes(search)
       );
     }
     return [...list].sort(compareProductsByName);
@@ -290,10 +350,12 @@ export default function ProductionHistoryPage() {
       wastePercent: batchWastePercent(batch),
       metalKg: batchMetalKg(batch) || 1,
       materialType: batchMaterialType(batch),
-      productionDate: toDateInput(batch.productionDate),
+      productionDate: toDateInputValue(batch.productionDate),
     });
     setEditingId(batch._id);
-    setProduceFamily(product?.family === "hub" || product?.family === "drum" ? product.family : "all");
+    setProduceFamily(
+      product?.family === "hub" || product?.family === "drum" ? product.family : "all"
+    );
     setProductSearch("");
     setPickerOpen(false);
     setDialogOpen(true);
@@ -359,6 +421,74 @@ export default function ProductionHistoryPage() {
         <p className="mt-1 text-sm text-muted-foreground">{t("prod.historyDesc")}</p>
       </div>
 
+      <div className="flex flex-wrap items-end gap-3">
+        <DateRangeFilter showAll showToday />
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-xs text-muted-foreground">{t("prod.historyFamilyFilter")}</Label>
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
+                ["all", "prod.filter.all"],
+                ["hub", "prod.hub"],
+                ["drum", "prod.drum"],
+              ] as const
+            ).map(([value, labelKey]) => (
+              <Button
+                key={value}
+                type="button"
+                size="sm"
+                variant={listFamily === value ? "default" : "outline"}
+                className={familyFilterChipClass(value, listFamily === value)}
+                onClick={() => setListFamily(value)}
+              >
+                {t(labelKey)}
+              </Button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-nameplate text-sm">{t("prod.historySummary")}</CardTitle>
+          <CardDescription>
+            {isAll ? t("common.all") : `${dateFrom || "…"} → ${dateTo || "…"}`}
+            {listFamily !== "all" ? ` · ${t(`prod.${listFamily}` as MessageKey)}` : ""}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {[
+              {
+                label: t("prod.historyTotalHub"),
+                value: String(periodSummary.hubQty),
+                className: "text-sky-700 dark:text-sky-300",
+              },
+              {
+                label: t("prod.historyTotalDrum"),
+                value: String(periodSummary.drumQty),
+                className: "text-yellow-800 dark:text-yellow-300",
+              },
+              {
+                label: t("prod.historyTotalQty"),
+                value: String(periodSummary.totalQty),
+              },
+              {
+                label: t("prod.historyTotalUsed"),
+                value: formatKg(periodSummary.usedKg),
+              },
+            ].map((s) => (
+              <div key={s.label} className="rounded-lg border border-border/70 px-4 py-3">
+                <p className="font-data text-[10px] tracking-wider text-muted-foreground uppercase">
+                  {s.label}
+                </p>
+                <p className={cn("font-data mt-1 text-xl", s.className)}>{s.value}</p>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="text-nameplate text-sm">{t("prod.historyTitle")}</CardTitle>
@@ -378,48 +508,23 @@ export default function ProductionHistoryPage() {
                   <TableHead>{t("prod.col.product")}</TableHead>
                   <TableHead className="text-right">{t("prod.col.qty")}</TableHead>
                   <TableHead className="text-right">{t("prod.col.usedKg")}</TableHead>
+                  <TableHead className="text-right">{t("prod.historyDayHub")}</TableHead>
+                  <TableHead className="text-right">{t("prod.historyDayDrum")}</TableHead>
+                  <TableHead className="text-right">{t("prod.historyDayTotal")}</TableHead>
                   <TableHead>{t("prod.col.date")}</TableHead>
                   <TableHead className="text-right">{t("prod.col.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {visibleBatches.map((b) => (
-                  <TableRow key={b._id} className={familyRowClass(batchFamily(b))}>
-                    <TableCell className="text-sm">{batchProductName(b)}</TableCell>
-                    <TableCell className="font-data text-right text-xs">{batchQty(b)}</TableCell>
-                    <TableCell className="font-data text-right text-xs">
-                      {formatKg(batchUsedKg(b))}
-                    </TableCell>
-                    <TableCell className="font-data text-xs">
-                      {formatDate(b.productionDate)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => openEdit(b)}
-                        >
-                          {t("prod.edit")}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive hover:text-destructive"
-                          disabled={deletingId === b._id}
-                          onClick={() => void onDelete(b)}
-                        >
-                          {deletingId === b._id ? (
-                            <Loader2 className="size-4 animate-spin" />
-                          ) : (
-                            t("prod.delete")
-                          )}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                {dayGroups.map((group) => (
+                  <DayGroupRows
+                    key={group.day}
+                    group={group}
+                    deletingId={deletingId}
+                    onEdit={openEdit}
+                    onDelete={onDelete}
+                    t={t}
+                  />
                 ))}
               </TableBody>
             </Table>
@@ -606,5 +711,78 @@ export default function ProductionHistoryPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function DayGroupRows({
+  group,
+  deletingId,
+  onEdit,
+  onDelete,
+  t,
+}: {
+  group: DayTotals;
+  deletingId: string | null;
+  onEdit: (batch: ProductionBatch) => void;
+  onDelete: (batch: ProductionBatch) => void;
+  t: (key: MessageKey) => string;
+}) {
+  return (
+    <>
+      <TableRow className="bg-muted/40 hover:bg-muted/40">
+        <TableCell colSpan={3} className="font-medium">
+          {group.day === "—" ? "—" : formatDate(group.day)}
+          <span className="ml-2 text-xs font-normal text-muted-foreground">
+            {group.batches.length} {t("prod.col.batch")} · {t("prod.historyDayUsed")}:{" "}
+            {formatKg(group.usedKg)} kg
+          </span>
+        </TableCell>
+        <TableCell className="font-data text-right text-xs text-sky-700 dark:text-sky-300">
+          {group.hubQty}
+        </TableCell>
+        <TableCell className="font-data text-right text-xs text-yellow-800 dark:text-yellow-300">
+          {group.drumQty}
+        </TableCell>
+        <TableCell className="font-data text-right text-xs font-medium">{group.totalQty}</TableCell>
+        <TableCell />
+        <TableCell />
+      </TableRow>
+      {group.batches.map((b) => (
+        <TableRow key={b._id} className={familyRowClass(batchFamily(b))}>
+          <TableCell className="text-sm">{batchProductName(b)}</TableCell>
+          <TableCell className="font-data text-right text-xs">{batchQty(b)}</TableCell>
+          <TableCell className="font-data text-right text-xs">{formatKg(batchUsedKg(b))}</TableCell>
+          <TableCell className="font-data text-right text-xs text-sky-700/80 dark:text-sky-300/80">
+            {group.hubQty}
+          </TableCell>
+          <TableCell className="font-data text-right text-xs text-yellow-800/80 dark:text-yellow-300/80">
+            {group.drumQty}
+          </TableCell>
+          <TableCell className="font-data text-right text-xs">{group.totalQty}</TableCell>
+          <TableCell className="font-data text-xs">{formatDate(b.productionDate)}</TableCell>
+          <TableCell className="text-right">
+            <div className="flex justify-end gap-1">
+              <Button type="button" variant="ghost" size="sm" onClick={() => onEdit(b)}>
+                {t("prod.edit")}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                disabled={deletingId === b._id}
+                onClick={() => void onDelete(b)}
+              >
+                {deletingId === b._id ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  t("prod.delete")
+                )}
+              </Button>
+            </div>
+          </TableCell>
+        </TableRow>
+      ))}
+    </>
   );
 }

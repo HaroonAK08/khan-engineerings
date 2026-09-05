@@ -464,6 +464,152 @@ export async function downloadCustomersOverviewExport(params: {
   triggerDownload(data as Blob, "customers-overview-statement.pdf");
 }
 
+export type YearlyBuiltyRow = {
+  id: string;
+  builtyNo: string;
+  billNo?: string;
+  date: string;
+  items?: Array<{
+    name: string;
+    quantity: number;
+    weightKg?: number;
+    unitPrice?: number;
+    ratePerKg?: number;
+    pricingMode?: string;
+    lineTotal: number;
+    label?: string;
+  }>;
+  itemsLabel?: string;
+  total: number;
+  paid: number;
+  left: number;
+  paymentStatus: string;
+  href: string;
+};
+
+export type YearlyMonthBlock = {
+  key: string;
+  label: string;
+  builties: YearlyBuiltyRow[];
+  totals: {
+    billed: number;
+    paid: number;
+    leftover: number;
+    builtyCount: number;
+  };
+};
+
+export type YearlyPartyDetail = {
+  partyId: string;
+  name: string;
+  phone?: string;
+  groupId: string;
+  groupName: string;
+  summary: {
+    billed: number;
+    paid: number;
+    leftover: number;
+    builtyCount: number;
+  };
+  months: YearlyMonthBlock[];
+  openBeforeYear: YearlyBuiltyRow[];
+};
+
+export type YearlyBillReport = {
+  year: number;
+  period?: {
+    from: string | null;
+    to: string | null;
+    label: string;
+  };
+  group?: { id: string; name: string } | null;
+  party?: { id: string; name: string } | null;
+  totals: {
+    billed: number;
+    paid: number;
+    leftover: number;
+    builtyCount: number;
+    partyCount: number;
+    groupCount: number;
+  };
+  byParty: Array<{
+    partyId: string;
+    name: string;
+    phone?: string;
+    groupId: string;
+    groupName: string;
+    billed: number;
+    paid: number;
+    leftover: number;
+    builtyCount: number;
+  }>;
+  byGroup: Array<{
+    groupId: string;
+    name: string;
+    billed: number;
+    paid: number;
+    leftover: number;
+    builtyCount: number;
+    partyCount: number;
+  }>;
+  parties: YearlyPartyDetail[];
+};
+
+export async function getYearlyBillReport(params?: {
+  year?: number | string;
+  groupId?: string;
+  customerId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}) {
+  const { data } = await api.get<{ report: YearlyBillReport }>("/reports/yearly", {
+    params,
+  });
+  return data.report;
+}
+
+export async function downloadYearlyBillExport(params: {
+  format?: "pdf" | "xlsx";
+  year: number | string;
+  customerId?: string;
+  groupId?: string;
+  monthKey?: string;
+  previousIds?: string[];
+  monthIds?: string[];
+  includePrevious?: boolean;
+  mode?: "bill" | "year";
+  dateFrom?: string;
+  dateTo?: string;
+}) {
+  const query: Record<string, string> = {
+    format: params.format || "pdf",
+    year: String(params.year),
+  };
+  if (params.customerId) query.customerId = params.customerId;
+  if (params.groupId) query.groupId = params.groupId;
+  if (params.mode) query.mode = params.mode;
+  if (params.dateFrom) query.dateFrom = params.dateFrom;
+  if (params.dateTo) query.dateTo = params.dateTo;
+  if (params.monthKey) {
+    query.monthKey = params.monthKey;
+    query.mode = params.mode || "bill";
+  }
+  if (params.includePrevious === false) {
+    query.includePrevious = "0";
+  } else if (params.previousIds) {
+    query.previousIds = params.previousIds.join(",");
+  }
+  if (params.monthIds && params.monthIds.length > 0) {
+    query.monthIds = params.monthIds.join(",");
+  }
+  const { data } = await api.get("/reports/export/yearly", {
+    params: query,
+    responseType: "blob",
+  });
+  const name = params.monthKey ? "yearly-bill.pdf" : "yearly-record.pdf";
+  triggerDownload(data as Blob, name);
+}
+
 function triggerDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");

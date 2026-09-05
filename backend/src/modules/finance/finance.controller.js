@@ -18,6 +18,15 @@ async function monthly(req, res, next) {
   }
 }
 
+async function yearProgress(req, res, next) {
+  try {
+    const report = await financeService.getYearProgress(req.query);
+    res.json(report);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function customerRevenue(req, res, next) {
   try {
     const report = await financeService.getCustomerRevenue(req.query);
@@ -129,6 +138,7 @@ async function chargesCalculatorPreview(req, res, next) {
 module.exports = {
   overview,
   monthly,
+  yearProgress,
   customerRevenue,
   supplierExpenses,
   productProfit,

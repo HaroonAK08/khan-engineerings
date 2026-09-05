@@ -45,6 +45,15 @@ async function payables(req, res, next) {
   }
 }
 
+async function yearly(req, res, next) {
+  try {
+    const report = await reportsService.getYearlyBillReport(req.query);
+    res.json({ report });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function customerStatement(req, res, next) {
   try {
     const statement = await reportsService.customerStatement(req.params.id, req.query);
@@ -141,6 +150,15 @@ async function exportCustomersOverviewStatement(req, res, next) {
   }
 }
 
+async function exportYearlyBill(req, res, next) {
+  try {
+    const format = String(req.query.format || "pdf").toLowerCase() === "xlsx" ? "xlsx" : "pdf";
+    await reportsService.exportYearlyBill(req.query, format, res);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function exportFull(req, res, next) {
   try {
     const format = String(req.query.format || "pdf").toLowerCase() === "xlsx" ? "xlsx" : "pdf";
@@ -174,6 +192,7 @@ module.exports = {
   received,
   paid,
   payables,
+  yearly,
   customerStatement,
   supplierStatement,
   groupStatement,
@@ -192,6 +211,7 @@ module.exports = {
   exportSupplierStatement,
   exportGroupStatement,
   exportCustomersOverviewStatement,
+  exportYearlyBill,
   exportFull,
   exportCustom,
   combinedPreview,

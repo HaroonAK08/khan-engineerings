@@ -8,6 +8,7 @@ router.use(requireAuth);
 
 router.get("/overview", controller.overview);
 router.get("/monthly", controller.monthly);
+router.get("/year-progress", controller.yearProgress);
 router.get("/customer-revenue", controller.customerRevenue);
 router.get("/supplier-expenses", controller.supplierExpenses);
 router.get("/product-profit", controller.productProfit);

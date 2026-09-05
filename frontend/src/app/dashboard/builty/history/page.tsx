@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, Pencil, Trash2 } from "lucide-react";
+import { DateRangeFilter } from "@/components/date-range-filter";
 import { useI18n } from "@/hooks/use-i18n";
-import { toDateInput } from "@/lib/date-range";
+import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
 import {
   customerName,
@@ -19,7 +20,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -29,29 +29,18 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-function endOfPreviousMonth(now = new Date()) {
-  return toDateInput(new Date(now.getFullYear(), now.getMonth(), 0));
-}
-
 export default function BuiltyHistoryPage() {
   const { t } = useI18n();
   const router = useRouter();
-  const defaults = useMemo(
-    () => ({
-      dateFrom: "",
-      dateTo: endOfPreviousMonth(),
-    }),
-    []
-  );
+  const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
   const [rows, setRows] = useState<BuiltyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [paymentStatus, setPaymentStatus] = useState("");
-  const [dateFrom, setDateFrom] = useState(defaults.dateFrom);
-  const [dateTo, setDateTo] = useState(defaults.dateTo);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    if (!hydrated) return;
     setLoading(true);
     try {
       const params: {
@@ -70,7 +59,7 @@ export default function BuiltyHistoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [q, paymentStatus, dateFrom, dateTo, t]);
+  }, [q, paymentStatus, dateFrom, dateTo, hydrated, t]);
 
   useEffect(() => {
     const timer = setTimeout(load, 200);
@@ -113,38 +102,25 @@ export default function BuiltyHistoryPage() {
         <CardHeader className="pb-3">
           <CardTitle className="text-base">{t("builty.historyTitle")}</CardTitle>
           <CardDescription>{t("builty.historyDesc")}</CardDescription>
-          <div className="grid grid-cols-1 gap-2 pt-2 sm:grid-cols-2 lg:grid-cols-4">
-            <Input
-              placeholder={t("builty.search")}
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-            />
-            <select
-              className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
-              value={paymentStatus}
-              onChange={(e) => setPaymentStatus(e.target.value)}
-            >
-              <option value="">{t("builty.allPayments")}</option>
-              <option value="unpaid">{t("orders.unpaid")}</option>
-              <option value="partial">{t("orders.partial")}</option>
-              <option value="paid">{t("orders.paid")}</option>
-            </select>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">{t("builty.dateFrom")}</Label>
+          <div className="flex flex-col gap-2 pt-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <Input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
+                placeholder={t("builty.search")}
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
               />
+              <select
+                className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
+                value={paymentStatus}
+                onChange={(e) => setPaymentStatus(e.target.value)}
+              >
+                <option value="">{t("builty.allPayments")}</option>
+                <option value="unpaid">{t("orders.unpaid")}</option>
+                <option value="partial">{t("orders.partial")}</option>
+                <option value="paid">{t("orders.paid")}</option>
+              </select>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">{t("builty.dateTo")}</Label>
-              <Input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-              />
-            </div>
+            <DateRangeFilter showAll showToday />
           </div>
         </CardHeader>
         <CardContent>

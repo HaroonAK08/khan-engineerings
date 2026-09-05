@@ -59,6 +59,46 @@ export type MonthlyPoint = {
   isProfit: boolean;
 };
 
+export type YearProgressMonth = {
+  year: number;
+  month: number;
+  label: string;
+  sales: number;
+  builtyCount: number;
+  productionPieces: number;
+  productionBatches: number;
+  productionKg: number;
+  purchaseSpend: number;
+  purchaseKg: number;
+  purchaseCount: number;
+  expenses: number;
+  netProfit: number;
+  cashIn: number;
+  cashOut: number;
+  cashNet: number;
+  isProfit: boolean;
+};
+
+export type YearProgressReport = {
+  year: number;
+  totals: {
+    sales: number;
+    builtyCount: number;
+    productionPieces: number;
+    productionBatches: number;
+    productionKg: number;
+    purchaseSpend: number;
+    purchaseKg: number;
+    purchaseCount: number;
+    expenses: number;
+    netProfit: number;
+    cashIn: number;
+    cashOut: number;
+    cashNet: number;
+  };
+  months: YearProgressMonth[];
+};
+
 export async function getFinanceOverview(params?: { dateFrom?: string; dateTo?: string }) {
   const { data } = await api.get<{ overview: FinanceOverview }>("/finance/overview", { params });
   return data.overview;
@@ -67,6 +107,11 @@ export async function getFinanceOverview(params?: { dateFrom?: string; dateTo?: 
 export async function getFinanceMonthly(params?: { months?: number }) {
   const { data } = await api.get<{ months: MonthlyPoint[] }>("/finance/monthly", { params });
   return data.months;
+}
+
+export async function getYearProgress(params?: { year?: number }) {
+  const { data } = await api.get<YearProgressReport>("/finance/year-progress", { params });
+  return data;
 }
 
 export async function getCustomerRevenue(params?: { dateFrom?: string; dateTo?: string }) {

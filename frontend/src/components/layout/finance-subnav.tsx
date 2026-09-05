@@ -17,6 +17,8 @@ const LINKS: Array<{ href: string; labelKey: MessageKey; exact?: boolean }> = [
     labelKey: "financeSubnav.partyMargin",
   },
   { href: "/dashboard/finance/monthly", labelKey: "financeSubnav.monthly" },
+  { href: "/dashboard/finance/year-progress", labelKey: "financeSubnav.yearProgress" },
+  { href: "/dashboard/finance/vault", labelKey: "financeSubnav.vault" },
 ];
 
 export function FinanceSubnav() {

@@ -2,9 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { formatDate, formatMoney } from "@/lib/materials-api";
 import { listDueCustomerInstruments, type CustomerInstrument } from "@/lib/sales-api";
 import { useI18n } from "@/hooks/use-i18n";
+
+const DISMISS_KEY = "ke-cheque-due-banner-dismissed";
 
 function partyIdOf(instrument: CustomerInstrument) {
   if (!instrument.customer) return "";
@@ -16,11 +19,35 @@ function partyNameOf(instrument: CustomerInstrument) {
   return instrument.customer.name || "—";
 }
 
+function partyHref(id: string) {
+  return `/dashboard/party/customers/${id}#party-history`;
+}
+
+function isDismissedThisSession() {
+  if (typeof window === "undefined") return false;
+  try {
+    return sessionStorage.getItem(DISMISS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function dismissForSession() {
+  try {
+    sessionStorage.setItem(DISMISS_KEY, "1");
+  } catch {
+    // ignore
+  }
+}
+
 export function ChequePromiseDueBanner() {
   const { t } = useI18n();
+  const router = useRouter();
   const [items, setItems] = useState<CustomerInstrument[]>([]);
+  const [dismissed, setDismissed] = useState(true);
 
   useEffect(() => {
+    setDismissed(isDismissedThisSession());
     let active = true;
     listDueCustomerInstruments()
       .then((rows) => {
@@ -34,12 +61,40 @@ export function ChequePromiseDueBanner() {
     };
   }, []);
 
-  if (items.length === 0) return null;
+  function goToParty(id: string) {
+    dismissForSession();
+    setDismissed(true);
+    router.push(partyHref(id));
+  }
+
+  function onBannerActivate() {
+    const first = items.find((item) => partyIdOf(item));
+    const id = first ? partyIdOf(first) : "";
+    if (!id) {
+      dismissForSession();
+      setDismissed(true);
+      return;
+    }
+    goToParty(id);
+  }
+
+  if (dismissed || items.length === 0) return null;
 
   const total = items.reduce((s, i) => s + (i.amount || 0), 0);
 
   return (
-    <div className="animate-cheque-due mb-4 rounded-lg border border-amber-400/70 bg-amber-50 px-4 py-3 dark:bg-amber-950/40">
+    <div
+      role="button"
+      tabIndex={0}
+      className="animate-cheque-due mb-4 cursor-pointer rounded-lg border border-amber-400/70 bg-amber-50 px-4 py-3 text-left dark:bg-amber-950/40"
+      onClick={onBannerActivate}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onBannerActivate();
+        }
+      }}
+    >
       <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
         {t("dash.chequeDueTitle", { count: items.length })}
       </p>
@@ -53,8 +108,13 @@ export function ChequePromiseDueBanner() {
             <li key={item._id}>
               {id ? (
                 <Link
-                  href={`/dashboard/party/customers/${id}`}
+                  href={partyHref(id)}
                   className="font-medium text-amber-900 underline-offset-2 hover:underline dark:text-amber-200"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    dismissForSession();
+                    setDismissed(true);
+                  }}
                 >
                   {partyNameOf(item)}
                 </Link>

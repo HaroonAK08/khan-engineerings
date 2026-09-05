@@ -18,6 +18,7 @@ const LINKS: Array<{ href: string; labelKey: MessageKey; exact?: boolean }> = [
   { href: "/dashboard/reports/costs", labelKey: "rep.nav.expenses" },
   { href: "/dashboard/reports/salaries", labelKey: "rep.nav.salaries" },
   { href: "/dashboard/reports/inventory", labelKey: "rep.nav.inventory" },
+  { href: "/dashboard/reports/yearly", labelKey: "rep.nav.yearly" },
   { href: "/dashboard/reports/statements", labelKey: "rep.nav.statements" },
 ];
 

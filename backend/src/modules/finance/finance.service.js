@@ -300,6 +300,271 @@ async function getMonthly(query = {}) {
   return { months: series };
 }
 
+function monthKey(year, month) {
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
+function emptyYearProgressMonth(year, month) {
+  return {
+    year,
+    month,
+    label: monthKey(year, month),
+    sales: 0,
+    builtyCount: 0,
+    productionPieces: 0,
+    productionBatches: 0,
+    productionKg: 0,
+    purchaseSpend: 0,
+    purchaseKg: 0,
+    purchaseCount: 0,
+    expenses: 0,
+    netProfit: 0,
+    cashIn: 0,
+    cashOut: 0,
+    cashNet: 0,
+    isProfit: true,
+  };
+}
+
+function mapMonthAgg(rows) {
+  return new Map(rows.map((r) => [monthKey(r._id.y, r._id.m), r]));
+}
+
+async function getYearProgress(query = {}) {
+  const now = new Date();
+  const yearNum = Number(query.year);
+  const year = Number.isFinite(yearNum) && yearNum >= 2000 && yearNum <= 2100
+    ? Math.trunc(yearNum)
+    : now.getFullYear();
+  const from = new Date(year, 0, 1, 0, 0, 0, 0);
+  const to = new Date(year, 11, 31, 23, 59, 59, 999);
+
+  const [
+    salesRows,
+    productionRows,
+    purchaseRows,
+    customerPayRows,
+    supplierPayRows,
+    mfgExpenseRows,
+    manualIncomeRows,
+    manualExpenseRows,
+  ] = await Promise.all([
+    Builty.aggregate([
+      { $match: dateMatch("builtyDate", from, to) },
+      {
+        $group: {
+          _id: { y: { $year: "$builtyDate" }, m: { $month: "$builtyDate" } },
+          sales: { $sum: "$totalAmount" },
+          builtyCount: { $sum: 1 },
+        },
+      },
+    ]),
+    ProductionBatch.aggregate([
+      {
+        $match: {
+          ...dateMatch("productionDate", from, to),
+          status: { $ne: "cancelled" },
+        },
+      },
+      {
+        $addFields: {
+          _pieces: {
+            $cond: [
+              { $gt: [{ $size: { $ifNull: ["$outputProgress", []] } }, 0] },
+              {
+                $sum: {
+                  $map: {
+                    input: "$outputProgress",
+                    as: "p",
+                    in: {
+                      $ifNull: [
+                        "$$p.finishedQty",
+                        { $ifNull: ["$$p.goodAfterTurning", 0] },
+                      ],
+                    },
+                  },
+                },
+              },
+              {
+                $cond: [
+                  { $gt: [{ $size: { $ifNull: ["$outputs", []] } }, 0] },
+                  {
+                    $sum: {
+                      $map: {
+                        input: "$outputs",
+                        as: "o",
+                        in: { $ifNull: ["$$o.quantity", 0] },
+                      },
+                    },
+                  },
+                  { $ifNull: ["$goodUnits", 0] },
+                ],
+              },
+            ],
+          },
+          _kg: {
+            $cond: [
+              { $gt: [{ $size: { $ifNull: ["$inputs", []] } }, 0] },
+              {
+                $sum: {
+                  $map: {
+                    input: "$inputs",
+                    as: "i",
+                    in: { $ifNull: ["$$i.quantityKg", 0] },
+                  },
+                },
+              },
+              {
+                $subtract: [
+                  { $ifNull: ["$inputScrapKg", 0] },
+                  { $ifNull: ["$returnedScrapKg", 0] },
+                ],
+              },
+            ],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: { y: { $year: "$productionDate" }, m: { $month: "$productionDate" } },
+          productionPieces: { $sum: "$_pieces" },
+          productionBatches: { $sum: 1 },
+          productionKg: { $sum: "$_kg" },
+        },
+      },
+    ]),
+    Purchase.aggregate([
+      { $match: dateMatch("purchaseDate", from, to) },
+      {
+        $group: {
+          _id: { y: { $year: "$purchaseDate" }, m: { $month: "$purchaseDate" } },
+          purchaseSpend: { $sum: "$totalAmount" },
+          purchaseKg: { $sum: "$quantityKg" },
+          purchaseCount: { $sum: 1 },
+        },
+      },
+    ]),
+    CustomerPayment.aggregate([
+      { $match: dateMatch("paymentDate", from, to) },
+      {
+        $group: {
+          _id: { y: { $year: "$paymentDate" }, m: { $month: "$paymentDate" } },
+          total: { $sum: "$amount" },
+        },
+      },
+    ]),
+    LedgerEntry.aggregate([
+      { $match: { ...dateMatch("entryDate", from, to), type: "payment" } },
+      {
+        $group: {
+          _id: { y: { $year: "$entryDate" }, m: { $month: "$entryDate" } },
+          total: { $sum: "$amount" },
+        },
+      },
+    ]),
+    BatchExpense.aggregate([
+      { $match: dateMatch("expenseDate", from, to) },
+      {
+        $group: {
+          _id: { y: { $year: "$expenseDate" }, m: { $month: "$expenseDate" } },
+          total: { $sum: "$amount" },
+        },
+      },
+    ]),
+    FinanceEntry.aggregate([
+      { $match: { ...dateMatch("entryDate", from, to), type: "income" } },
+      {
+        $group: {
+          _id: { y: { $year: "$entryDate" }, m: { $month: "$entryDate" } },
+          total: { $sum: "$amount" },
+        },
+      },
+    ]),
+    FinanceEntry.aggregate([
+      { $match: { ...dateMatch("entryDate", from, to), type: "expense" } },
+      {
+        $group: {
+          _id: { y: { $year: "$entryDate" }, m: { $month: "$entryDate" } },
+          total: { $sum: "$amount" },
+        },
+      },
+    ]),
+  ]);
+
+  const salesMap = mapMonthAgg(salesRows);
+  const productionMap = mapMonthAgg(productionRows);
+  const purchaseMap = mapMonthAgg(purchaseRows);
+  const customerPayMap = mapMonthAgg(customerPayRows);
+  const supplierPayMap = mapMonthAgg(supplierPayRows);
+  const mfgMap = mapMonthAgg(mfgExpenseRows);
+  const manualIncomeMap = mapMonthAgg(manualIncomeRows);
+  const manualExpenseMap = mapMonthAgg(manualExpenseRows);
+
+  const months = [];
+  const totals = emptyYearProgressMonth(year, 0);
+  delete totals.month;
+  delete totals.label;
+  delete totals.isProfit;
+  delete totals.year;
+
+  for (let month = 1; month <= 12; month += 1) {
+    const key = monthKey(year, month);
+    const sales = salesMap.get(key);
+    const production = productionMap.get(key);
+    const purchase = purchaseMap.get(key);
+    const customerPay = customerPayMap.get(key)?.total || 0;
+    const supplierPay = supplierPayMap.get(key)?.total || 0;
+    const mfgOps = mfgMap.get(key)?.total || 0;
+    const manualIncome = manualIncomeMap.get(key)?.total || 0;
+    const manualExpense = manualExpenseMap.get(key)?.total || 0;
+
+    const salesTotal = roundMoney((sales?.sales || 0) + manualIncome);
+    const purchaseSpend = roundMoney(purchase?.purchaseSpend || 0);
+    const expenses = roundMoney(purchaseSpend + mfgOps + manualExpense);
+    const netProfit = roundMoney(salesTotal - expenses);
+    const cashIn = roundMoney(customerPay + manualIncome);
+    const cashOut = roundMoney(supplierPay + mfgOps + manualExpense);
+    const cashNet = roundMoney(cashIn - cashOut);
+
+    const point = {
+      year,
+      month,
+      label: key,
+      sales: salesTotal,
+      builtyCount: sales?.builtyCount || 0,
+      productionPieces: Math.round(production?.productionPieces || 0),
+      productionBatches: production?.productionBatches || 0,
+      productionKg: roundKg(production?.productionKg || 0),
+      purchaseSpend,
+      purchaseKg: roundKg(purchase?.purchaseKg || 0),
+      purchaseCount: purchase?.purchaseCount || 0,
+      expenses,
+      netProfit,
+      cashIn,
+      cashOut,
+      cashNet,
+      isProfit: netProfit >= 0,
+    };
+    months.push(point);
+
+    totals.sales = roundMoney(totals.sales + point.sales);
+    totals.builtyCount += point.builtyCount;
+    totals.productionPieces += point.productionPieces;
+    totals.productionBatches += point.productionBatches;
+    totals.productionKg = roundKg(totals.productionKg + point.productionKg);
+    totals.purchaseSpend = roundMoney(totals.purchaseSpend + point.purchaseSpend);
+    totals.purchaseKg = roundKg(totals.purchaseKg + point.purchaseKg);
+    totals.purchaseCount += point.purchaseCount;
+    totals.expenses = roundMoney(totals.expenses + point.expenses);
+    totals.netProfit = roundMoney(totals.netProfit + point.netProfit);
+    totals.cashIn = roundMoney(totals.cashIn + point.cashIn);
+    totals.cashOut = roundMoney(totals.cashOut + point.cashOut);
+    totals.cashNet = roundMoney(totals.cashNet + point.cashNet);
+  }
+
+  return { year, totals, months };
+}
+
 async function getCustomerRevenue(query = {}) {
   const { from, to } = periodBounds(query);
 
@@ -2932,6 +3197,7 @@ module.exports = {
   removeEntry,
   getOverview,
   getMonthly,
+  getYearProgress,
   getCustomerRevenue,
   getSupplierExpenses,
   getProductProfitability,

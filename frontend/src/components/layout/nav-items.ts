@@ -19,6 +19,8 @@ import {
   ScrollText,
   FolderKanban,
   CalendarDays,
+  CalendarRange,
+  Shield,
   Mic,
   History,
 } from "lucide-react";
@@ -67,6 +69,16 @@ export const FINANCE_CHILDREN: NavChild[] = [
     labelKey: "financeSubnav.monthly",
     href: "/dashboard/finance/monthly",
     icon: CalendarDays,
+  },
+  {
+    labelKey: "financeSubnav.yearProgress",
+    href: "/dashboard/finance/year-progress",
+    icon: CalendarRange,
+  },
+  {
+    labelKey: "financeSubnav.vault",
+    href: "/dashboard/finance/vault",
+    icon: Shield,
   },
 ];
 

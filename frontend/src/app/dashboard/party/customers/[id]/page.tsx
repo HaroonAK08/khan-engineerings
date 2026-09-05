@@ -160,6 +160,19 @@ export default function CustomerDetailPage() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (loading) return;
+    if (typeof window === "undefined") return;
+    if (window.location.hash !== "#party-history") return;
+    const timer = window.setTimeout(() => {
+      document.getElementById("party-history")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [loading, id]);
+
   async function onAddPreviousPending() {
     const amount = Number(pendingAmount);
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -733,7 +746,7 @@ export default function CustomerDetailPage() {
         )}
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div id="party-history" className="flex flex-col gap-2 scroll-mt-20">
         <div>
           <h2 className="text-nameplate text-sm">{t("customerDetail.ledgerTitle")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">

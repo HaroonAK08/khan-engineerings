@@ -141,12 +141,12 @@ export default function ReceivablesReportPage() {
     setView("party");
   }
 
-  const byGroup = (report?.byGroup || []).filter((g) => Boolean(g.groupId));
+  const byGroup = report?.byGroup || [];
   const groupViewTotals = {
     totalReceivable: byGroup.reduce((s, g) => s + (g.balance || 0), 0),
     partyCount: byGroup.reduce((s, g) => s + (g.partyCount || 0), 0),
     recordCount: byGroup.reduce((s, g) => s + (g.recordCount || 0), 0),
-    groupCount: byGroup.length,
+    groupCount: byGroup.filter((g) => Boolean(g.groupId)).length,
   };
   const drilledGroup = Boolean(groupId) && !partyId;
   const drilledParty = Boolean(partyId);
@@ -346,7 +346,7 @@ export default function ReceivablesReportPage() {
                           }}
                         >
                           <TableCell className="font-medium text-primary underline-offset-2 hover:underline">
-                            {g.name}
+                            {g.groupId ? g.name : t("recvReports.ungrouped")}
                           </TableCell>
                           <TableCell className="font-data text-right text-xs">
                             {g.partyCount}
@@ -524,6 +524,94 @@ export default function ReceivablesReportPage() {
                     <TableFooter>
                       <TableRow>
                         <TableCell colSpan={6} className="font-medium">
+                          {t("recvReports.grandTotal")}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-sm font-medium text-destructive">
+                          {formatMoney(report.totals.totalReceivable)}
+                        </TableCell>
+                      </TableRow>
+                    </TableFooter>
+                  ) : null}
+                </Table>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {view === "whole" && !drilledParty ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-nameplate text-sm">{t("recvReports.allRecords")}</CardTitle>
+                <CardDescription>
+                  {isAll ? t("recvReports.currentOutstanding") : t("recvReports.periodUnpaid")}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="px-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t("common.date")}</TableHead>
+                      <TableHead>{t("recvReports.col.party")}</TableHead>
+                      <TableHead>{t("recvReports.col.type")}</TableHead>
+                      <TableHead>{t("recvReports.col.reference")}</TableHead>
+                      <TableHead>{t("recvReports.col.products")}</TableHead>
+                      <TableHead className="text-right">{t("recvReports.col.total")}</TableHead>
+                      <TableHead className="text-right">{t("recvReports.col.paid")}</TableHead>
+                      <TableHead className="text-right">{t("recvReports.col.balance")}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {report.records.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-muted-foreground">
+                          {t("recvReports.empty")}
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      report.records.map((r) => (
+                        <TableRow key={`${r.type}-${r.id}`}>
+                          <TableCell className="font-data text-xs whitespace-nowrap">
+                            {formatDate(r.date)}
+                          </TableCell>
+                          <TableCell className="text-sm">{r.partyName}</TableCell>
+                          <TableCell className="text-sm">{typeLabel(r.type)}</TableCell>
+                          <TableCell>
+                            <Link href={r.href} className="font-data text-xs hover:underline">
+                              {r.reference}
+                            </Link>
+                          </TableCell>
+                          <TableCell className="max-w-[16rem]">
+                            {r.products && r.products.length > 0 ? (
+                              <div className="flex flex-col gap-0.5">
+                                {r.products.map((line, index) => (
+                                  <span
+                                    key={`${r.id}-p-${index}`}
+                                    className="text-sm leading-snug"
+                                  >
+                                    {line}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-sm text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="font-data text-right text-xs">
+                            {formatMoney(r.totalAmount)}
+                          </TableCell>
+                          <TableCell className="font-data text-right text-xs">
+                            {formatMoney(r.amountPaid)}
+                          </TableCell>
+                          <TableCell className="font-data text-right text-xs text-destructive">
+                            {formatMoney(r.balance)}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                  {report.records.length > 0 ? (
+                    <TableFooter>
+                      <TableRow>
+                        <TableCell colSpan={7} className="font-medium">
                           {t("recvReports.grandTotal")}
                         </TableCell>
                         <TableCell className="font-data text-right text-sm font-medium text-destructive">
