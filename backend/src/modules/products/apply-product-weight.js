@@ -41,9 +41,12 @@ async function applyProductWeightFromDate(productId, weightKg, fromDate) {
       changed = true;
     }
     if (!changed) continue;
-    builty.totalAmount = roundMoney(
+    const subtotal = roundMoney(
       (builty.items || []).reduce((sum, line) => sum + (Number(line.lineTotal) || 0), 0)
     );
+    const discount = roundMoney(Math.min(Number(builty.discountAmount) || 0, subtotal));
+    builty.discountAmount = discount;
+    builty.totalAmount = roundMoney(Math.max(0, subtotal - discount));
     await builty.save();
     customerIds.add(String(builty.customer));
     builtyCount += 1;

@@ -488,8 +488,24 @@ async function exportSales(query, format, res) {
     o.paymentStatus,
   ]);
 
+  const itemColumns = ["Product", "Family", "Qty sold", "Avg price", "Sales"];
+  const itemRows = (report.byProduct || []).map((p) => [
+    p.name,
+    p.family === "drum" ? "Drum" : "Hub",
+    p.quantity,
+    money(p.avgUnitPrice),
+    money(p.revenue),
+  ]);
+
   if (format === "pdf") {
     const sections = [];
+    if ((report.byProduct || []).length) {
+      sections.push({
+        heading: "Items sold",
+        columns: itemColumns,
+        rows: itemRows,
+      });
+    }
     if (drilledParty) {
       sections.push({
         heading: `All builties — ${report.party?.name || "Party"}`,
@@ -1066,7 +1082,7 @@ function inDateRange(date, dateFrom, dateTo) {
  * then older, then previous pending). With no dates = full outstanding (khata).
  * With a date range = unpaid builties / pending in that period only.
  */
-async function getReceivablesReport({ dateFrom, dateTo, groupId, customerId } = {}) {
+async function getReceivablesReport({ dateFrom, dateTo, groupId, customerId, asOfDate } = {}) {
   const PartyGroup = require("../party-groups/party-group.model");
   let allowedCustomerIds = null;
   let groupMeta = null;
@@ -1101,10 +1117,12 @@ async function getReceivablesReport({ dateFrom, dateTo, groupId, customerId } = 
     }
   }
 
+  const asOf = asOfDate ? String(asOfDate).slice(0, 10) : null;
+
   const [builties, adjustments, payments, creditAdjustments, allGroups] = await Promise.all([
     Builty.find({})
       .populate("customer", "name phone group")
-      .populate({ path: "items.product", select: "name sku" })
+      .populate({ path: "items.product", select: "name sku weightKg" })
       .sort({ builtyDate: 1, createdAt: 1 })
       .lean(),
     CustomerLedgerEntry.find({ type: "adjustment", signedAmount: { $gt: 0 } })
@@ -1122,6 +1140,7 @@ async function getReceivablesReport({ dateFrom, dateTo, groupId, customerId } = 
 
   const paymentsByCustomer = new Map();
   for (const p of payments) {
+    if (asOf && !inDateRange(p.paymentDate, null, asOf)) continue;
     const id = String(p.customer || "");
     if (!id) continue;
     const list = paymentsByCustomer.get(id) || [];
@@ -1133,6 +1152,7 @@ async function getReceivablesReport({ dateFrom, dateTo, groupId, customerId } = 
     paymentsByCustomer.set(id, list);
   }
   for (const a of creditAdjustments) {
+    if (asOf && !inDateRange(a.entryDate, null, asOf)) continue;
     const id = String(a.customer || "");
     if (!id) continue;
     const list = paymentsByCustomer.get(id) || [];
@@ -1169,6 +1189,7 @@ async function getReceivablesReport({ dateFrom, dateTo, groupId, customerId } = 
   }
 
   for (const a of adjustments) {
+    if (asOf && !inDateRange(a.entryDate, null, asOf)) continue;
     const cust = a.customer;
     const id = cust && typeof cust === "object" ? cust._id : a.customer;
     const party = ensureParty(cust, id);
@@ -1180,23 +1201,24 @@ async function getReceivablesReport({ dateFrom, dateTo, groupId, customerId } = 
       reference: a.notes?.trim() || "Previous pending",
       totalAmount: roundMoney(a.signedAmount || a.amount),
       products: [],
+      productLines: [],
       href: `/dashboard/party/customers/${party.id}`,
     });
   }
 
   for (const b of builties) {
+    if (asOf && !inDateRange(b.builtyDate, null, asOf)) continue;
     const cust = b.customer;
     const id = cust && typeof cust === "object" ? cust._id : b.customer;
     const party = ensureParty(cust, id);
     if (!party) continue;
+    const productLines = builtyProductLines(b);
     const products = (Array.isArray(b.items) ? b.items : [])
-      .map((line) => {
-        const name =
-          line.product && typeof line.product === "object" ? line.product.name : "Item";
-        const qty = line.quantity || 0;
-        return `${name} x ${qty}`;
-      })
+      .map((line) => formatBuiltyItemLine(line))
       .filter(Boolean);
+    if (Number(b.discountAmount) > 0) {
+      products.push(`Discount given −${formatMoneyPlain(b.discountAmount)}`);
+    }
     party.builties.push({
       type: "builty",
       id: String(b._id),
@@ -1204,6 +1226,7 @@ async function getReceivablesReport({ dateFrom, dateTo, groupId, customerId } = 
       reference: b.builtyNo,
       totalAmount: roundMoney(b.totalAmount),
       products,
+      productLines,
       href: `/dashboard/builty/${b._id}`,
     });
   }
@@ -1245,6 +1268,7 @@ async function getReceivablesReport({ dateFrom, dateTo, groupId, customerId } = 
         partyPhone: party.phone,
         groupId: party.groupId || "",
         products: item.products || [],
+        productLines: item.productLines || [],
         totalAmount: item.totalAmount,
         amountPaid,
         balance,
@@ -1309,6 +1333,97 @@ async function getReceivablesReport({ dateFrom, dateTo, groupId, customerId } = 
     byParty,
     byGroup,
     records,
+  };
+}
+
+/**
+ * Jan–Dec matrix of receivables as of a selected date (payments after that date ignored).
+ * Overall = rows are party groups; with groupId = rows are parties.
+ */
+async function getMonthlyReceivablesReport({ date, year, groupId } = {}) {
+  const asOfRaw = date || toIsoDateLocal(new Date());
+  const asOf = parseDate(asOfRaw, "date");
+  asOf.setHours(23, 59, 59, 999);
+  const y = Number(year) || asOf.getFullYear();
+  const bounds = yearBounds(y);
+  const dateFrom = toIsoDateLocal(bounds.start);
+  const dateTo = toIsoDateLocal(asOf);
+  const asOfIso = toIsoDateLocal(asOf);
+
+  const report = await getReceivablesReport({
+    dateFrom,
+    dateTo,
+    asOfDate: asOfIso,
+    groupId: groupId || undefined,
+  });
+
+  const months = MONTH_LABELS.map((label, i) => ({
+    key: `${y}-${String(i + 1).padStart(2, "0")}`,
+    label,
+  }));
+
+  function emptyMonthMap() {
+    return Object.fromEntries(months.map((m) => [m.key, 0]));
+  }
+
+  const mode = groupId ? "party" : "group";
+  const groupNameById = new Map(
+    (report.byGroup || []).map((g) => [g.groupId || "__ungrouped__", g.name || "Ungrouped"])
+  );
+
+  const rowsMap = new Map();
+  for (const r of report.records || []) {
+    const mk = monthKeyFromDate(r.date);
+    if (!mk.startsWith(`${y}-`)) continue;
+    const balance = roundMoney(r.balance || 0);
+    if (balance <= 0) continue;
+
+    let rowId;
+    let rowName;
+    if (mode === "party") {
+      rowId = r.partyId || r.partyName || "unknown";
+      rowName = r.partyName || "—";
+    } else {
+      rowId = r.groupId || "__ungrouped__";
+      rowName = groupNameById.get(rowId) || (r.groupId ? "—" : "Ungrouped");
+    }
+
+    if (!rowsMap.has(rowId)) {
+      rowsMap.set(rowId, {
+        id: rowId === "__ungrouped__" ? "" : rowId,
+        name: rowName,
+        months: emptyMonthMap(),
+        total: 0,
+      });
+    }
+    const row = rowsMap.get(rowId);
+    row.months[mk] = roundMoney((row.months[mk] || 0) + balance);
+    row.total = roundMoney(row.total + balance);
+  }
+
+  const rows = [...rowsMap.values()].sort((a, b) => b.total - a.total);
+  const monthTotals = emptyMonthMap();
+  let grandTotal = 0;
+  for (const row of rows) {
+    for (const m of months) {
+      monthTotals[m.key] = roundMoney((monthTotals[m.key] || 0) + (row.months[m.key] || 0));
+    }
+    grandTotal = roundMoney(grandTotal + row.total);
+  }
+
+  return {
+    year: y,
+    asOf: asOfIso,
+    period: { from: dateFrom, to: dateTo },
+    group: report.group || null,
+    mode,
+    months,
+    rows,
+    totals: {
+      months: monthTotals,
+      total: grandTotal,
+      rowCount: rows.length,
+    },
   };
 }
 
@@ -1756,6 +1871,35 @@ function formatBuiltyItemLine(line) {
   if (weight > 0 && !nameHasKg) head += ` - ${formatMoneyPlain(weight)}kg`;
   head += ` × ${formatMoneyPlain(qty)}`;
   return `${head}  |  ${formatMoneyPlain(unit)} × ${formatMoneyPlain(qty)} = ${formatMoneyPlain(total)}`;
+}
+
+function builtyProductLines(b) {
+  const lines = (Array.isArray(b.items) ? b.items : [])
+    .map((line) => {
+      const name =
+        line.product && typeof line.product === "object" ? line.product.name : "Item";
+      const qty = Number(line.quantity) || 0;
+      let unit = Number(line.unitPrice) || 0;
+      const total = Number(line.lineTotal) || 0;
+      if (unit <= 0 && qty > 0 && total > 0) unit = total / qty;
+      return {
+        name: String(name || "Item").trim(),
+        quantity: qty,
+        unitPrice: roundMoney(unit),
+        lineTotal: roundMoney(total),
+      };
+    })
+    .filter((line) => line.name);
+  if (Number(b.discountAmount) > 0) {
+    const discount = roundMoney(b.discountAmount);
+    lines.push({
+      name: "Discount given",
+      quantity: 1,
+      unitPrice: roundMoney(-discount),
+      lineTotal: roundMoney(-discount),
+    });
+  }
+  return lines;
 }
 
 function builtyItemsLabel(b) {
@@ -2389,21 +2533,68 @@ async function exportReceivables(query, format, res) {
     "Type",
     "Reference",
     "Party",
-    "Products",
     "Total",
     "Paid",
     "Balance",
   ];
+  const recordColWidths = [0.11, 0.12, 0.16, 0.19, 0.14, 0.14, 0.14];
+  const recordColAlign = ["left", "left", "left", "left", "right", "right", "right"];
   const recordRows = (report.records || []).map((r) => [
     fmtDate(r.date),
     r.type === "previous_pending" ? "Previous pending" : "Builty",
     r.reference,
     r.partyName,
-    Array.isArray(r.products) && r.products.length ? r.products.join(", ") : "—",
     money(r.totalAmount),
     money(r.amountPaid),
     money(r.balance),
   ]);
+
+  const itemColumns = ["Product", "Qty", "Price", "Amount"];
+  const itemColWidths = [0.46, 0.12, 0.21, 0.21];
+  const itemColAlign = ["left", "right", "right", "right"];
+
+  function pushRecordsSections(sections) {
+    sections.push({
+      heading: "All records",
+      columns: recordColumns,
+      columnWidths: recordColWidths,
+      columnAlign: recordColAlign,
+      rows: recordRows,
+    });
+
+    for (const r of report.records || []) {
+      const lines = r.productLines || [];
+      if (!lines.length) continue;
+      const rows = lines.map((line) => [
+        line.name,
+        line.quantity,
+        money(line.unitPrice),
+        money(line.lineTotal),
+      ]);
+      const productsTotal = roundMoney(
+        lines.reduce((sum, line) => sum + (Number(line.lineTotal) || 0), 0)
+      );
+      rows.push({
+        bold: true,
+        cells: ["Builty total", "", "", money(r.totalAmount)],
+      });
+      if (Math.abs(productsTotal - Number(r.totalAmount || 0)) > 0.009) {
+        rows.splice(rows.length - 1, 0, {
+          bold: false,
+          cells: ["Line total", "", "", money(productsTotal)],
+        });
+      }
+      const when = fmtDate(r.date);
+      const heading = `Builty ${r.reference}  ·  ${r.partyName}  ·  ${when}`;
+      sections.push({
+        heading,
+        columns: itemColumns,
+        columnWidths: itemColWidths,
+        columnAlign: itemColAlign,
+        rows,
+      });
+    }
+  }
 
   if (format === "pdf") {
     const sections = [];
@@ -2415,11 +2606,7 @@ async function exportReceivables(query, format, res) {
         columns: partyColumns,
         rows: partyRows,
       });
-      sections.push({
-        heading: "All records",
-        columns: recordColumns,
-        rows: recordRows,
-      });
+      pushRecordsSections(sections);
     } else if (view === "group") {
       sections.push({
         heading: "Receivable total of each group",
@@ -2432,11 +2619,7 @@ async function exportReceivables(query, format, res) {
         columns: partyColumns,
         rows: partyRows,
       });
-      sections.push({
-        heading: "All records",
-        columns: recordColumns,
-        rows: recordRows,
-      });
+      pushRecordsSections(sections);
     } else {
       sections.push({
         heading: "Overall receivables",
@@ -2448,6 +2631,7 @@ async function exportReceivables(query, format, res) {
           ["Records", report.totals.recordCount],
         ],
       });
+      pushRecordsSections(sections);
     }
 
     const buf = await buildPdf({
@@ -2467,24 +2651,126 @@ async function exportReceivables(query, format, res) {
     return sendPdf(res, buf, "receivables-report.pdf");
   }
 
+  const excelProductSections = [];
+  for (const r of report.records || []) {
+    const lines = r.productLines || [];
+    if (!lines.length) continue;
+    excelProductSections.push({
+      heading: `Builty ${r.reference} · ${r.partyName} · ${fmtDate(r.date)}`,
+      columns: itemColumns,
+      rows: [
+        ...lines.map((line) => [
+          line.name,
+          line.quantity,
+          money(line.unitPrice),
+          money(line.lineTotal),
+        ]),
+        {
+          bold: true,
+          cells: ["Builty total", "", "", money(r.totalAmount)],
+        },
+      ],
+    });
+  }
+
   const buf = await buildExcel({
     title,
     sheetName: "Receivables",
-    columns: view === "group" ? groupColumns : view === "whole" ? ["Metric", "Value"] : recordColumns,
-    rows:
+    meta,
+    sections:
       view === "group"
-        ? groupRows
+        ? [{ heading: "By group", columns: groupColumns, rows: groupRows }]
         : view === "whole"
           ? [
-              ["Total receivables", money(report.totals.totalReceivable)],
-              ["Groups", report.totals.groupCount],
-              ["Parties", report.totals.partyCount],
-              ["Records", report.totals.recordCount],
+              {
+                heading: "Overall",
+                columns: ["Metric", "Value"],
+                rows: [
+                  ["Total receivables", money(report.totals.totalReceivable)],
+                  ["Groups", report.totals.groupCount],
+                  ["Parties", report.totals.partyCount],
+                  ["Records", report.totals.recordCount],
+                ],
+              },
+              { heading: "All records", columns: recordColumns, rows: recordRows },
+              ...excelProductSections,
             ]
-          : recordRows,
-    meta,
+          : [
+              { heading: "By party", columns: partyColumns, rows: partyRows },
+              { heading: "All records", columns: recordColumns, rows: recordRows },
+              ...excelProductSections,
+            ],
   });
   return sendExcel(res, buf, "receivables-report.xlsx");
+}
+
+async function exportMonthlyReceivables(query, format, res) {
+  const report = await getMonthlyReceivablesReport(query);
+  const year = report.year;
+  const rowLabel = report.mode === "party" ? "Party" : "Group";
+  const title = report.group
+    ? `Monthly receivables — ${report.group.name} (${year})`
+    : `Monthly receivables — all groups (${year})`;
+  const columns = [rowLabel, ...report.months.map((m) => m.label), "Total"];
+  const colWidths = [
+    0.16,
+    ...report.months.map(() => 0.06),
+    0.12,
+  ];
+  const colAlign = ["left", ...report.months.map(() => "right"), "right"];
+  const rows = (report.rows || []).map((r) => [
+    r.name,
+    ...report.months.map((m) => money(r.months[m.key] || 0)),
+    money(r.total),
+  ]);
+  if (rows.length > 0) {
+    rows.push({
+      bold: true,
+      cells: [
+        "Total",
+        ...report.months.map((m) => money(report.totals.months[m.key] || 0)),
+        money(report.totals.total),
+      ],
+    });
+  }
+  const meta = {
+    "As of": report.asOf || "",
+    Year: year,
+    View: report.mode === "party" ? "Party wise" : "Group wise",
+    Group: report.group?.name || "All groups",
+    "Total receivables": money(report.totals.total),
+    Rows: report.totals.rowCount,
+  };
+
+  if (format === "pdf") {
+    const buf = await buildPdf({
+      title,
+      subtitle: "Khan Engineerings",
+      layout: "landscape",
+      metaLines: Object.entries(meta).map(([k, v]) => `${k}: ${v}`),
+      sections: [
+        {
+          heading: report.group
+            ? `Receivable by month — ${report.group.name}`
+            : "Receivable by month — party groups",
+          columns,
+          columnWidths: colWidths,
+          columnAlign: colAlign,
+          rows,
+        },
+      ],
+    });
+    return sendPdf(res, buf, "monthly-receivables.pdf");
+  }
+
+  const buf = await buildExcel({
+    title,
+    sheetName: "Monthly",
+    columns,
+    rows: rows.map((r) => (Array.isArray(r) ? r : r.cells)),
+    meta,
+  });
+  return sendExcel(res, buf, "monthly-receivables.xlsx");
 }
 
 async function exportReceived(query, format, res) {
@@ -3387,6 +3673,7 @@ module.exports = {
   groupStatement,
   customersOverviewStatement,
   getReceivablesReport,
+  getMonthlyReceivablesReport,
   getReceivedReport,
   getPaidReport,
   getPayablesReport,
@@ -3398,6 +3685,7 @@ module.exports = {
   exportInventory,
   exportFinance,
   exportReceivables,
+  exportMonthlyReceivables,
   exportReceived,
   exportPaid,
   exportPayables,

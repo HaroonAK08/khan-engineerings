@@ -136,8 +136,20 @@ export default function SalesReportsHubPage() {
 
   const byGroup = report?.byGroup || [];
   const records = report?.records || [];
+  const byProduct = report?.byProduct || [];
   const drilledGroup = Boolean(groupId) && !partyId;
   const drilledParty = Boolean(partyId);
+
+  const productTotals = useMemo(() => {
+    return byProduct.reduce(
+      (acc, p) => {
+        acc.quantity += p.quantity || 0;
+        acc.revenue += p.revenue || 0;
+        return acc;
+      },
+      { quantity: 0, revenue: 0 }
+    );
+  }, [byProduct]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -268,6 +280,77 @@ export default function SalesReportsHubPage() {
               </Card>
             ))}
           </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-nameplate text-sm">
+                {t("salesReportsHub.itemsSold")}
+              </CardTitle>
+              <CardDescription>{t("salesReportsHub.itemsSoldDesc")}</CardDescription>
+            </CardHeader>
+            <CardContent className="px-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t("salesReportsHub.col.product")}</TableHead>
+                    <TableHead>{t("prod.family")}</TableHead>
+                    <TableHead className="text-right">{t("salesReportsHub.col.qty")}</TableHead>
+                    <TableHead className="text-right">{t("salesReportsHub.col.avgPrice")}</TableHead>
+                    <TableHead className="text-right">{t("salesReportsHub.col.sales")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {byProduct.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-muted-foreground">
+                        {t("salesReportsHub.none")}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    byProduct.map((p) => (
+                      <TableRow key={p.productId || p.name}>
+                        <TableCell className="font-medium">{p.name}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {p.family === "drum"
+                            ? t("salesReportsHub.family.drum")
+                            : t("salesReportsHub.family.hub")}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {p.quantity}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {formatMoney(p.avgUnitPrice)}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {formatMoney(p.revenue)}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+                {byProduct.length > 0 ? (
+                  <TableFooter>
+                    <TableRow>
+                      <TableCell colSpan={2} className="font-medium">
+                        {t("recvReports.grandTotal")}
+                      </TableCell>
+                      <TableCell className="font-data text-right text-xs">
+                        {productTotals.quantity}
+                      </TableCell>
+                      <TableCell className="font-data text-right text-xs">
+                        {productTotals.quantity > 0
+                          ? formatMoney(productTotals.revenue / productTotals.quantity)
+                          : formatMoney(0)}
+                      </TableCell>
+                      <TableCell className="font-data text-right text-sm font-medium">
+                        {formatMoney(productTotals.revenue)}
+                      </TableCell>
+                    </TableRow>
+                  </TableFooter>
+                ) : null}
+              </Table>
+            </CardContent>
+          </Card>
 
           {view === "group" && !drilledParty ? (
             <Card>

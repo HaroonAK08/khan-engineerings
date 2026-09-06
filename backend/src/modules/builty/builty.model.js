@@ -22,6 +22,7 @@ const builtySchema = new mongoose.Schema(
     builtyDate: { type: Date, required: true, index: true },
     warehouse: { type: mongoose.Schema.Types.ObjectId, ref: "Warehouse", default: null },
     items: { type: [builtyItemSchema], default: [] },
+    discountAmount: { type: Number, min: 0, default: 0 },
     totalAmount: { type: Number, required: true, min: 0, default: 0 },
     amountPaid: { type: Number, min: 0, default: 0 },
     balance: { type: Number, min: 0, default: 0 },

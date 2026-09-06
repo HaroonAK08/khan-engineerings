@@ -132,7 +132,23 @@ export default function BuiltyDetailPage() {
         </div>
         <div className="flex flex-col items-end gap-2">
           <div className="text-right">
-            <p className="font-data text-[10px] text-muted-foreground uppercase">
+            {(summary.discountAmount || 0) > 0 ? (
+              <>
+                <p className="font-data text-[10px] text-muted-foreground uppercase">
+                  {t("builtyDetail.subtotal")}
+                </p>
+                <p className="font-data text-sm text-muted-foreground">
+                  {formatMoney(summary.subtotal ?? summary.totalAmount)}
+                </p>
+                <p className="font-data mt-1 text-[10px] text-muted-foreground uppercase">
+                  {t("builtyDetail.discount")}
+                </p>
+                <p className="font-data text-sm text-muted-foreground">
+                  −{formatMoney(summary.discountAmount || 0)}
+                </p>
+              </>
+            ) : null}
+            <p className="font-data mt-1 text-[10px] text-muted-foreground uppercase">
               {t("builtyDetail.totalAmount")}
             </p>
             <p className="font-data text-2xl">{formatMoney(summary.totalAmount)}</p>

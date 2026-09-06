@@ -188,6 +188,40 @@ export async function getReceivablesReport(params?: {
   return data.report;
 }
 
+export type MonthlyReceivablesRow = {
+  id: string;
+  name: string;
+  months: Record<string, number>;
+  total: number;
+};
+
+export type MonthlyReceivablesReport = {
+  year: number;
+  asOf?: string;
+  period: { from: string; to: string };
+  group?: { id: string; name: string } | null;
+  mode: "group" | "party";
+  months: Array<{ key: string; label: string }>;
+  rows: MonthlyReceivablesRow[];
+  totals: {
+    months: Record<string, number>;
+    total: number;
+    rowCount: number;
+  };
+};
+
+export async function getMonthlyReceivablesReport(params?: {
+  date?: string;
+  year?: string | number;
+  groupId?: string;
+}) {
+  const { data } = await api.get<{ report: MonthlyReceivablesReport }>(
+    "/reports/monthly-receivables",
+    { params }
+  );
+  return data.report;
+}
+
 export type ReceivedRecord = {
   id: string;
   type: string;
@@ -305,6 +339,7 @@ export type ExportKind =
   | "inventory"
   | "finance"
   | "receivables"
+  | "monthly-receivables"
   | "received"
   | "paid"
   | "payables";

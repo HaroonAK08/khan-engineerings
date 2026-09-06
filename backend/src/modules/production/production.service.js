@@ -14,6 +14,7 @@ const {
   sameDayDuplicateError,
 } = require("../../utils/sameDay");
 const { resolveWeightKg, startOfLocalDay } = require("../../utils/product-weight");
+const { withNetLineTotal } = require("../../utils/builty-discount");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -1051,7 +1052,7 @@ async function getReport({ dateFrom, dateTo, family } = {}) {
     }
     const salesRows = await Builty.aggregate([
       ...(Object.keys(salesMatch).length ? [{ $match: salesMatch }] : []),
-      { $unwind: "$items" },
+      ...withNetLineTotal(),
       {
         $match: {
           "items.product": {
@@ -1063,7 +1064,7 @@ async function getReport({ dateFrom, dateTo, family } = {}) {
       {
         $group: {
           _id: "$items.product",
-          revenue: { $sum: "$items.lineTotal" },
+          revenue: { $sum: "$items.netLineTotal" },
           units: { $sum: "$items.quantity" },
         },
       },

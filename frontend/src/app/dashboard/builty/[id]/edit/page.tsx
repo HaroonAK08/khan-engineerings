@@ -117,6 +117,7 @@ function EditBuiltyForm() {
   const [billNo, setBillNo] = useState("");
   const [builtyDate, setBuiltyDate] = useState("");
   const [lines, setLines] = useState<Line[]>([emptyLine()]);
+  const [discountAmount, setDiscountAmount] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [productPickerIndex, setProductPickerIndex] = useState<number | null>(null);
@@ -149,6 +150,9 @@ function EditBuiltyForm() {
       setBuiltyNo(data.builty.builtyNo || "");
       setBillNo(data.builty.billNo || "");
       setBuiltyDate(toDateInput(data.builty.builtyDate));
+      setDiscountAmount(
+        Number(data.builty.discountAmount) > 0 ? String(data.builty.discountAmount) : ""
+      );
       setLines(
         (data.builty.items || []).length > 0
           ? data.builty.items.map((item) => {
@@ -306,6 +310,17 @@ function EditBuiltyForm() {
     [lines, products]
   );
 
+  const discountValue = useMemo(() => {
+    const n = Number(discountAmount);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return Math.round(Math.min(n, total) * 100) / 100;
+  }, [discountAmount, total]);
+
+  const netTotal = useMemo(
+    () => Math.round(Math.max(0, total - discountValue) * 100) / 100,
+    [total, discountValue]
+  );
+
   const familySummary = useMemo(() => {
     const hub = { qty: 0, amount: 0 };
     const drum = { qty: 0, amount: 0 };
@@ -407,6 +422,7 @@ function EditBuiltyForm() {
         billNo: billNo.trim(),
         builtyDate,
         items,
+        discountAmount: discountValue,
       });
       toast.success(t("builty.updated"));
       router.push(`/dashboard/builty/${id}`);
@@ -738,9 +754,36 @@ function EditBuiltyForm() {
               <Plus className="size-4" />
               {t("builtyNew.addMore")}
             </Button>
-            <p className="font-data text-right text-base">
-              {t("orderNew.total")} <span className="text-xl">{formatMoney(total)}</span>
-            </p>
+            <div className="flex flex-col gap-1.5 sm:ml-auto sm:max-w-xs">
+              <Label htmlFor="edit-builty-discount">{t("builtyNew.discount")}</Label>
+              <Input
+                id="edit-builty-discount"
+                type="number"
+                min={0}
+                step="0.01"
+                inputMode="decimal"
+                placeholder={t("builtyNew.discountPh")}
+                value={discountAmount}
+                onChange={(e) => setDiscountAmount(e.target.value)}
+                className="h-11 font-data"
+              />
+              <p className="text-xs text-muted-foreground">{t("builtyNew.discountHint")}</p>
+            </div>
+            <div className="font-data space-y-1 text-right text-base">
+              <p>
+                {t("builtyNew.subtotal")}{" "}
+                <span className="text-muted-foreground">{formatMoney(total)}</span>
+              </p>
+              {discountValue > 0 ? (
+                <p>
+                  {t("builtyNew.discount")}{" "}
+                  <span className="text-muted-foreground">−{formatMoney(discountValue)}</span>
+                </p>
+              ) : null}
+              <p>
+                {t("builtyNew.netTotal")} <span className="text-xl">{formatMoney(netTotal)}</span>
+              </p>
+            </div>
           </CardContent>
         </Card>
 
@@ -754,7 +797,7 @@ function EditBuiltyForm() {
               <p className="text-xs text-muted-foreground">{t("builtyNew.totalQty")}</p>
               <p className="font-data mt-1 text-xl">{familySummary.totalQty}</p>
               <p className="font-data mt-1 text-sm text-muted-foreground">
-                {formatMoney(total)}
+                {formatMoney(netTotal)}
               </p>
             </div>
             <div className="rounded-lg border border-sky-500/30 bg-sky-500/5 p-3">

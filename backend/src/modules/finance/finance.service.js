@@ -15,6 +15,7 @@ const {
   JAVED_DRUM_SHARE,
 } = require("./labour-groups");
 const mongoose = require("mongoose");
+const { withNetLineTotal } = require("../../utils/builty-discount");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -668,11 +669,11 @@ async function getProductProfitability(query = {}) {
 
   const sales = await Builty.aggregate([
     { $match: dateMatch("builtyDate", from, to) },
-    { $unwind: "$items" },
+    ...withNetLineTotal(),
     {
       $group: {
         _id: "$items.product",
-        revenue: { $sum: "$items.lineTotal" },
+        revenue: { $sum: "$items.netLineTotal" },
         unitsSold: { $sum: "$items.quantity" },
         orderLines: { $sum: 1 },
       },
@@ -1088,7 +1089,7 @@ async function getProductionMargin(query = {}) {
   async function salesInPeriod() {
     const pipeline = [
       { $match: dateMatch("builtyDate", from, to) },
-      { $unwind: "$items" },
+      ...withNetLineTotal(),
       { $match: { "items.quantity": { $gt: 0 } } },
       {
         $lookup: {
@@ -1105,7 +1106,7 @@ async function getProductionMargin(query = {}) {
             productId: "$items.product",
             family: { $ifNull: ["$productDoc.family", "hub"] },
           },
-          revenue: { $sum: "$items.lineTotal" },
+          revenue: { $sum: "$items.netLineTotal" },
           units: { $sum: "$items.quantity" },
           builtyIds: { $addToSet: "$_id" },
         },
@@ -2041,7 +2042,7 @@ async function getPartySalesMargin(query = {}) {
       },
     },
     { $unwind: { path: "$groupDoc", preserveNullAndEmptyArrays: true } },
-    { $unwind: "$items" },
+    ...withNetLineTotal(),
     {
       $project: {
         customerId: "$customer",
@@ -2050,7 +2051,7 @@ async function getPartySalesMargin(query = {}) {
         groupName: { $ifNull: ["$groupDoc.name", "(no group)"] },
         productId: "$items.product",
         quantity: { $ifNull: ["$items.quantity", 0] },
-        lineTotal: { $ifNull: ["$items.lineTotal", 0] },
+        lineTotal: { $ifNull: ["$items.netLineTotal", 0] },
         itemWeightKg: { $ifNull: ["$items.weightKg", 0] },
       },
     },

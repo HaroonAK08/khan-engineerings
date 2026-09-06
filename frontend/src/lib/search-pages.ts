@@ -296,6 +296,13 @@ export const SEARCH_PAGES: SearchPage[] = [
     group: "reports",
   },
   {
+    href: "/dashboard/reports/monthly-receivables",
+    labelKey: "rep.nav.monthlyRecv",
+    keywords: ["monthly", "receivables", "months", "january", "group", "ماہانہ", "بقایا"],
+    icon: Banknote,
+    group: "reports",
+  },
+  {
     href: "/dashboard/reports/payables",
     labelKey: "rep.nav.payables",
     keywords: ["payables", "to pay", "supplier due"],

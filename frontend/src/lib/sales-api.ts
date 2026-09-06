@@ -105,6 +105,7 @@ export type Builty = {
   customer: Customer | string;
   warehouse?: string | null;
   items: BuiltyItem[];
+  discountAmount?: number;
   totalAmount: number;
   amountPaid: number;
   balance: number;
@@ -113,6 +114,8 @@ export type Builty = {
 };
 
 export type BuiltySummary = {
+  subtotal?: number;
+  discountAmount?: number;
   totalAmount: number;
   amountPaid: number;
   balance: number;
@@ -227,6 +230,14 @@ export type SalesReport = {
     totalSales: number;
     totalPaid: number;
     outstanding: number;
+  }>;
+  byProduct?: Array<{
+    productId: string;
+    name: string;
+    family: "hub" | "drum";
+    quantity: number;
+    avgUnitPrice: number;
+    revenue: number;
   }>;
   whoOwes: Array<{
     customerId: string;
@@ -559,6 +570,7 @@ export async function createBuilty(body: {
   customer: string;
   builtyDate: string;
   items: BuiltyLineInput[];
+  discountAmount?: number;
   amountPaid?: number;
   method?: string;
   notes?: string;
@@ -576,6 +588,7 @@ export async function updateBuilty(
     builtyDate: string;
     notes: string;
     items: BuiltyLineInput[];
+    discountAmount: number;
     paymentStatus: "unpaid" | "partial" | "paid";
     amountPaid: number;
     paymentGiven: number;

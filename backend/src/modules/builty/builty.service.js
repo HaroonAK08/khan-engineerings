@@ -15,6 +15,7 @@ const {
   paidById,
 } = require("../../utils/allocate-payments");
 const { resolveWeightKg } = require("../../utils/product-weight");
+const { applyDiscount, withNetLineTotal } = require("../../utils/builty-discount");
 
 function toObjectId(id) {
   if (!id) return null;
@@ -119,8 +120,16 @@ async function assertStockAvailable() {
   return;
 }
 
+function itemsSubtotal(builty) {
+  return roundMoney(
+    (builty.items || []).reduce((sum, line) => sum + (Number(line.lineTotal) || 0), 0)
+  );
+}
+
 function summary(builty) {
   return {
+    subtotal: itemsSubtotal(builty),
+    discountAmount: roundMoney(builty.discountAmount || 0),
     totalAmount: roundMoney(builty.totalAmount || 0),
     amountPaid: roundMoney(builty.amountPaid || 0),
     balance: roundMoney(builty.balance || 0),
@@ -312,10 +321,11 @@ async function createBuilty(data) {
 
   await customerService.getById(data.customer);
   const builtyDate = parseDate(data.builtyDate || new Date(), "Builty date");
-  const { items, totalAmount } = await normalizeItems(data.items, {
+  const { items, totalAmount: subtotal } = await normalizeItems(data.items, {
     asOfDate: builtyDate,
     useAsOfWeight: true,
   });
+  const { discountAmount, totalAmount } = applyDiscount(subtotal, data.discountAmount);
 
   if (!wantsConfirmDuplicate(data)) {
     const { start, end } = dayRange(builtyDate);
@@ -346,6 +356,7 @@ async function createBuilty(data) {
     builtyDate,
     warehouse,
     items,
+    discountAmount,
     totalAmount,
     amountPaid: 0,
     balance: totalAmount,
@@ -415,6 +426,7 @@ async function updateBuilty(id, data) {
   }
   if (data.notes !== undefined) builty.notes = String(data.notes || "").trim();
 
+  let itemsChanged = false;
   if (data.items !== undefined) {
     const claimedByProduct = new Map();
     const weightByProduct = new Map();
@@ -434,7 +446,7 @@ async function updateBuilty(id, data) {
           ? Number(raw.weightKg)
           : weightByProduct.get(String(raw.product)) || undefined,
     }));
-    const { items, totalAmount } = await normalizeItems(withClaimed, {
+    const { items } = await normalizeItems(withClaimed, {
       asOfDate: builty.builtyDate,
     });
     const warehouse =
@@ -443,9 +455,21 @@ async function updateBuilty(id, data) {
     await assertStockAvailable(items, warehouse);
 
     builty.items = items;
-    builty.totalAmount = totalAmount;
     builty.warehouse = warehouse;
+    itemsChanged = true;
     await inventoryService.writeFinishedSale(builty);
+
+    const partyPriceService = require("../party-prices/party-product-price.service");
+    await partyPriceService.rememberFromItems(builty.customer, items);
+  }
+
+  if (data.discountAmount !== undefined || itemsChanged) {
+    const subtotal = itemsSubtotal(builty);
+    const discountInput =
+      data.discountAmount !== undefined ? data.discountAmount : builty.discountAmount;
+    const { discountAmount, totalAmount } = applyDiscount(subtotal, discountInput);
+    builty.discountAmount = discountAmount;
+    builty.totalAmount = totalAmount;
 
     const invoiceUpdate = await CustomerLedgerEntry.updateMany(
       { builty: builty._id, type: "invoice" },
@@ -467,9 +491,6 @@ async function updateBuilty(id, data) {
         notes: `Builty ${builty.builtyNo}`,
       });
     }
-
-    const partyPriceService = require("../party-prices/party-product-price.service");
-    await partyPriceService.rememberFromItems(builty.customer, items);
   }
 
   await builty.save();
@@ -728,7 +749,8 @@ async function getSalesReport({ dateFrom, dateTo, groupId, customerId } = {}) {
 
   const outstandingMatch = { ...match, balance: { $gt: 0 } };
 
-  const [allBuilties, outstanding, byCustomer, totals, unitTotals] = await Promise.all([
+  const [allBuilties, outstanding, byCustomer, totals, unitTotals, byProductRows] =
+    await Promise.all([
     Builty.find(match)
       .populate("customer", "name phone group")
       .sort({ builtyDate: -1, createdAt: -1 }),
@@ -771,7 +793,7 @@ async function getSalesReport({ dateFrom, dateTo, groupId, customerId } = {}) {
     ]),
     Builty.aggregate([
       { $match: match },
-      { $unwind: { path: "$items", preserveNullAndEmptyArrays: false } },
+      ...withNetLineTotal(),
       {
         $lookup: {
           from: "products",
@@ -803,18 +825,42 @@ async function getSalesReport({ dateFrom, dateTo, groupId, customerId } = {}) {
             $sum: {
               $cond: [
                 { $ne: [{ $ifNull: ["$productDoc.family", "hub"] }, "drum"] },
-                "$items.lineTotal",
+                "$items.netLineTotal",
                 0,
               ],
             },
           },
           drumSales: {
             $sum: {
-              $cond: [{ $eq: ["$productDoc.family", "drum"] }, "$items.lineTotal", 0],
+              $cond: [{ $eq: ["$productDoc.family", "drum"] }, "$items.netLineTotal", 0],
             },
           },
         },
       },
+    ]),
+    Builty.aggregate([
+      { $match: match },
+      ...withNetLineTotal(),
+      { $match: { "items.quantity": { $gt: 0 } } },
+      {
+        $lookup: {
+          from: "products",
+          localField: "items.product",
+          foreignField: "_id",
+          as: "productDoc",
+        },
+      },
+      { $unwind: { path: "$productDoc", preserveNullAndEmptyArrays: true } },
+      {
+        $group: {
+          _id: "$items.product",
+          name: { $first: { $ifNull: ["$productDoc.name", "Unknown"] } },
+          family: { $first: { $ifNull: ["$productDoc.family", "hub"] } },
+          quantity: { $sum: "$items.quantity" },
+          revenue: { $sum: "$items.netLineTotal" },
+        },
+      },
+      { $sort: { revenue: -1, name: 1 } },
     ]),
   ]);
 
@@ -885,6 +931,19 @@ async function getSalesReport({ dateFrom, dateTo, groupId, customerId } = {}) {
     .filter((g) => Boolean(g.groupId))
     .sort((a, b) => b.totalSales - a.totalSales);
 
+  const byProduct = (byProductRows || []).map((row) => {
+    const quantity = Number(row.quantity) || 0;
+    const revenue = roundMoney(row.revenue || 0);
+    return {
+      productId: row._id ? String(row._id) : "",
+      name: row.name || "Unknown",
+      family: row.family === "drum" ? "drum" : "hub",
+      quantity: Math.round(quantity),
+      avgUnitPrice: quantity > 0 ? roundMoney(revenue / quantity) : 0,
+      revenue,
+    };
+  });
+
   return {
     period: { from: dateFrom || null, to: dateTo || null },
     group: groupMeta,
@@ -906,6 +965,7 @@ async function getSalesReport({ dateFrom, dateTo, groupId, customerId } = {}) {
     outstanding: unpaidInvoices,
     topCustomers,
     byGroup,
+    byProduct,
     whoOwes: unpaidInvoices
       .reduce((acc, inv) => {
         const key = String(inv.customerId || inv.customer);
@@ -949,6 +1009,7 @@ function emptySalesReport(dateFrom, dateTo, groupMeta, partyMeta) {
     outstanding: [],
     topCustomers: [],
     byGroup: [],
+    byProduct: [],
     whoOwes: [],
   };
 }

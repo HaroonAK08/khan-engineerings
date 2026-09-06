@@ -41,6 +41,24 @@ import { useI18n } from "@/hooks/use-i18n";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 import type { MessageKey } from "@/lib/i18n/messages";
 
+function ProductLines({ lines, id }: { lines: string[]; id: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      {lines.map((line, index) => {
+        const [head, ...rest] = line.split(/\s+\|\s+/);
+        return (
+          <div key={`${id}-p-${index}`} className="leading-snug">
+            <p className="text-sm text-foreground">{head}</p>
+            {rest.length > 0 ? (
+              <p className="font-data text-[11px] text-muted-foreground">{rest.join(" | ")}</p>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function ReceivablesReportPage() {
   const { t } = useI18n();
   const { dateFrom, dateTo, hydrated, isAll } = usePersistedDateRange();
@@ -491,18 +509,9 @@ export default function ReceivablesReportPage() {
                               {r.reference}
                             </Link>
                           </TableCell>
-                          <TableCell className="max-w-[16rem]">
+                          <TableCell className="max-w-[18rem]">
                             {r.products && r.products.length > 0 ? (
-                              <div className="flex flex-col gap-0.5">
-                                {r.products.map((line, index) => (
-                                  <span
-                                    key={`${r.id}-p-${index}`}
-                                    className="text-sm leading-snug"
-                                  >
-                                    {line}
-                                  </span>
-                                ))}
-                              </div>
+                              <ProductLines lines={r.products} id={r.id} />
                             ) : (
                               <span className="text-sm text-muted-foreground">—</span>
                             )}
@@ -579,18 +588,9 @@ export default function ReceivablesReportPage() {
                               {r.reference}
                             </Link>
                           </TableCell>
-                          <TableCell className="max-w-[16rem]">
+                          <TableCell className="max-w-[18rem]">
                             {r.products && r.products.length > 0 ? (
-                              <div className="flex flex-col gap-0.5">
-                                {r.products.map((line, index) => (
-                                  <span
-                                    key={`${r.id}-p-${index}`}
-                                    className="text-sm leading-snug"
-                                  >
-                                    {line}
-                                  </span>
-                                ))}
-                              </div>
+                              <ProductLines lines={r.products} id={r.id} />
                             ) : (
                               <span className="text-sm text-muted-foreground">—</span>
                             )}
