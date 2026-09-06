@@ -55,6 +55,15 @@ async function changePin(req, res, next) {
   }
 }
 
+async function resetPin(req, res, next) {
+  try {
+    const result = await vaultService.resetWithAppPin(req.body || {});
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function listAssets(req, res, next) {
   try {
     const report = await vaultService.listAssets();
@@ -106,6 +115,7 @@ module.exports = {
   setup,
   unlock,
   changePin,
+  resetPin,
   listAssets,
   createAsset,
   updateAsset,

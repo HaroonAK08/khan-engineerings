@@ -10,6 +10,7 @@ router.get("/status", controller.status);
 router.post("/setup", controller.setup);
 router.post("/unlock", controller.unlock);
 router.post("/change-pin", controller.changePin);
+router.post("/reset-pin", controller.resetPin);
 
 router.use(controller.requireVaultUnlock);
 

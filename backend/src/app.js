@@ -38,6 +38,7 @@ app.use(
       return callback(null, false);
     },
     credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization", "X-Vault-Token"],
   })
 );
 

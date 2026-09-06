@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Delete,
@@ -44,6 +44,7 @@ import {
   isVaultUnlocked,
   listVaultAssets,
   lockVault,
+  resetVaultPin,
   setupVault,
   unlockVault,
   updateVaultAsset,
@@ -93,58 +94,61 @@ function PinPad({
   onChange,
   disabled,
   maxLen = 6,
+  label,
 }: {
   value: string;
   onChange: (next: string) => void;
   disabled?: boolean;
   maxLen?: number;
+  label: string;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
   function press(digit: string) {
     if (disabled || value.length >= maxLen) return;
     onChange(value + digit);
+    inputRef.current?.focus();
   }
   function backspace() {
     if (disabled) return;
     onChange(value.slice(0, -1));
+    inputRef.current?.focus();
   }
 
   useEffect(() => {
-    if (disabled) return;
-
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const target = e.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.isContentEditable)
-      ) {
-        return;
-      }
-
-      if (/^[0-9]$/.test(e.key)) {
-        e.preventDefault();
-        onChange(value.length >= maxLen ? value : value + e.key);
-        return;
-      }
-      if (e.key === "Backspace") {
-        e.preventDefault();
-        onChange(value.slice(0, -1));
-        return;
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onChange("");
-      }
-    }
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [disabled, maxLen, onChange, value]);
+    inputRef.current?.focus();
+  }, []);
 
   return (
     <div className="mx-auto w-full max-w-xs space-y-4">
+      <div className="grid gap-1.5">
+        <Label htmlFor="vault-pin-input" className="sr-only">
+          {label}
+        </Label>
+        <Input
+          ref={inputRef}
+          id="vault-pin-input"
+          type="password"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          autoFocus
+          disabled={disabled}
+          maxLength={maxLen}
+          value={value}
+          placeholder="••••••"
+          className="font-data h-12 text-center text-2xl tracking-[0.4em]"
+          onChange={(e) => {
+            const next = e.target.value.replace(/\D/g, "").slice(0, maxLen);
+            onChange(next);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.preventDefault();
+              onChange("");
+            }
+          }}
+        />
+      </div>
       <div className="flex justify-center gap-2" aria-hidden>
         {Array.from({ length: maxLen }).map((_, i) => (
           <span
@@ -155,21 +159,6 @@ function PinPad({
           />
         ))}
       </div>
-      <input
-        type="password"
-        inputMode="numeric"
-        autoComplete="one-time-code"
-        autoFocus
-        aria-label="Vault PIN"
-        maxLength={maxLen}
-        value={value}
-        disabled={disabled}
-        onChange={(e) => {
-          const next = e.target.value.replace(/\D/g, "").slice(0, maxLen);
-          onChange(next);
-        }}
-        className="sr-only"
-      />
       <div className="grid grid-cols-3 gap-2">
         {["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "back"].map((key) => {
           if (key === "") return <span key="empty" />;
@@ -233,6 +222,14 @@ export default function VaultPage() {
   const [newPin, setNewPin] = useState("");
   const [confirmNewPin, setConfirmNewPin] = useState("");
 
+  const [resetOpen, setResetOpen] = useState(false);
+  const [factoryPin, setFactoryPin] = useState("");
+  const [resetNewPin, setResetNewPin] = useState("");
+  const [resetConfirmPin, setResetConfirmPin] = useState("");
+
+  const unlockInFlight = useRef(false);
+  const setupInFlight = useRef(false);
+
   const yearItems = useMemo(() => {
     const y = new Date().getFullYear();
     return Object.fromEntries(Array.from({ length: 8 }, (_, i) => [String(y - i), String(y - i)]));
@@ -288,11 +285,13 @@ export default function VaultPage() {
       .catch(() => undefined);
   }, [year, unlocked]);
 
-  async function onUnlock() {
-    if (pin.length !== 6) return;
+  async function onUnlock(code?: string) {
+    const value = (code ?? pin).replace(/\D/g, "").slice(0, 6);
+    if (value.length !== 6 || unlockInFlight.current) return;
+    unlockInFlight.current = true;
     setBusy(true);
     try {
-      await unlockVault(pin);
+      await unlockVault(value);
       setPin("");
       await loadUnlocked();
       toast.success(t("vault.unlocked"));
@@ -301,24 +300,27 @@ export default function VaultPage() {
       toast.error(apiError(err, t("vault.unlockFailed")));
       await refreshStatus().catch(() => undefined);
     } finally {
+      unlockInFlight.current = false;
       setBusy(false);
     }
   }
 
   useEffect(() => {
-    if (configured && !unlocked && pin.length === 6 && !busy) {
-      void onUnlock();
+    if (configured && !unlocked && pin.length === 6 && !busy && !unlockInFlight.current) {
+      void onUnlock(pin);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pin, configured, unlocked]);
 
   async function onSetupAdvance() {
+    if (setupInFlight.current) return;
     if (setupStep === "create") {
       if (setupPin.length !== 6) return;
       setSetupStep("confirm");
       return;
     }
     if (setupConfirm.length !== 6) return;
+    setupInFlight.current = true;
     setBusy(true);
     try {
       await setupVault(setupPin, setupConfirm);
@@ -335,16 +337,34 @@ export default function VaultPage() {
       setSetupPin("");
       toast.error(apiError(err, t("vault.setupFailed")));
     } finally {
+      setupInFlight.current = false;
       setBusy(false);
     }
   }
 
   useEffect(() => {
-    if (configured || unlocked || busy) return;
+    if (configured || unlocked || busy || setupInFlight.current) return;
     if (setupStep === "create" && setupPin.length === 6) void onSetupAdvance();
     if (setupStep === "confirm" && setupConfirm.length === 6) void onSetupAdvance();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setupPin, setupConfirm, setupStep, configured, unlocked]);
+
+  async function onResetPin() {
+    setBusy(true);
+    try {
+      await resetVaultPin(factoryPin, resetNewPin, resetConfirmPin);
+      setResetOpen(false);
+      setFactoryPin("");
+      setResetNewPin("");
+      setResetConfirmPin("");
+      setConfigured(true);
+      toast.success(t("vault.resetDone"));
+    } catch (err) {
+      toast.error(apiError(err, t("vault.resetFailed")));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   function onLock() {
     lockVault();
@@ -484,7 +504,21 @@ export default function VaultPage() {
           </div>
 
           {configured ? (
-            <PinPad value={pin} onChange={setPin} disabled={busy || vaultLockedOut} />
+            <>
+              <PinPad
+                value={pin}
+                onChange={setPin}
+                disabled={busy || vaultLockedOut}
+                label={t("vault.unlockTitle")}
+              />
+              <button
+                type="button"
+                className="text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                onClick={() => setResetOpen(true)}
+              >
+                {t("vault.forgotPin")}
+              </button>
+            </>
           ) : (
             <div className="w-full space-y-3">
               <p className="text-center text-sm text-muted-foreground">
@@ -494,12 +528,64 @@ export default function VaultPage() {
                 value={setupStep === "create" ? setupPin : setupConfirm}
                 onChange={setupStep === "create" ? setSetupPin : setSetupConfirm}
                 disabled={busy}
+                label={setupStep === "create" ? t("vault.enterNewPin") : t("vault.confirmNewPin")}
               />
             </div>
           )}
 
           {busy ? <Loader2 className="size-5 animate-spin text-primary" /> : null}
         </div>
+
+        <Dialog open={resetOpen} onOpenChange={setResetOpen}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>{t("vault.resetTitle")}</DialogTitle>
+              <DialogDescription>{t("vault.resetHint")}</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-3">
+              <div className="grid gap-1.5">
+                <Label>{t("vault.factoryPin")}</Label>
+                <Input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={4}
+                  value={factoryPin}
+                  onChange={(e) => setFactoryPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>{t("vault.newPin")}</Label>
+                <Input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={resetNewPin}
+                  onChange={(e) => setResetNewPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>{t("vault.confirmNewPin")}</Label>
+                <Input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={resetConfirmPin}
+                  onChange={(e) =>
+                    setResetConfirmPin(e.target.value.replace(/\D/g, "").slice(0, 6))
+                  }
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setResetOpen(false)}>
+                {t("common.cancel")}
+              </Button>
+              <Button type="button" onClick={() => void onResetPin()} disabled={busy}>
+                {busy ? <Loader2 className="size-4 animate-spin" /> : t("vault.resetSave")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }

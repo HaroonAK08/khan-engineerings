@@ -85,6 +85,15 @@ export async function changeVaultPin(currentPin: string, newPin: string, confirm
   return data;
 }
 
+export async function resetVaultPin(appPin: string, newPin: string, confirmPin: string) {
+  const { data } = await api.post<{ ok: boolean; configured: boolean }>("/vault/reset-pin", {
+    appPin,
+    newPin,
+    confirmPin,
+  });
+  return data;
+}
+
 export async function listVaultAssets() {
   const { data } = await api.get<{ assets: VaultAsset[]; totals: VaultTotals }>("/vault/assets", {
     headers: vaultHeaders(),

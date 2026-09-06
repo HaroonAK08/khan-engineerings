@@ -28,6 +28,7 @@ api.interceptors.response.use(
       const isVaultPin =
         url.includes("/vault/unlock") ||
         url.includes("/vault/change-pin") ||
+        url.includes("/vault/reset-pin") ||
         url.includes("/vault/setup");
 
       if (!isAuthEndpoint && !isVaultPin && typeof window !== "undefined") {

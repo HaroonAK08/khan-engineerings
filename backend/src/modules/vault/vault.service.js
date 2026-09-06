@@ -141,6 +141,34 @@ async function changePin({ currentPin, newPin, confirmPin }) {
   return { ok: true };
 }
 
+async function resetWithAppPin({ appPin, newPin, confirmPin }) {
+  const factoryPin = String(process.env.APP_PIN || "3811").trim();
+  if (String(appPin ?? "").trim() !== factoryPin) {
+    throw httpError("Factory unlock code is wrong", 401);
+  }
+  const next = assertPin(newPin);
+  if (next !== String(confirmPin ?? "").trim()) {
+    throw httpError("New PIN confirmation does not match", 400);
+  }
+
+  const pinHash = await bcrypt.hash(next, PIN_ROUNDS);
+  const existing = await getConfig();
+  if (existing) {
+    existing.pinHash = pinHash;
+    existing.failedAttempts = 0;
+    existing.lockedUntil = null;
+    await existing.save();
+  } else {
+    await VaultConfig.create({
+      key: CONFIG_KEY,
+      pinHash,
+      failedAttempts: 0,
+      lockedUntil: null,
+    });
+  }
+  return { ok: true, configured: true };
+}
+
 function serializeAsset(doc) {
   return {
     id: String(doc._id),
@@ -172,7 +200,7 @@ async function recordSnapshot(asset, recordedAt = new Date()) {
       year,
       month,
     },
-    { upsert: true, new: true }
+    { upsert: true, returnDocument: "after" }
   );
 }
 
@@ -337,6 +365,7 @@ module.exports = {
   setup,
   unlock,
   changePin,
+  resetWithAppPin,
   verifyVaultToken,
   listAssets,
   createAsset,
