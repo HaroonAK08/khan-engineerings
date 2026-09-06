@@ -19,8 +19,12 @@ function setCors(res, req) {
   res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  res.setHeader("Vary", "Origin");
+  const requested = req?.headers?.["access-control-request-headers"];
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    requested || "Content-Type, Authorization, X-Vault-Token"
+  );
+  res.setHeader("Vary", "Origin, Access-Control-Request-Headers");
 }
 
 function requestPath(req) {
