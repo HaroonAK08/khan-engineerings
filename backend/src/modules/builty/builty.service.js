@@ -1014,6 +1014,89 @@ function emptySalesReport(dateFrom, dateTo, groupMeta, partyMeta) {
   };
 }
 
+async function applySettlementDiscount(customerId, discountInput, paymentDate) {
+  const wanted = roundMoney(Number(discountInput) || 0);
+  if (wanted <= 0) return [];
+
+  await syncCustomerBuiltyPaymentStatuses(customerId);
+  const builties = await Builty.find({ customer: customerId }).sort({
+    builtyDate: 1,
+    createdAt: 1,
+  });
+
+  const charges = builties
+    .filter((b) => roundMoney(b.balance || 0) > 0.001)
+    .map((b) => ({
+      id: String(b._id),
+      date: b.builtyDate,
+      amount: roundMoney(b.balance || 0),
+      kind: "invoice",
+    }));
+
+  if (!charges.length) return [];
+
+  const allocated = allocateThisMonthFirst(charges, [
+    {
+      id: "settlement-discount",
+      date: paymentDate || new Date(),
+      amount: wanted,
+    },
+  ]);
+
+  const CustomerLedgerEntry = require("../customers/customer-ledger.model");
+  const allocations = [];
+
+  for (const row of allocated) {
+    const take = roundMoney(row.paid || 0);
+    if (take <= 0.001) continue;
+    const builty = builties.find((b) => String(b._id) === String(row.id));
+    if (!builty) continue;
+
+    builty.discountAmount = roundMoney((builty.discountAmount || 0) + take);
+    builty.totalAmount = roundMoney(Math.max(0, (builty.totalAmount || 0) - take));
+    await builty.save();
+
+    await CustomerLedgerEntry.updateMany(
+      { builty: builty._id, type: "invoice" },
+      {
+        $set: {
+          amount: builty.totalAmount,
+          notes: `Builty ${builty.builtyNo}`,
+        },
+      }
+    );
+
+    allocations.push({ builty: builty._id, amount: take });
+  }
+
+  return allocations;
+}
+
+async function reverseSettlementDiscount(allocations) {
+  const list = Array.isArray(allocations) ? allocations : [];
+  if (!list.length) return;
+
+  const CustomerLedgerEntry = require("../customers/customer-ledger.model");
+  for (const row of list) {
+    const amount = roundMoney(row.amount || 0);
+    if (amount <= 0.001 || !row.builty) continue;
+    const builty = await Builty.findById(row.builty);
+    if (!builty) continue;
+    builty.discountAmount = roundMoney(Math.max(0, (builty.discountAmount || 0) - amount));
+    builty.totalAmount = roundMoney((builty.totalAmount || 0) + amount);
+    await builty.save();
+    await CustomerLedgerEntry.updateMany(
+      { builty: builty._id, type: "invoice" },
+      {
+        $set: {
+          amount: builty.totalAmount,
+          notes: `Builty ${builty.builtyNo}`,
+        },
+      }
+    );
+  }
+}
+
 module.exports = {
   listBuilties,
   getBuilty,
@@ -1028,4 +1111,6 @@ module.exports = {
   getSalesReport,
   syncCustomerBuiltyPaymentStatuses,
   resyncAllCustomerPaymentStatuses,
+  applySettlementDiscount,
+  reverseSettlementDiscount,
 };

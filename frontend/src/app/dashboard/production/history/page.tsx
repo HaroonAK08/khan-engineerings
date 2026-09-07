@@ -105,6 +105,13 @@ function batchMetalKg(batch: ProductionBatch) {
   return Math.round(qty * piece * 1000) / 1000;
 }
 
+function catalogMetalKg(qty: number, weightKg: number) {
+  const q = Number(qty) || 0;
+  const w = Number(weightKg) || 0;
+  if (q <= 0 || w <= 0) return 0;
+  return Math.round(q * w * 1000) / 1000;
+}
+
 function batchMaterialType(batch: ProductionBatch): "scrap" | "daig" {
   const t = batch.inputs?.[0]?.materialType;
   return t === "daig" ? "daig" : "scrap";
@@ -197,6 +204,7 @@ export default function ProductionHistoryPage() {
   const [listFamily, setListFamily] = useState<"all" | "hub" | "drum">("all");
   const [productSearch, setProductSearch] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [metalCustom, setMetalCustom] = useState(false);
 
   const form = useForm<ProduceForm>({
     resolver: zodResolver(produceSchema),
@@ -344,14 +352,16 @@ export default function ProductionHistoryPage() {
   function openEdit(batch: ProductionBatch) {
     const pid = batchProductId(batch);
     const product = products.find((p) => p._id === pid);
+    const qty = batchQty(batch) || 1;
     form.reset({
       productId: pid,
-      quantity: batchQty(batch) || 1,
+      quantity: qty,
       wastePercent: batchWastePercent(batch),
       metalKg: batchMetalKg(batch) || 1,
       materialType: batchMaterialType(batch),
       productionDate: toDateInputValue(batch.productionDate),
     });
+    setMetalCustom(false);
     setEditingId(batch._id);
     setProduceFamily(
       product?.family === "hub" || product?.family === "drum" ? product.family : "all"
@@ -623,7 +633,13 @@ export default function ProductionHistoryPage() {
                                 familyPickerItemClass(p.family, active)
                               )}
                               onClick={() => {
+                                const qty = Number(form.getValues("quantity")) || 0;
+                                const nextMetal = catalogMetalKg(qty, Number(p.weightKg) || 0);
                                 form.setValue("productId", p._id, { shouldValidate: true });
+                                if (nextMetal > 0) {
+                                  form.setValue("metalKg", nextMetal, { shouldValidate: true });
+                                }
+                                setMetalCustom(false);
                                 setPickerOpen(false);
                                 setProductSearch("");
                               }}
@@ -648,14 +664,27 @@ export default function ProductionHistoryPage() {
                 </p>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
                 <Label>{t("prod.col.qty")}</Label>
                 <Input
                   type="number"
                   min={1}
                   step={1}
-                  {...form.register("quantity", { valueAsNumber: true })}
+                  value={quantity || ""}
+                  onChange={(e) => {
+                    const qty = Math.max(0, Math.round(Number(e.target.value) || 0));
+                    form.setValue("quantity", qty || 1, { shouldValidate: true });
+                    if (!metalCustom) {
+                      const nextMetal = catalogMetalKg(
+                        qty || 1,
+                        Number(selectedProduct?.weightKg) || 0
+                      );
+                      if (nextMetal > 0) {
+                        form.setValue("metalKg", nextMetal, { shouldValidate: true });
+                      }
+                    }
+                  }}
                 />
               </div>
               <div className="flex flex-col gap-1.5">
@@ -664,7 +693,12 @@ export default function ProductionHistoryPage() {
                   type="number"
                   min={0.001}
                   step="0.001"
-                  {...form.register("metalKg", { valueAsNumber: true })}
+                  value={metalKg || ""}
+                  onChange={(e) => {
+                    const next = Math.round((Number(e.target.value) || 0) * 1000) / 1000;
+                    form.setValue("metalKg", next, { shouldValidate: true });
+                    setMetalCustom(true);
+                  }}
                 />
               </div>
               <div className="flex flex-col gap-1.5">

@@ -5,6 +5,13 @@ const paymentSchema = new mongoose.Schema(
     customer: { type: mongoose.Schema.Types.ObjectId, ref: "Customer", required: true, index: true },
     builty: { type: mongoose.Schema.Types.ObjectId, ref: "Builty", default: null, index: true },
     amount: { type: Number, required: true, min: 0 },
+    discountAmount: { type: Number, min: 0, default: 0 },
+    discountAllocations: [
+      {
+        builty: { type: mongoose.Schema.Types.ObjectId, ref: "Builty" },
+        amount: { type: Number, min: 0, default: 0 },
+      },
+    ],
     paymentDate: { type: Date, required: true, index: true },
     method: {
       type: String,

@@ -127,6 +127,7 @@ export type CustomerPayment = {
   customer: Customer | string;
   builty: { _id: string; builtyNo: string; billNo?: string } | string | null;
   amount: number;
+  discountAmount?: number;
   paymentDate: string;
   method: string;
   reference: string;
@@ -472,6 +473,7 @@ export async function recordCustomerPayment(
   id: string,
   body: {
     amount: number;
+    discountAmount?: number;
     paymentDate: string;
     method?: string;
     notes?: string;
@@ -484,6 +486,7 @@ export async function recordCustomerPayment(
     balance: number;
     previousPending: number;
     stats: { orderCount: number; totalSales: number; totalPaid: number; totalDue?: number };
+    discountApplied?: number;
   }>(`/customers/${id}/payments`, body);
   return data;
 }

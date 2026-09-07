@@ -176,56 +176,89 @@ async function recordAdjustment(customerId, { amount, entryDate, notes }) {
 }
 
 async function recordPayment(customerId, data = {}) {
-  const { amount, paymentDate, method, notes, reference } = data;
+  const { paymentDate, method, notes, reference } = data;
   const customer = await getById(customerId);
-  const n = roundMoney(Number(amount));
-  if (!Number.isFinite(n) || n <= 0) {
-    throw httpError("Payment amount must be greater than 0", 400);
+  const cash = roundMoney(Number(data.amount) || 0);
+  const discountWanted = roundMoney(Number(data.discountAmount) || 0);
+  if ((!Number.isFinite(cash) || cash < 0) || (!Number.isFinite(discountWanted) || discountWanted < 0)) {
+    throw httpError("Payment and discount must be valid amounts", 400);
+  }
+  if (cash <= 0 && discountWanted <= 0) {
+    throw httpError("Enter payment received and/or discount", 400);
   }
 
   const allowed = new Set(["cash", "cheque", "online", "bank", "other"]);
   const payMethod = allowed.has(method) ? method : "cash";
   const date = parseDate(paymentDate || new Date(), "Payment date");
 
-  if (!wantsConfirmDuplicate(data)) {
+  if (cash > 0 && !wantsConfirmDuplicate(data)) {
     const { start, end } = dayRange(date);
     const existing = await CustomerPayment.findOne({
       customer: customerId,
-      amount: n,
+      amount: cash,
       paymentDate: { $gte: start, $lte: end },
     })
       .select("_id")
       .lean();
     if (existing) {
       const err = sameDayDuplicateError(
-        `Trying to create a duplicate payment entry on the same day for "${customer.name}" (${n}). Do you want to continue?`
+        `Trying to create a duplicate payment entry on the same day for "${customer.name}" (${cash}). Do you want to continue?`
       );
       err.existingId = existing._id;
       throw err;
     }
   }
 
+  const builtyService = require("../builty/builty.service");
+  const allocations =
+    discountWanted > 0
+      ? await builtyService.applySettlementDiscount(customerId, discountWanted, date)
+      : [];
+  const discountApplied = roundMoney(
+    allocations.reduce((sum, row) => sum + (Number(row.amount) || 0), 0)
+  );
+
+  const noteParts = [];
+  if (notes?.trim()) noteParts.push(notes.trim());
+  else noteParts.push("Party payment");
+  if (discountApplied > 0) {
+    noteParts.push(`Discount given ${discountApplied}`);
+  }
+
   const payment = await CustomerPayment.create({
     customer: customerId,
     builty: null,
-    amount: n,
+    amount: cash,
+    discountAmount: discountApplied,
+    discountAllocations: allocations,
     paymentDate: date,
     method: payMethod,
     reference: reference?.trim() || "",
-    notes: notes?.trim() || "Party payment",
+    notes: noteParts.join(" · "),
   });
 
-  await CustomerLedgerEntry.create({
-    customer: customerId,
-    type: "payment",
-    amount: n,
-    builty: null,
-    payment: payment._id,
-    entryDate: date,
-    notes: payment.notes || `Payment ${payment._id}`,
-  });
+  if (cash > 0) {
+    await CustomerLedgerEntry.create({
+      customer: customerId,
+      type: "payment",
+      amount: cash,
+      builty: null,
+      payment: payment._id,
+      entryDate: date,
+      notes: payment.notes || `Payment ${payment._id}`,
+    });
+  } else if (discountApplied > 0) {
+    await CustomerLedgerEntry.create({
+      customer: customerId,
+      type: "payment",
+      amount: 0,
+      builty: null,
+      payment: payment._id,
+      entryDate: date,
+      notes: payment.notes || `Discount given ${discountApplied}`,
+    });
+  }
 
-  const builtyService = require("../builty/builty.service");
   await builtyService.syncCustomerBuiltyPaymentStatuses(customerId);
 
   const detail = await getWithBalance(customerId);
@@ -234,6 +267,7 @@ async function recordPayment(customerId, data = {}) {
     balance: detail.balance,
     previousPending: detail.previousPending,
     stats: detail.stats,
+    discountApplied,
   };
 }
 
@@ -302,11 +336,18 @@ async function removeLedgerEntry(customerId, entryId) {
   }
 
   if (entry.type === "payment" && entry.payment) {
-    await CustomerPayment.deleteOne({ _id: entry.payment });
-    await CustomerInstrument.updateMany(
-      { payment: entry.payment },
-      { $set: { status: "pending", receivedDate: null, payment: null } }
-    );
+    const payment = await CustomerPayment.findById(entry.payment);
+    if (payment) {
+      const builtyService = require("../builty/builty.service");
+      if (Array.isArray(payment.discountAllocations) && payment.discountAllocations.length) {
+        await builtyService.reverseSettlementDiscount(payment.discountAllocations);
+      }
+      await CustomerPayment.deleteOne({ _id: payment._id });
+      await CustomerInstrument.updateMany(
+        { payment: payment._id },
+        { $set: { status: "pending", receivedDate: null, payment: null } }
+      );
+    }
   }
   await entry.deleteOne();
 

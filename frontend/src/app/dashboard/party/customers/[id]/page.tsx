@@ -94,6 +94,7 @@ export default function CustomerDetailPage() {
   const [showPaidForm, setShowPaidForm] = useState(false);
   const [paidKind, setPaidKind] = useState<LedgerEntryKind>("payment");
   const [paidAmount, setPaidAmount] = useState("");
+  const [paidDiscount, setPaidDiscount] = useState("");
   const [paidDate, setPaidDate] = useState(todayInput());
   const [paidMethod, setPaidMethod] = useState("cash");
   const [paidChequeDate, setPaidChequeDate] = useState("");
@@ -204,9 +205,24 @@ export default function CustomerDetailPage() {
   }
 
   async function onAddPayment() {
-    const amount = Number(paidAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      toast.error(t("customerDetail.enterAmount"));
+    const amount = Number(paidAmount) || 0;
+    const discount = Number(paidDiscount) || 0;
+    if (paidKind === "previous_pending") {
+      if (!Number.isFinite(amount) || amount <= 0) {
+        toast.error(t("customerDetail.enterAmount"));
+        return;
+      }
+    } else if (paidMethod === "cheque") {
+      if (!Number.isFinite(amount) || amount <= 0) {
+        toast.error(t("customerDetail.enterAmount"));
+        return;
+      }
+    } else if (
+      (!Number.isFinite(amount) || amount < 0) ||
+      (!Number.isFinite(discount) || discount < 0) ||
+      (amount <= 0 && discount <= 0)
+    ) {
+      toast.error(t("customerDetail.enterPaymentOrDiscount"));
       return;
     }
     if (!paidDate) {
@@ -239,6 +255,7 @@ export default function CustomerDetailPage() {
       } else {
         const body = {
           amount,
+          discountAmount: discount > 0 ? discount : undefined,
           paymentDate: paidDate,
           method: paidMethod,
           notes: paidNotes.trim() || undefined,
@@ -247,9 +264,14 @@ export default function CustomerDetailPage() {
           recordCustomerPayment(id, { ...body, confirmDuplicate })
         );
         if (cancelled) return;
-        toast.success(t("customerDetail.paymentRecorded"));
+        toast.success(
+          discount > 0
+            ? t("customerDetail.paymentWithDiscountRecorded")
+            : t("customerDetail.paymentRecorded")
+        );
       }
       setPaidAmount("");
+      setPaidDiscount("");
       setPaidNotes("");
       setPaidDate(todayInput());
       setPaidMethod("cash");
@@ -500,6 +522,7 @@ export default function CustomerDetailPage() {
                 if (next) {
                   setPaidKind("payment");
                   setPaidAmount(balance > 0 ? String(balance) : "");
+                  setPaidDiscount("");
                 }
                 return next;
               });
@@ -521,7 +544,11 @@ export default function CustomerDetailPage() {
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="flex flex-col gap-1.5">
-                <Label>{t("common.amount")}</Label>
+                <Label>
+                  {paidKind === "payment"
+                    ? t("customerDetail.amountReceived")
+                    : t("common.amount")}
+                </Label>
                 <Input
                   type="number"
                   step="0.01"
@@ -531,6 +558,22 @@ export default function CustomerDetailPage() {
                   placeholder="0"
                 />
               </div>
+              {paidKind === "payment" && paidMethod !== "cheque" ? (
+                <div className="flex flex-col gap-1.5">
+                  <Label>{t("customerDetail.discountGiven")}</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    value={paidDiscount}
+                    onChange={(e) => setPaidDiscount(e.target.value)}
+                    placeholder="0"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {t("customerDetail.discountGivenHint")}
+                  </p>
+                </div>
+              ) : null}
               <div className="flex flex-col gap-1.5">
                 <Label>{t("common.date")}</Label>
                 <Input
@@ -577,6 +620,23 @@ export default function CustomerDetailPage() {
             {paidKind === "payment" && paidMethod === "cheque" ? (
               <p className="mt-2 text-sm text-amber-700 dark:text-amber-400">
                 {t("customerDetail.chequePaymentHint")}
+              </p>
+            ) : null}
+            {paidKind === "payment" && paidMethod !== "cheque" ? (
+              <p className="mt-2 text-sm text-muted-foreground">
+                {t("customerDetail.settlePreview", {
+                  due: formatMoney(balance),
+                  received: formatMoney(Math.max(0, Number(paidAmount) || 0)),
+                  discount: formatMoney(Math.max(0, Number(paidDiscount) || 0)),
+                  left: formatMoney(
+                    Math.max(
+                      0,
+                      balance -
+                        Math.max(0, Number(paidAmount) || 0) -
+                        Math.max(0, Number(paidDiscount) || 0)
+                    )
+                  ),
+                })}
               </p>
             ) : null}
             <Button

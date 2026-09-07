@@ -10,6 +10,7 @@ import {
   deleteCustomerInstrument,
   deleteCustomerLedgerEntry,
   receiveCustomerInstrument,
+  recordCustomerPayment,
   updateCustomerInstrument,
   updateCustomerLedgerEntry,
   type CustomerInstrument,
@@ -167,6 +168,12 @@ export function PartyHistoryCalendar({
   const [instNote, setInstNote] = useState("");
   const [instKind, setInstKind] = useState<"cheque" | "promise">("cheque");
   const [instBusy, setInstBusy] = useState(false);
+  const [discountOpen, setDiscountOpen] = useState(false);
+  const [discountAmount, setDiscountAmount] = useState("");
+  const [discountReceived, setDiscountReceived] = useState("");
+  const [discountDate, setDiscountDate] = useState(todayInput());
+  const [discountNotes, setDiscountNotes] = useState("");
+  const [discountBusy, setDiscountBusy] = useState(false);
 
   const allRows = useMemo(() => buildKhataRows(entries), [entries]);
 
@@ -260,6 +267,57 @@ export function PartyHistoryCalendar({
   const showOpeningRow =
     Boolean(dateFrom) &&
     (displayRows.length > 0 || Math.abs(openingBalance) > 0.001);
+
+  function openDiscountForm() {
+    const due = Math.max(0, totals.closing);
+    setDiscountAmount(due > 0 ? String(due) : "");
+    setDiscountReceived("");
+    setDiscountDate(todayInput());
+    setDiscountNotes("");
+    setDiscountOpen(true);
+  }
+
+  async function submitDiscount() {
+    const discount = Number(discountAmount) || 0;
+    const received = Number(discountReceived) || 0;
+    if (discount <= 0 && received <= 0) {
+      toast.error(t("customerDetail.enterPaymentOrDiscount"));
+      return;
+    }
+    if (discount < 0 || received < 0) {
+      toast.error(t("customerDetail.enterPaymentOrDiscount"));
+      return;
+    }
+    if (!discountDate) {
+      toast.error(t("customerDetail.pickDate"));
+      return;
+    }
+    setDiscountBusy(true);
+    try {
+      const body = {
+        amount: received,
+        discountAmount: discount > 0 ? discount : undefined,
+        paymentDate: discountDate,
+        method: "cash",
+        notes: discountNotes.trim() || undefined,
+      };
+      const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
+        recordCustomerPayment(customerId, { ...body, confirmDuplicate })
+      );
+      if (cancelled) return;
+      toast.success(
+        discount > 0
+          ? t("customerDetail.paymentWithDiscountRecorded")
+          : t("customerDetail.paymentRecorded")
+      );
+      setDiscountOpen(false);
+      await onChanged();
+    } catch (err) {
+      toast.error(apiError(err, t("customerDetail.paymentFailed")));
+    } finally {
+      setDiscountBusy(false);
+    }
+  }
 
   function rowDetail(e: CustomerLedgerEntry) {
     if (e.type === "payment") {
@@ -500,7 +558,7 @@ export function PartyHistoryCalendar({
     <div className="flex flex-col gap-4">
       <Card>
         <CardContent className="flex flex-col gap-4 p-4">
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
               size="sm"
@@ -524,6 +582,14 @@ export function PartyHistoryCalendar({
               onClick={setThisMonth}
             >
               {t("sal.filterThisMonth")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="ms-auto"
+              onClick={openDiscountForm}
+            >
+              {t("customerDetail.applyDiscount")}
             </Button>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -1033,6 +1099,86 @@ export function PartyHistoryCalendar({
             </Button>
             <Button type="button" disabled={instBusy} onClick={() => void saveInstrument()}>
               {instBusy ? <Loader2 className="size-4 animate-spin" /> : null}
+              {t("common.save")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={discountOpen} onOpenChange={setDiscountOpen}>
+        <DialogContent showCloseButton>
+          <DialogHeader>
+            <DialogTitle>{t("customerDetail.applyDiscount")}</DialogTitle>
+            <DialogDescription>{t("customerDetail.applyDiscountDesc")}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label>{t("customerDetail.discountGiven")}</Label>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                value={discountAmount}
+                onChange={(e) => setDiscountAmount(e.target.value)}
+                className="h-11 font-data text-base"
+                placeholder="0"
+                autoFocus
+              />
+              <p className="text-xs text-muted-foreground">
+                {t("customerDetail.discountGivenHint")}
+              </p>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>{t("customerDetail.amountReceived")}</Label>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                value={discountReceived}
+                onChange={(e) => setDiscountReceived(e.target.value)}
+                className="h-11 font-data text-base"
+                placeholder="0"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>{t("common.date")}</Label>
+              <Input
+                type="date"
+                value={discountDate}
+                onChange={(e) => setDiscountDate(e.target.value)}
+                className="h-11"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>{t("exp.noteOptional")}</Label>
+              <Input
+                value={discountNotes}
+                onChange={(e) => setDiscountNotes(e.target.value)}
+                className="h-11"
+              />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {t("customerDetail.settlePreview", {
+                due: formatMoney(Math.max(0, totals.closing)),
+                received: formatMoney(Math.max(0, Number(discountReceived) || 0)),
+                discount: formatMoney(Math.max(0, Number(discountAmount) || 0)),
+                left: formatMoney(
+                  Math.max(
+                    0,
+                    Math.max(0, totals.closing) -
+                      Math.max(0, Number(discountReceived) || 0) -
+                      Math.max(0, Number(discountAmount) || 0)
+                  )
+                ),
+              })}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setDiscountOpen(false)}>
+              {t("sal.cancel")}
+            </Button>
+            <Button type="button" disabled={discountBusy} onClick={() => void submitDiscount()}>
+              {discountBusy ? <Loader2 className="size-4 animate-spin" /> : null}
               {t("common.save")}
             </Button>
           </DialogFooter>
