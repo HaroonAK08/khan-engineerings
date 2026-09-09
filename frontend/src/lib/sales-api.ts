@@ -588,6 +588,7 @@ export async function updateBuilty(
   body: Partial<{
     builtyNo: string;
     billNo: string;
+    customer: string;
     builtyDate: string;
     notes: string;
     items: BuiltyLineInput[];

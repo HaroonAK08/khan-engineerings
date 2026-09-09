@@ -215,7 +215,7 @@ const en = {
   "builtyDetail.remaining": "Remaining",
   "builtyDetail.claims": "Claims on this builty",
   "builtyDetail.claimsEmpty": "No claims recorded for this builty.",
-  "builtyEdit.subtitle": "Change products, quantity, price — or remove a line.",
+  "builtyEdit.subtitle": "Change party, products, quantity, price — or remove a line.",
   "builtyEdit.productsDesc": "Add, change, or delete products on this builty.",
 
   "orderDetail.builty": "Builty",
@@ -1461,14 +1461,14 @@ const en = {
   "customerDetail.amountReceived": "Received",
   "customerDetail.discountGiven": "Discount given",
   "customerDetail.discountGivenHint":
-    "e.g. due 15000, received 12000, discount 3000 → paid. Deducted from product sales / profit.",
+    "e.g. due 15000, received 12000, discount 3000 → paid. Spread across this party's open builties / products and deducted from sale profit.",
   "customerDetail.enterPaymentOrDiscount": "Enter amount received and/or discount",
   "customerDetail.paymentWithDiscountRecorded": "Payment and discount recorded",
   "customerDetail.settlePreview":
     "Due {due} − received {received} − discount {discount} → left {left}",
   "customerDetail.applyDiscount": "Apply discount",
   "customerDetail.applyDiscountDesc":
-    "Write off remaining due (and optionally record money received). Sale profit is reduced.",
+    "Write off remaining due (and optionally record money received). Discount spreads across all open products for this party; sale profit is reduced.",
   "customerDetail.paymentRecorded": "Payment recorded",
   "customerDetail.paymentFailed": "Failed to record payment",
   "customerDetail.orderHistory": "Order history",
@@ -2517,7 +2517,7 @@ const ur: Record<MessageKey, string> = {
   "builtyDetail.remaining": "باقی",
   "builtyDetail.claims": "اس بلٹی کے کلیمز",
   "builtyDetail.claimsEmpty": "اس بلٹی پر کوئی کلیم نہیں۔",
-  "builtyEdit.subtitle": "پروڈکٹ، مقدار، قیمت تبدیل کریں — یا لائن ہٹائیں۔",
+  "builtyEdit.subtitle": "پارٹی، پروڈکٹ، مقدار، قیمت تبدیل کریں — یا لائن ہٹائیں۔",
   "builtyEdit.productsDesc": "اس بلٹی پر پروڈکٹس شامل، تبدیل، یا حذف کریں۔",
 
   "orderDetail.builty": "بلٹی",
@@ -3761,14 +3761,14 @@ const ur: Record<MessageKey, string> = {
   "customerDetail.amountReceived": "وصول",
   "customerDetail.discountGiven": "ڈسکاؤنٹ دیا",
   "customerDetail.discountGivenHint":
-    "مثلاً بقایا 15000، وصول 12000، ڈسکاؤنٹ 3000 → ادا شدہ۔ پروڈکٹ فروخت/منافع سے کٹے گا۔",
+    "مثلاً بقایا 15000، وصول 12000، ڈسکاؤنٹ 3000 → ادا شدہ۔ اس پارٹی کی کھلی بلٹیوں/پروڈکٹس پر تقسیم، فروخت منافع سے کٹے گا۔",
   "customerDetail.enterPaymentOrDiscount": "وصول رقم اور/یا ڈسکاؤنٹ درج کریں",
   "customerDetail.paymentWithDiscountRecorded": "ادائیگی اور ڈسکاؤنٹ درج ہو گئے",
   "customerDetail.settlePreview":
     "بقایا {due} − وصول {received} − ڈسکاؤنٹ {discount} → باقی {left}",
   "customerDetail.applyDiscount": "ڈسکاؤنٹ لگائیں",
   "customerDetail.applyDiscountDesc":
-    "باقی بقایا معاف کریں (اور چاہیں تو وصول رقم بھی درج کریں)۔ فروخت منافع کم ہوگا۔",
+    "باقی بقایا معاف کریں (اور چاہیں تو وصول رقم بھی درج کریں)۔ ڈسکاؤنٹ اس پارٹی کی تمام کھلی پروڈکٹس پر لگے گا؛ فروخت منافع کم ہوگا۔",
   "customerDetail.paymentRecorded": "ادائیگی درج ہو گئی",
   "customerDetail.paymentFailed": "ادائیگی درج نہیں ہو سکی",
   "customerDetail.orderHistory": "آرڈر ہسٹری",

@@ -9,20 +9,30 @@ import { apiError, formatKg, formatMoney } from "@/lib/materials-api";
 import { listProducts } from "@/lib/production-api";
 import { getFinishedStock } from "@/lib/inventory-api";
 import {
+  createCustomer,
   customerName,
   getBuilty,
+  getCustomer,
   getPartyProductPrice,
   listCustomers,
   productName,
   updateBuilty,
   type Builty,
   type BuiltyLineInput,
+  type Customer,
   type PartyProductPrice,
   type PricingMode,
 } from "@/lib/sales-api";
 import type { Product } from "@/types/production";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useI18n } from "@/hooks/use-i18n";
@@ -38,6 +48,8 @@ import {
   VOICE_BUILTY_PENDING_KEY,
   type VoiceBuiltyFormPayload,
 } from "@/lib/voice/produce-bridge";
+
+const NEW_CUSTOMER = "__new__";
 
 type Line = {
   product: string;
@@ -111,23 +123,32 @@ function EditBuiltyForm() {
   const id = String(params.id);
 
   const [builty, setBuilty] = useState<Builty | null>(null);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customer, setCustomer] = useState("");
   const [products, setProducts] = useState<Product[]>([]);
   const [stockByProduct, setStockByProduct] = useState<Record<string, number>>({});
   const [builtyNo, setBuiltyNo] = useState("");
   const [billNo, setBillNo] = useState("");
   const [builtyDate, setBuiltyDate] = useState("");
   const [lines, setLines] = useState<Line[]>([emptyLine()]);
-  const [discountAmount, setDiscountAmount] = useState("");
+  const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
+  const [customerSearch, setCustomerSearch] = useState("");
   const [productPickerIndex, setProductPickerIndex] = useState<number | null>(null);
   const [productSearch, setProductSearch] = useState("");
   const [productFamilyFilter, setProductFamilyFilter] = useState<"all" | "hub" | "drum">("all");
+  const [newCustomerOpen, setNewCustomerOpen] = useState(false);
+  const [newCustomerName, setNewCustomerName] = useState("");
+  const [newCustomerPhone, setNewCustomerPhone] = useState("");
+  const [newCustomerAddress, setNewCustomerAddress] = useState("");
+  const [savingCustomer, setSavingCustomer] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [data, p, stock] = await Promise.all([
+      const [data, p, stock, c] = await Promise.all([
         getBuilty(id),
         listProducts({ active: "true" }),
         getFinishedStock(),
@@ -144,15 +165,21 @@ function EditBuiltyForm() {
         map[pid] = (map[pid] || 0) + (Number(item.quantity) || 0);
       }
 
+      const customerId =
+        data.builty.customer && typeof data.builty.customer === "object"
+          ? data.builty.customer._id
+          : typeof data.builty.customer === "string"
+            ? data.builty.customer
+            : "";
+
       setBuilty(data.builty);
+      setCustomers(c);
+      setCustomer(customerId);
       setProducts(p);
       setStockByProduct(map);
       setBuiltyNo(data.builty.builtyNo || "");
       setBillNo(data.builty.billNo || "");
       setBuiltyDate(toDateInput(data.builty.builtyDate));
-      setDiscountAmount(
-        Number(data.builty.discountAmount) > 0 ? String(data.builty.discountAmount) : ""
-      );
       setLines(
         (data.builty.items || []).length > 0
           ? data.builty.items.map((item) => {
@@ -180,7 +207,37 @@ function EditBuiltyForm() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    if (!customer) {
+      setPartyBalance(null);
+      return;
+    }
+    let cancelled = false;
+    getCustomer(customer)
+      .then((detail) => {
+        if (!cancelled) setPartyBalance(Number(detail.balance) || 0);
+      })
+      .catch(() => {
+        if (!cancelled) setPartyBalance(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [customer]);
+
+  const filteredCustomers = useMemo(() => {
+    const q = customerSearch.trim().toLowerCase();
+    if (!q) return customers;
+    return customers.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        (c.phone || "").toLowerCase().includes(q) ||
+        (c.address || "").toLowerCase().includes(q)
+    );
+  }, [customers, customerSearch]);
+
   const applyVoiceBuilty = useCallback((payload: VoiceBuiltyFormPayload) => {
+    if (payload.customerId) setCustomer(payload.customerId);
     if (payload.builtyNo) setBuiltyNo(payload.builtyNo);
     if (payload.billNo) setBillNo(payload.billNo);
     if (payload.builtyDate) setBuiltyDate(payload.builtyDate);
@@ -310,16 +367,8 @@ function EditBuiltyForm() {
     [lines, products]
   );
 
-  const discountValue = useMemo(() => {
-    const n = Number(discountAmount);
-    if (!Number.isFinite(n) || n <= 0) return 0;
-    return Math.round(Math.min(n, total) * 100) / 100;
-  }, [discountAmount, total]);
-
-  const netTotal = useMemo(
-    () => Math.round(Math.max(0, total - discountValue) * 100) / 100,
-    [total, discountValue]
-  );
+  const existingDiscount = Number(builty?.discountAmount) > 0 ? Number(builty.discountAmount) : 0;
+  const netTotal = Math.round(Math.max(0, total - existingDiscount) * 100) / 100;
 
   const familySummary = useMemo(() => {
     const hub = { qty: 0, amount: 0 };
@@ -356,16 +405,10 @@ function EditBuiltyForm() {
   }
 
   async function selectProduct(index: number, product: Product) {
-    const customerId =
-      builty?.customer && typeof builty.customer === "object"
-        ? builty.customer._id
-        : typeof builty?.customer === "string"
-          ? builty.customer
-          : "";
     let last: PartyProductPrice | null = null;
-    if (customerId) {
+    if (customer) {
       try {
-        last = await getPartyProductPrice(customerId, product._id);
+        last = await getPartyProductPrice(customer, product._id);
       } catch {
         last = null;
       }
@@ -383,10 +426,53 @@ function EditBuiltyForm() {
     setLines((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)));
   }
 
+  function onCustomerSelect(value: string) {
+    setCustomerPickerOpen(false);
+    setCustomerSearch("");
+    if (value === NEW_CUSTOMER) {
+      setNewCustomerName("");
+      setNewCustomerPhone("");
+      setNewCustomerAddress("");
+      setNewCustomerOpen(true);
+      return;
+    }
+    setCustomer(value);
+  }
+
+  async function onCreateCustomer(e: React.FormEvent) {
+    e.preventDefault();
+    const name = newCustomerName.trim();
+    if (!name) {
+      toast.error(t("orderNew.customerNameRequired"));
+      return;
+    }
+    setSavingCustomer(true);
+    try {
+      const created = await createCustomer({
+        name,
+        phone: newCustomerPhone.trim(),
+        address: newCustomerAddress.trim(),
+        isActive: true,
+      });
+      setCustomers((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+      setCustomer(created._id);
+      setNewCustomerOpen(false);
+      toast.success(t("orderNew.customerCreated"));
+    } catch (err) {
+      toast.error(apiError(err, t("orderNew.customerCreateFailed")));
+    } finally {
+      setSavingCustomer(false);
+    }
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!builtyNo.trim()) {
       toast.error(t("builtyNew.needBuiltyNo"));
+      return;
+    }
+    if (!customer) {
+      toast.error(t("builtyNew.selectParty"));
       return;
     }
     const valid = lines.filter((l) => l.product && Number(l.quantity) > 0);
@@ -420,9 +506,9 @@ function EditBuiltyForm() {
       await updateBuilty(id, {
         builtyNo: builtyNo.trim(),
         billNo: billNo.trim(),
+        customer,
         builtyDate,
         items,
-        discountAmount: discountValue,
       });
       toast.success(t("builty.updated"));
       router.push(`/dashboard/builty/${id}`);
@@ -474,9 +560,77 @@ function EditBuiltyForm() {
           <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5 sm:col-span-2">
               <Label>{t("builtyNew.party")}</Label>
-              <div className="flex h-11 items-center rounded-lg border border-input bg-muted/40 px-2.5 text-base">
-                {customerName(builty.customer)}
+              <div className="relative">
+                <div className="overflow-hidden rounded-lg border border-input">
+                  <button
+                    type="button"
+                    className="flex h-11 w-full items-center px-2.5 text-left text-base hover:bg-muted/50"
+                    onClick={() => {
+                      setCustomerPickerOpen((prev) => !prev);
+                      setCustomerSearch("");
+                    }}
+                  >
+                    <span className={customer ? "truncate text-foreground" : "text-muted-foreground"}>
+                      {customer
+                        ? customers.find((c) => c._id === customer)?.name ||
+                          customerName(builty.customer)
+                        : t("builtyNew.selectParty")}
+                    </span>
+                  </button>
+                  {customerPickerOpen && (
+                    <div className="border-t border-border bg-card">
+                      <div className="relative border-b border-border p-2">
+                        <Search className="pointer-events-none absolute top-1/2 left-4 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          className="h-9 pl-8"
+                          placeholder={t("builtyNew.selectParty")}
+                          value={customerSearch}
+                          onChange={(e) => setCustomerSearch(e.target.value)}
+                          autoFocus
+                        />
+                      </div>
+                      <div className="max-h-56 overflow-y-auto">
+                        <button
+                          type="button"
+                          className="flex w-full items-center px-3 py-2 text-left text-sm font-medium text-primary hover:bg-muted"
+                          onClick={() => onCustomerSelect(NEW_CUSTOMER)}
+                        >
+                          <Plus className="mr-2 size-4" />
+                          {t("builtyNew.addNewParty")}
+                        </button>
+                        {filteredCustomers.length === 0 ? (
+                          <p className="px-3 py-4 text-center text-xs text-muted-foreground">
+                            {t("prod.noMatchProduct")}
+                          </p>
+                        ) : (
+                          filteredCustomers.map((c) => (
+                            <button
+                              key={c._id}
+                              type="button"
+                              className={`flex w-full flex-col gap-0.5 px-3 py-2 text-left text-sm hover:bg-muted ${
+                                customer === c._id ? "bg-muted" : ""
+                              }`}
+                              onClick={() => onCustomerSelect(c._id)}
+                            >
+                              <span className="font-medium">{c.name}</span>
+                              {(c.phone || c.address) && (
+                                <span className="text-xs text-muted-foreground">
+                                  {[c.phone, c.address].filter(Boolean).join(" · ")}
+                                </span>
+                              )}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
+              {customer && partyBalance !== null && (
+                <p className="font-data text-xs text-muted-foreground">
+                  {t("builtyNew.currentPending", { amount: formatMoney(partyBalance) })}
+                </p>
+              )}
             </div>
             <div className="flex flex-col gap-1.5">
               <Label>{t("builtyNew.builtyNo")}</Label>
@@ -754,31 +908,18 @@ function EditBuiltyForm() {
               <Plus className="size-4" />
               {t("builtyNew.addMore")}
             </Button>
-            <div className="flex flex-col gap-1.5 sm:ml-auto sm:max-w-xs">
-              <Label htmlFor="edit-builty-discount">{t("builtyNew.discount")}</Label>
-              <Input
-                id="edit-builty-discount"
-                type="number"
-                min={0}
-                step="0.01"
-                inputMode="decimal"
-                placeholder={t("builtyNew.discountPh")}
-                value={discountAmount}
-                onChange={(e) => setDiscountAmount(e.target.value)}
-                className="h-11 font-data"
-              />
-              <p className="text-xs text-muted-foreground">{t("builtyNew.discountHint")}</p>
-            </div>
-            <div className="font-data space-y-1 text-right text-base">
-              <p>
-                {t("builtyNew.subtotal")}{" "}
-                <span className="text-muted-foreground">{formatMoney(total)}</span>
-              </p>
-              {discountValue > 0 ? (
-                <p>
-                  {t("builtyNew.discount")}{" "}
-                  <span className="text-muted-foreground">−{formatMoney(discountValue)}</span>
-                </p>
+            <div className="font-data ms-auto space-y-1 text-right text-base">
+              {existingDiscount > 0 ? (
+                <>
+                  <p>
+                    {t("builtyNew.subtotal")}{" "}
+                    <span className="text-muted-foreground">{formatMoney(total)}</span>
+                  </p>
+                  <p>
+                    {t("builtyNew.discount")}{" "}
+                    <span className="text-muted-foreground">−{formatMoney(existingDiscount)}</span>
+                  </p>
+                </>
               ) : null}
               <p>
                 {t("builtyNew.netTotal")} <span className="text-xl">{formatMoney(netTotal)}</span>
@@ -832,6 +973,45 @@ function EditBuiltyForm() {
           </Button>
         </div>
       </form>
+
+      <Dialog open={newCustomerOpen} onOpenChange={setNewCustomerOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-nameplate text-base">{t("builtyNew.newParty")}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={onCreateCustomer} className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label>{t("cus.col.name")}</Label>
+              <Input
+                value={newCustomerName}
+                onChange={(e) => setNewCustomerName(e.target.value)}
+                autoFocus
+                required
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>{t("cus.col.phone")}</Label>
+              <Input value={newCustomerPhone} onChange={(e) => setNewCustomerPhone(e.target.value)} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>{t("cus.address")}</Label>
+              <Input
+                value={newCustomerAddress}
+                onChange={(e) => setNewCustomerAddress(e.target.value)}
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setNewCustomerOpen(false)}>
+                {t("cus.cancel")}
+              </Button>
+              <Button type="submit" disabled={savingCustomer} className="gap-2">
+                {savingCustomer && <Loader2 className="size-4 animate-spin" />}
+                {t("cus.save")}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

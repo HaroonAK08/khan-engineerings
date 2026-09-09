@@ -410,6 +410,17 @@ async function updateBuilty(id, data) {
   const builty = await Builty.findById(id);
   if (!builty) throw httpError("Builty not found", 404);
 
+  const oldCustomerId = String(builty.customer);
+  let customerChanged = false;
+  if (data.customer !== undefined && data.customer) {
+    const nextCustomerId = String(data.customer);
+    if (nextCustomerId !== oldCustomerId) {
+      await customerService.getById(nextCustomerId);
+      builty.customer = nextCustomerId;
+      customerChanged = true;
+    }
+  }
+
   if (data.builtyNo !== undefined) {
     const nextNo = String(data.builtyNo || "").trim();
     if (!nextNo) throw httpError("Builty number is required", 400);
@@ -493,7 +504,36 @@ async function updateBuilty(id, data) {
     }
   }
 
+  if (customerChanged) {
+    const nextCustomerId = builty.customer;
+    await CustomerLedgerEntry.updateMany(
+      { builty: builty._id },
+      { $set: { customer: nextCustomerId } }
+    );
+    const linkedPayments = await CustomerPayment.find({ builty: builty._id }).select("_id");
+    const paymentIds = linkedPayments.map((p) => p._id);
+    if (paymentIds.length) {
+      await CustomerPayment.updateMany(
+        { _id: { $in: paymentIds } },
+        { $set: { customer: nextCustomerId } }
+      );
+      const CustomerInstrument = require("../customers/customer-instrument.model");
+      await CustomerInstrument.updateMany(
+        { payment: { $in: paymentIds } },
+        { $set: { customer: nextCustomerId } }
+      );
+    }
+    const Claim = require("../claims/claim.model");
+    await Claim.updateMany(
+      { builty: builty._id },
+      { $set: { customer: nextCustomerId } }
+    );
+  }
+
   await builty.save();
+  if (customerChanged) {
+    await syncCustomerBuiltyPaymentStatuses(oldCustomerId);
+  }
   await syncCustomerBuiltyPaymentStatuses(builty.customer);
   return getBuilty(builty._id);
 }
@@ -1024,33 +1064,31 @@ async function applySettlementDiscount(customerId, discountInput, paymentDate) {
     createdAt: 1,
   });
 
-  const charges = builties
-    .filter((b) => roundMoney(b.balance || 0) > 0.001)
+  const open = builties
     .map((b) => ({
-      id: String(b._id),
-      date: b.builtyDate,
-      amount: roundMoney(b.balance || 0),
-      kind: "invoice",
-    }));
+      builty: b,
+      balance: roundMoney(b.balance || 0),
+    }))
+    .filter((row) => row.balance > 0.001);
 
-  if (!charges.length) return [];
+  if (!open.length) return [];
 
-  const allocated = allocateThisMonthFirst(charges, [
-    {
-      id: "settlement-discount",
-      date: paymentDate || new Date(),
-      amount: wanted,
-    },
-  ]);
+  const openTotal = roundMoney(open.reduce((sum, row) => sum + row.balance, 0));
+  const toApply = roundMoney(Math.min(wanted, openTotal));
+  if (toApply <= 0.001) return [];
 
   const CustomerLedgerEntry = require("../customers/customer-ledger.model");
   const allocations = [];
+  let remaining = toApply;
 
-  for (const row of allocated) {
-    const take = roundMoney(row.paid || 0);
+  for (let i = 0; i < open.length; i++) {
+    const { builty, balance } = open[i];
+    const isLast = i === open.length - 1;
+    const share = isLast
+      ? remaining
+      : roundMoney(Math.min(balance, (toApply * balance) / openTotal));
+    const take = roundMoney(Math.min(balance, Math.max(0, share), remaining));
     if (take <= 0.001) continue;
-    const builty = builties.find((b) => String(b._id) === String(row.id));
-    if (!builty) continue;
 
     builty.discountAmount = roundMoney((builty.discountAmount || 0) + take);
     builty.totalAmount = roundMoney(Math.max(0, (builty.totalAmount || 0) - take));
@@ -1067,6 +1105,8 @@ async function applySettlementDiscount(customerId, discountInput, paymentDate) {
     );
 
     allocations.push({ builty: builty._id, amount: take });
+    remaining = roundMoney(remaining - take);
+    if (remaining <= 0.001) break;
   }
 
   return allocations;
