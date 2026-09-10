@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, Plus, Search, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronsUpDown, Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { apiError, formatKg, formatMoney } from "@/lib/materials-api";
 import { listProducts } from "@/lib/production-api";
 import { getFinishedStock } from "@/lib/inventory-api";
@@ -558,24 +558,28 @@ function EditBuiltyForm() {
             <CardTitle className="text-nameplate text-sm">{t("builty.edit")}</CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="flex flex-col gap-1.5 sm:col-span-2">
-              <Label>{t("builtyNew.party")}</Label>
+            <div className="flex flex-col gap-1.5 sm:col-span-2 rounded-lg border border-primary/25 bg-primary/5 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <Label className="text-sm font-medium">{t("builtyEdit.partyLabel")}</Label>
+                <span className="text-xs font-medium text-primary">{t("builtyEdit.changeParty")}</span>
+              </div>
               <div className="relative">
-                <div className="overflow-hidden rounded-lg border border-input">
+                <div className="overflow-hidden rounded-lg border border-primary/40 bg-background">
                   <button
                     type="button"
-                    className="flex h-11 w-full items-center px-2.5 text-left text-base hover:bg-muted/50"
+                    className="flex h-11 w-full items-center gap-2 px-2.5 text-left text-base hover:bg-muted/50"
                     onClick={() => {
                       setCustomerPickerOpen((prev) => !prev);
                       setCustomerSearch("");
                     }}
                   >
-                    <span className={customer ? "truncate text-foreground" : "text-muted-foreground"}>
+                    <span className={`min-w-0 flex-1 truncate ${customer ? "text-foreground" : "text-muted-foreground"}`}>
                       {customer
                         ? customers.find((c) => c._id === customer)?.name ||
                           customerName(builty.customer)
                         : t("builtyNew.selectParty")}
                     </span>
+                    <ChevronsUpDown className="size-4 shrink-0 text-primary" />
                   </button>
                   {customerPickerOpen && (
                     <div className="border-t border-border bg-card">
@@ -626,6 +630,7 @@ function EditBuiltyForm() {
                   )}
                 </div>
               </div>
+              <p className="text-xs text-muted-foreground">{t("builtyEdit.partyHint")}</p>
               {customer && partyBalance !== null && (
                 <p className="font-data text-xs text-muted-foreground">
                   {t("builtyNew.currentPending", { amount: formatMoney(partyBalance) })}

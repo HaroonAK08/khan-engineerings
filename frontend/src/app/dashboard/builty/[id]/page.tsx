@@ -121,14 +121,22 @@ export default function BuiltyDetailPage() {
           <p className="font-data mt-1 text-xs text-muted-foreground">
             {formatDate(builty.builtyDate)} · {customerName(builty.customer)}
           </p>
-          {partyId ? (
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
             <Link
-              href={`/dashboard/party/customers/${partyId}`}
-              className="mt-2 inline-block text-sm text-primary hover:underline"
+              href={`/dashboard/builty/${id}/edit`}
+              className="text-sm font-medium text-primary hover:underline"
             >
-              {t("builtyDetail.managePartyMoney")}
+              {t("builtyEdit.changeParty")}
             </Link>
-          ) : null}
+            {partyId ? (
+              <Link
+                href={`/dashboard/party/customers/${partyId}`}
+                className="text-sm text-primary hover:underline"
+              >
+                {t("builtyDetail.managePartyMoney")}
+              </Link>
+            ) : null}
+          </div>
         </div>
         <div className="flex flex-col items-end gap-2">
           <div className="text-right">
