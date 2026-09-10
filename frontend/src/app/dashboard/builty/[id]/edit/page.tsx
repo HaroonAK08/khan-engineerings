@@ -367,7 +367,7 @@ function EditBuiltyForm() {
     [lines, products]
   );
 
-  const existingDiscount = Number(builty?.discountAmount) > 0 ? Number(builty.discountAmount) : 0;
+  const existingDiscount = Math.max(0, Number(builty?.discountAmount) || 0);
   const netTotal = Math.round(Math.max(0, total - existingDiscount) * 100) / 100;
 
   const familySummary = useMemo(() => {
