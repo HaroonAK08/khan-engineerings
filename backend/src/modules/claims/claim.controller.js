@@ -36,4 +36,13 @@ async function update(req, res, next) {
   }
 }
 
-module.exports = { list, getOne, create, update };
+async function remove(req, res, next) {
+  try {
+    const result = await claimService.remove(req.params.id);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { list, getOne, create, update, remove };

@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { History, Loader2, Plus, Search, Trash2 } from "lucide-react";
+import { History, Loader2, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
-import { todayInput } from "@/lib/date-range";
+import { todayInput, calendarDay } from "@/lib/date-range";
 import { api } from "@/lib/api";
 import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
 import { listProducts } from "@/lib/production-api";
@@ -39,15 +39,18 @@ type Claim = {
   claimDate: string;
   status: string;
   refundAmount?: number;
-  customer?: { name: string };
+  mfgLossAmount?: number;
+  customer?: { _id?: string; name: string };
   builty?: { _id?: string; builtyNo: string; billNo?: string };
   items: Array<{
     quantity: number;
     disposition: string;
     weightKg?: number | null;
     refundAmount?: number;
+    mfgLossAmount?: number;
     unitPrice?: number | null;
-    product?: { name: string };
+    reason?: string;
+    product?: { _id?: string; name: string };
   }>;
 };
 
@@ -56,8 +59,7 @@ type Line = {
   quantity: number;
   weightKg: number;
   unitPrice: number;
-  refundAmount: string;
-  disposition: "returned" | "rework" | "scrap_loss";
+  disposition: "returned" | "rework";
   reason: string;
 };
 
@@ -67,7 +69,6 @@ function emptyLine(): Line {
     quantity: 1,
     weightKg: 0,
     unitPrice: 0,
-    refundAmount: "",
     disposition: "returned",
     reason: "",
   };
@@ -100,6 +101,8 @@ export default function ClaimsPage() {
   const [selectedBuilty, setSelectedBuilty] = useState<Builty | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const [party, setParty] = useState("");
   const [builtyId, setBuiltyId] = useState("");
@@ -107,6 +110,17 @@ export default function ClaimsPage() {
   const [lines, setLines] = useState<Line[]>([emptyLine()]);
   const [partyPickerOpen, setPartyPickerOpen] = useState(false);
   const [partySearch, setPartySearch] = useState("");
+
+  function resetForm() {
+    setEditingId(null);
+    setParty("");
+    setBuiltyId("");
+    setSelectedBuilty(null);
+    setClaimDate(todayInput());
+    setLines([emptyLine()]);
+    setPartyPickerOpen(false);
+    setPartySearch("");
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -295,32 +309,81 @@ export default function ClaimsPage() {
       toast.error(t("claims.addProduct"));
       return;
     }
+    for (const l of validLines) {
+      if (l.disposition === "rework" && !(Number(l.weightKg) > 0)) {
+        toast.error(t("claims.reworkHint"));
+        return;
+      }
+    }
+
+    const body = {
+      builty: builtyId,
+      customer: party || undefined,
+      claimDate,
+      items: validLines.map((l) => ({
+        product: l.product,
+        quantity: l.quantity,
+        weightKg: l.weightKg || undefined,
+        unitPrice: l.unitPrice || undefined,
+        refundAmount: lineSuggestedTotal(l),
+        disposition: l.disposition,
+        reason: l.reason.trim() || undefined,
+      })),
+    };
 
     setSaving(true);
     try {
-      await api.post("/claims", {
-        builty: builtyId,
-        customer: party || undefined,
-        claimDate,
-        items: validLines.map((l) => ({
-          product: l.product,
-          quantity: l.quantity,
-          weightKg: l.weightKg || undefined,
-          unitPrice: l.unitPrice || undefined,
-          refundAmount:
-            l.refundAmount.trim() === "" ? undefined : Number(l.refundAmount),
-          disposition: l.disposition,
-          reason: l.reason.trim() || undefined,
-        })),
-      });
-      toast.success(t("claims.saved"));
-      setLines([emptyLine()]);
-      setClaimDate(todayInput());
+      if (editingId) {
+        await api.patch(`/claims/${editingId}`, body);
+        toast.success(t("claims.updated"));
+      } else {
+        await api.post("/claims", body);
+        toast.success(t("claims.saved"));
+      }
+      resetForm();
       await load();
     } catch (err) {
       toast.error(apiError(err, t("claims.saveFailed")));
     } finally {
       setSaving(false);
+    }
+  }
+
+  function startEdit(claim: Claim) {
+    const customerId = claim.customer?._id || "";
+    const nextBuilty = claim.builty?._id || "";
+    setEditingId(claim._id);
+    setParty(customerId);
+    setBuiltyId(nextBuilty);
+    setClaimDate(calendarDay(claim.claimDate) || todayInput());
+    setLines(
+      claim.items.length
+        ? claim.items.map((item) => ({
+            product: item.product?._id || "",
+            quantity: Number(item.quantity) || 1,
+            weightKg: Number(item.weightKg) || 0,
+            unitPrice: Number(item.unitPrice) || 0,
+            disposition:
+              item.disposition === "rework" ? ("rework" as const) : ("returned" as const),
+            reason: item.reason || "",
+          }))
+        : [emptyLine()]
+    );
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function onDeleteClaim(claim: Claim) {
+    if (!window.confirm(t("claims.confirmDelete"))) return;
+    setDeletingId(claim._id);
+    try {
+      await api.delete(`/claims/${claim._id}`);
+      toast.success(t("claims.deleted"));
+      if (editingId === claim._id) resetForm();
+      await load();
+    } catch (err) {
+      toast.error(apiError(err, t("claims.deleteFailed")));
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -344,7 +407,9 @@ export default function ClaimsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-nameplate text-sm">{t("claims.record")}</CardTitle>
+          <CardTitle className="text-nameplate text-sm">
+            {editingId ? t("claims.edit") : t("claims.record")}
+          </CardTitle>
           <CardDescription>{t("claims.recordDesc")}</CardDescription>
         </CardHeader>
         <CardContent>
@@ -477,12 +542,23 @@ export default function ClaimsPage() {
                         type="number"
                         min={1}
                         step={1}
-                        value={line.quantity}
-                        onChange={(e) =>
+                        value={line.quantity > 0 ? line.quantity : ""}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          if (raw === "") {
+                            updateLine(index, { quantity: 0 });
+                            return;
+                          }
+                          const n = Math.round(Number(raw));
                           updateLine(index, {
-                            quantity: Math.max(1, Math.round(Number(e.target.value) || 1)),
-                          })
-                        }
+                            quantity: Number.isFinite(n) && n >= 0 ? n : 0,
+                          });
+                        }}
+                        onBlur={() => {
+                          if (!(line.quantity > 0)) {
+                            updateLine(index, { quantity: 1 });
+                          }
+                        }}
                       />
                     </div>
                     <div className="flex flex-col gap-1.5">
@@ -518,15 +594,13 @@ export default function ClaimsPage() {
                       </p>
                     </div>
                     <div className="flex flex-col gap-1.5">
-                      <Label>{t("claims.refundOptional")}</Label>
-                      <Input
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        placeholder="0"
-                        value={line.refundAmount}
-                        onChange={(e) => updateLine(index, { refundAmount: e.target.value })}
-                      />
+                      <Label>{t("claims.partyCredit")}</Label>
+                      <div className="font-data flex h-8 items-center rounded-lg border border-input bg-muted/30 px-2.5 text-sm">
+                        {formatMoney(suggested)}
+                      </div>
+                      <p className="text-[10px] text-muted-foreground">
+                        {t("claims.partyCreditHint")}
+                      </p>
                     </div>
                     <div className="flex flex-col gap-1.5">
                       <Label>{t("claims.disposition")}</Label>
@@ -541,8 +615,12 @@ export default function ClaimsPage() {
                       >
                         <option value="returned">{t("claims.disp.returned")}</option>
                         <option value="rework">{t("claims.disp.rework")}</option>
-                        <option value="scrap_loss">{t("claims.disp.scrap")}</option>
                       </select>
+                      <p className="text-[10px] text-muted-foreground">
+                        {line.disposition === "rework"
+                          ? t("claims.reworkHint")
+                          : t("claims.returnedHint")}
+                      </p>
                     </div>
                     <div className="flex flex-col gap-1.5 md:col-span-2 xl:col-span-5">
                       <Label>{t("claims.reason")}</Label>
@@ -570,11 +648,16 @@ export default function ClaimsPage() {
               })}
             </div>
 
-            <div>
+            <div className="flex flex-wrap gap-2">
               <Button type="submit" disabled={saving} className="gap-2">
                 {saving && <Loader2 className="size-4 animate-spin" />}
-                {t("claims.save")}
+                {editingId ? t("cus.save") : t("claims.save")}
               </Button>
+              {editingId ? (
+                <Button type="button" variant="outline" onClick={resetForm}>
+                  {t("claims.cancelEdit")}
+                </Button>
+              ) : null}
             </div>
           </form>
         </CardContent>
@@ -601,7 +684,9 @@ export default function ClaimsPage() {
                   <TableHead>{t("claims.col.invoice")}</TableHead>
                   <TableHead>{t("claims.col.items")}</TableHead>
                   <TableHead>{t("claims.col.refund")}</TableHead>
+                  <TableHead>{t("claims.col.mfgLoss")}</TableHead>
                   <TableHead>{t("claims.col.status")}</TableHead>
+                  <TableHead className="w-[1%]">{t("cus.col.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -626,17 +711,52 @@ export default function ClaimsPage() {
                       {c.items
                         .map(
                           (i) =>
-                            `${i.quantity} ${i.product?.name || ""} (${i.disposition})`
+                            `${i.quantity} ${i.product?.name || ""} (${
+                              i.disposition === "rework"
+                                ? t("claims.disp.rework")
+                                : t("claims.disp.returned")
+                            })`
                         )
                         .join(", ")}
                     </TableCell>
                     <TableCell className="font-data text-xs">
                       {c.refundAmount ? formatMoney(c.refundAmount) : "—"}
                     </TableCell>
+                    <TableCell className="font-data text-xs">
+                      {c.mfgLossAmount ? formatMoney(c.mfgLossAmount) : "—"}
+                    </TableCell>
                     <TableCell>
                       <Badge variant="outline" className="uppercase text-[10px]">
                         {c.status}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          type="button"
+                          size="icon-sm"
+                          variant="ghost"
+                          title={t("claims.edit")}
+                          onClick={() => startEdit(c)}
+                        >
+                          <Pencil className="size-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          size="icon-sm"
+                          variant="ghost"
+                          className="text-destructive"
+                          title={t("claims.delete")}
+                          disabled={deletingId === c._id}
+                          onClick={() => void onDeleteClaim(c)}
+                        >
+                          {deletingId === c._id ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="size-3.5" />
+                          )}
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

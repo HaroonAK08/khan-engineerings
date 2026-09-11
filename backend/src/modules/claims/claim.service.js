@@ -1,12 +1,14 @@
 const Claim = require("./claim.model");
 const Builty = require("../builty/builty.model");
 const Product = require("../products/product.model");
+const Purchase = require("../purchases/purchase.model");
+const FinanceEntry = require("../finance/finance.model");
 const CustomerLedgerEntry = require("../customers/customer-ledger.model");
 const inventoryService = require("../inventory/inventory.service");
 const builtyService = require("../builty/builty.service");
 const { materialTypeToItemType } = require("../domain/mfg.constants");
 
-const DISPOSITIONS = ["returned", "rework", "scrap_loss", "replacement"];
+const DISPOSITIONS = ["returned", "rework"];
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -71,6 +73,30 @@ function suggestedUnitPrice(product, weightKg) {
   return selling > 0 ? roundMoney(selling) : 0;
 }
 
+function soldUnitPrice(soldLine, product, weightKg) {
+  if (Number(soldLine?.unitPrice) > 0) return roundMoney(Number(soldLine.unitPrice));
+  const qty = Number(soldLine?.quantity) || 0;
+  const lineTotal = Number(soldLine?.lineTotal) || 0;
+  if (qty > 0 && lineTotal > 0) return roundMoney(lineTotal / qty);
+  return suggestedUnitPrice(product, weightKg);
+}
+
+async function avgMaterialRate(materialType) {
+  const rateRow = await Purchase.aggregate([
+    { $match: { materialType } },
+    {
+      $group: {
+        _id: null,
+        spend: { $sum: { $add: ["$totalAmount", { $ifNull: ["$freightAmount", 0] }] } },
+        kg: { $sum: "$quantityKg" },
+      },
+    },
+  ]);
+  const kg = rateRow[0]?.kg || 0;
+  if (kg <= 0) return 0;
+  return (rateRow[0].spend || 0) / kg;
+}
+
 async function applyStockEffects(claim, items, warehouseId) {
   for (const item of items) {
     const product = await Product.findById(item.product);
@@ -97,11 +123,11 @@ async function applyStockEffects(claim, items, warehouseId) {
       const perUnit =
         item.weightKg != null && Number(item.weightKg) > 0
           ? Number(item.weightKg)
-          : 0;
+          : Number(product.weightKg) || 0;
       const kg = roundKg(perUnit * item.quantity);
       if (kg <= 0) {
         throw httpError(
-          `Set weight (kg) for "${product.name}" to return it as raw material`,
+          `Set weight (kg) for "${product.name}" — scrap is reused, not lost`,
           400
         );
       }
@@ -117,7 +143,7 @@ async function applyStockEffects(claim, items, warehouseId) {
         refType: "claim",
         refId: claim._id,
         movementDate: claim.claimDate,
-        notes: `Claim ${claim.claimNo} rework → ${materialType} ${kg} kg`,
+        notes: `Claim ${claim.claimNo} rework → ${materialType} ${kg} kg (metal reused)`,
       });
     }
   }
@@ -146,11 +172,11 @@ async function applyBuiltyClaimedQuantities(builty, items) {
 
 async function applyRefund(claim, builty, refundAmount) {
   const amount = roundMoney(Number(refundAmount) || 0);
-  if (amount <= 0) return null;
+  if (amount <= 0) return { applied: 0, newTotal: roundMoney(builty.totalAmount || 0) };
 
   const currentTotal = roundMoney(builty.totalAmount || 0);
   const applied = roundMoney(Math.min(amount, currentTotal));
-  if (applied <= 0) return null;
+  if (applied <= 0) return { applied: 0, newTotal: currentTotal };
 
   const newTotal = roundMoney(currentTotal - applied);
   builty.totalAmount = newTotal;
@@ -170,16 +196,45 @@ async function applyRefund(claim, builty, refundAmount) {
   return { applied, newTotal };
 }
 
-async function create(data) {
-  const builtyId = data.builty || data.order;
-  if (!builtyId) throw httpError("Builty is required", 400);
-  const builty = await Builty.findById(builtyId);
-  if (!builty) throw httpError("Builty not found", 404);
+async function reverseClaimEffects(claim) {
+  const builty = await Builty.findById(claim.builty);
+  if (builty) {
+    for (const item of claim.items || []) {
+      const line = (builty.items || []).find(
+        (l) => productIdOf(l.product) === String(item.product)
+      );
+      if (!line) continue;
+      const already = Number(line.claimedQuantity) || 0;
+      line.claimedQuantity = Math.max(0, roundMoney(already - (Number(item.quantity) || 0)));
+    }
 
-  if (data.customer && String(data.customer) !== String(builty.customer)) {
-    throw httpError("Selected party does not match the builty", 400);
+    const refund = roundMoney(claim.refundAmount || 0);
+    if (refund > 0) {
+      const restored = roundMoney((builty.totalAmount || 0) + refund);
+      builty.totalAmount = restored;
+      await CustomerLedgerEntry.updateMany(
+        { builty: builty._id, type: "invoice" },
+        {
+          $set: {
+            amount: restored,
+            notes: `Builty ${builty.builtyNo}`,
+          },
+        }
+      );
+    }
+
+    await builty.save();
+    await builtyService.syncCustomerBuiltyPaymentStatuses(claim.customer);
   }
 
+  await inventoryService.deleteMovementsByRef("claim", claim._id);
+  await FinanceEntry.deleteMany({
+    category: "claim_rework",
+    reference: claim.claimNo,
+  });
+}
+
+async function buildClaimItems(builty, data) {
   if (!Array.isArray(data.items) || data.items.length === 0) {
     throw httpError("At least one claim item is required", 400);
   }
@@ -206,7 +261,7 @@ async function create(data) {
 
     const disposition = raw.disposition || "returned";
     if (!DISPOSITIONS.includes(disposition)) {
-      throw httpError("Invalid disposition", 400);
+      throw httpError("Choose Returned or Rework only", 400);
     }
 
     const soldLine = (builty.items || []).find(
@@ -221,6 +276,12 @@ async function create(data) {
     if (weightKg != null && (!Number.isFinite(weightKg) || weightKg < 0)) {
       throw httpError("Weight kg is invalid", 400);
     }
+    if (disposition === "rework" && !(Number(weightKg) > 0)) {
+      throw httpError(
+        `Weight (kg) is required for rework on "${product.name}" so scrap can be reused`,
+        400
+      );
+    }
 
     let unitPrice = null;
     if (raw.unitPrice != null && raw.unitPrice !== "") {
@@ -229,7 +290,7 @@ async function create(data) {
         throw httpError("Unit price is invalid", 400);
       }
     } else {
-      unitPrice = suggestedUnitPrice(product, weightKg);
+      unitPrice = soldUnitPrice(soldLine, product, weightKg);
     }
 
     let refundAmount = 0;
@@ -238,8 +299,10 @@ async function create(data) {
       if (!Number.isFinite(refundAmount) || refundAmount < 0) {
         throw httpError("Refund amount is invalid", 400);
       }
+    } else {
+      refundAmount = roundMoney(quantity * (Number(unitPrice) || 0));
     }
-    refundTotal += refundAmount;
+    refundTotal = roundMoney(refundTotal + refundAmount);
 
     items.push({
       product: product._id,
@@ -249,6 +312,7 @@ async function create(data) {
       weightKg,
       unitPrice,
       refundAmount,
+      mfgLossAmount: 0,
     });
   }
 
@@ -257,11 +321,71 @@ async function create(data) {
     if (!Number.isFinite(headerRefund) || headerRefund < 0) {
       throw httpError("Refund amount is invalid", 400);
     }
-    if (refundTotal <= 0 && headerRefund > 0) {
+    if (headerRefund > 0) {
       refundTotal = headerRefund;
     }
   }
 
+  const mfgLossTotal = await computeReworkManufacturingLoss(items);
+  return { items, refundTotal, mfgLossTotal };
+}
+
+async function computeReworkManufacturingLoss(items) {
+  let totalLoss = 0;
+
+  for (const item of items) {
+    if (item.disposition !== "rework") {
+      item.mfgLossAmount = 0;
+      continue;
+    }
+    const product = await Product.findById(item.product);
+    if (!product) {
+      item.mfgLossAmount = 0;
+      continue;
+    }
+
+    const qty = Number(item.quantity) || 0;
+    const perUnitKg =
+      item.weightKg != null && Number(item.weightKg) > 0
+        ? Number(item.weightKg)
+        : Number(product.weightKg) || 0;
+    const totalKg = roundKg(perUnitKg * qty);
+    const materialType = product.family === "drum" ? "daig" : "scrap";
+    const rate = await avgMaterialRate(materialType);
+    const materialValue = roundMoney(totalKg * rate);
+    const fullMfgCost = roundMoney(qty * (Number(product.standardCost) || 0));
+    const loss = roundMoney(Math.max(0, fullMfgCost - materialValue));
+    item.mfgLossAmount = loss;
+    totalLoss = roundMoney(totalLoss + loss);
+  }
+
+  return totalLoss;
+}
+
+async function postReworkManufacturingLoss(claim, totalLoss) {
+  const amount = roundMoney(Number(totalLoss) || 0);
+  if (amount <= 0.001) return;
+  await FinanceEntry.create({
+    type: "expense",
+    category: "claim_rework",
+    amount,
+    entryDate: claim.claimDate,
+    reference: claim.claimNo,
+    notes: `Rework mfg loss (metal recovered, manufacturing expense lost) · Claim ${claim.claimNo}`,
+  });
+}
+
+async function create(data) {
+  const builtyId = data.builty || data.order;
+  if (!builtyId) throw httpError("Builty is required", 400);
+  const builty = await Builty.findById(builtyId);
+  if (!builty) throw httpError("Builty not found", 404);
+
+  if (data.customer && String(data.customer) !== String(builty.customer)) {
+    throw httpError("Selected party does not match the builty", 400);
+  }
+
+  const { items, refundTotal, mfgLossTotal } = await buildClaimItems(builty, data);
   const claimDate = parseDate(data.claimDate || new Date(), "Claim date");
   const claimNo = data.claimNo?.trim() || (await nextClaimNo());
 
@@ -271,7 +395,8 @@ async function create(data) {
     customer: builty.customer,
     claimDate,
     items,
-    refundAmount: roundMoney(refundTotal),
+    refundAmount: 0,
+    mfgLossAmount: roundMoney(mfgLossTotal),
     notes: data.notes?.trim() || "",
     status: "open",
   });
@@ -281,7 +406,10 @@ async function create(data) {
   const warehouse =
     builty.warehouse || (await inventoryService.getDefaultWarehouse())._id;
   await applyStockEffects(claim, items, warehouse);
-  await applyRefund(claim, builty, refundTotal);
+  const refundResult = await applyRefund(claim, builty, refundTotal);
+  claim.refundAmount = roundMoney(refundResult.applied || 0);
+  await claim.save();
+  await postReworkManufacturingLoss(claim, mfgLossTotal);
 
   return getById(claim._id);
 }
@@ -289,19 +417,87 @@ async function create(data) {
 async function update(id, data) {
   const claim = await Claim.findById(id);
   if (!claim) throw httpError("Claim not found", 404);
-  if (data.status) {
-    if (!["open", "resolved", "cancelled"].includes(data.status)) {
-      throw httpError("Invalid status", 400);
+
+  const hasFullEdit =
+    data.items !== undefined ||
+    data.builty !== undefined ||
+    data.order !== undefined ||
+    data.claimDate !== undefined ||
+    data.refundAmount !== undefined;
+
+  if (!hasFullEdit) {
+    if (data.status) {
+      if (!["open", "resolved", "cancelled"].includes(data.status)) {
+        throw httpError("Invalid status", 400);
+      }
+      claim.status = data.status;
     }
+    if (data.notes !== undefined) claim.notes = data.notes.trim();
+    if (data.reworkBatch !== undefined) claim.reworkBatch = data.reworkBatch || null;
+    if (data.replacementBuilty !== undefined) {
+      claim.replacementBuilty = data.replacementBuilty || null;
+    }
+    await claim.save();
+    return getById(claim._id);
+  }
+
+  await reverseClaimEffects(claim);
+
+  const builtyId = data.builty || data.order || claim.builty;
+  const builty = await Builty.findById(builtyId);
+  if (!builty) throw httpError("Builty not found", 404);
+
+  if (data.customer && String(data.customer) !== String(builty.customer)) {
+    throw httpError("Selected party does not match the builty", 400);
+  }
+
+  const payload = {
+    items: data.items !== undefined ? data.items : claim.items.map((i) => ({
+      product: i.product,
+      quantity: i.quantity,
+      weightKg: i.weightKg,
+      unitPrice: i.unitPrice,
+      refundAmount: i.refundAmount,
+      disposition: i.disposition,
+      reason: i.reason,
+    })),
+    refundAmount: data.refundAmount,
+    claimDate: data.claimDate || claim.claimDate,
+    notes: data.notes !== undefined ? data.notes : claim.notes,
+  };
+
+  const { items, refundTotal, mfgLossTotal } = await buildClaimItems(builty, payload);
+
+  claim.builty = builty._id;
+  claim.customer = builty.customer;
+  claim.claimDate = parseDate(payload.claimDate, "Claim date");
+  claim.items = items;
+  claim.mfgLossAmount = roundMoney(mfgLossTotal);
+  claim.notes = payload.notes?.trim?.() || String(payload.notes || "");
+  if (data.status && ["open", "resolved", "cancelled"].includes(data.status)) {
     claim.status = data.status;
   }
-  if (data.notes !== undefined) claim.notes = data.notes.trim();
-  if (data.reworkBatch !== undefined) claim.reworkBatch = data.reworkBatch || null;
-  if (data.replacementBuilty !== undefined) {
-    claim.replacementBuilty = data.replacementBuilty || null;
-  }
+  claim.refundAmount = 0;
   await claim.save();
+
+  await applyBuiltyClaimedQuantities(builty, items);
+  const warehouse =
+    builty.warehouse || (await inventoryService.getDefaultWarehouse())._id;
+  await applyStockEffects(claim, items, warehouse);
+  const refundResult = await applyRefund(claim, builty, refundTotal);
+  claim.refundAmount = roundMoney(refundResult.applied || 0);
+  await claim.save();
+  await postReworkManufacturingLoss(claim, mfgLossTotal);
+
   return getById(claim._id);
 }
 
-module.exports = { list, getById, create, update };
+async function remove(id) {
+  const claim = await Claim.findById(id);
+  if (!claim) throw httpError("Claim not found", 404);
+  await reverseClaimEffects(claim);
+  await claim.deleteOne();
+  return { ok: true };
+}
+
+module.exports = { list, getById, create, update, remove };
