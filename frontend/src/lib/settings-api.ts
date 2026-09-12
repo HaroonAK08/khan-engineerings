@@ -75,16 +75,77 @@ export async function savePayrollPeriod(body: {
   return data.period;
 }
 
-export type TaxSplitMode = "half" | "per_kg";
+export type TaxSplitMode = "half" | "per_kg" | "percent";
+
+export type TaxSplitSettings = {
+  mode: TaxSplitMode;
+  hubPercent: number;
+  drumPercent: number;
+};
 
 export async function getTaxSplit() {
-  const { data } = await api.get<{ mode: TaxSplitMode }>("/settings/tax-split");
-  return data.mode === "half" ? "half" : "per_kg";
+  const { data } = await api.get<TaxSplitSettings>("/settings/tax-split");
+  const mode: TaxSplitMode =
+    data.mode === "half" || data.mode === "percent" ? data.mode : "per_kg";
+  return {
+    mode,
+    hubPercent: Number(data.hubPercent) || 50,
+    drumPercent: Number(data.drumPercent) || 50,
+  };
 }
 
-export async function setTaxSplit(mode: TaxSplitMode) {
-  const { data } = await api.put<{ mode: TaxSplitMode }>("/settings/tax-split", { mode });
-  return data.mode === "half" ? "half" : "per_kg";
+export async function setTaxSplit(body: {
+  mode: TaxSplitMode;
+  hubPercent?: number;
+  drumPercent?: number;
+}) {
+  const { data } = await api.put<TaxSplitSettings>("/settings/tax-split", body);
+  const mode: TaxSplitMode =
+    data.mode === "half" || data.mode === "percent" ? data.mode : "per_kg";
+  return {
+    mode,
+    hubPercent: Number(data.hubPercent) || 50,
+    drumPercent: Number(data.drumPercent) || 50,
+  };
+}
+
+export type ElectricitySplitMode = "intensity" | "percent";
+
+export type ElectricitySplitSettings = {
+  mode: ElectricitySplitMode;
+  hubPercent: number;
+  drumPercent: number;
+  hubIntensity: number;
+  drumIntensity: number;
+};
+
+export async function getElectricitySplit() {
+  const { data } = await api.get<ElectricitySplitSettings>("/settings/electricity-split");
+  return {
+    mode: data.mode === "percent" ? ("percent" as const) : ("intensity" as const),
+    hubPercent: Number(data.hubPercent) || 60,
+    drumPercent: Number(data.drumPercent) || 40,
+    hubIntensity: Number(data.hubIntensity) || 0.6,
+    drumIntensity: Number(data.drumIntensity) || 0.4,
+  };
+}
+
+export async function setElectricitySplit(body: {
+  mode: ElectricitySplitMode;
+  hubPercent?: number;
+  drumPercent?: number;
+}) {
+  const { data } = await api.put<ElectricitySplitSettings>(
+    "/settings/electricity-split",
+    body
+  );
+  return {
+    mode: data.mode === "percent" ? ("percent" as const) : ("intensity" as const),
+    hubPercent: Number(data.hubPercent) || 60,
+    drumPercent: Number(data.drumPercent) || 40,
+    hubIntensity: Number(data.hubIntensity) || 0.6,
+    drumIntensity: Number(data.drumIntensity) || 0.4,
+  };
 }
 
 export async function deletePayrollPeriod(month: string) {

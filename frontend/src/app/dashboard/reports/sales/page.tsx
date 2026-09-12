@@ -140,8 +140,24 @@ export default function SalesReportsHubPage() {
   const drilledGroup = Boolean(groupId) && !partyId;
   const drilledParty = Boolean(partyId);
 
-  const productTotals = useMemo(() => {
-    return byProduct.reduce(
+  const hubProducts = useMemo(
+    () => byProduct.filter((p) => (p.family || "hub") === "hub"),
+    [byProduct]
+  );
+  const drumProducts = useMemo(
+    () => byProduct.filter((p) => p.family === "drum"),
+    [byProduct]
+  );
+
+  function renderItemsSoldTable(
+    family: "hub" | "drum",
+    rows: NonNullable<SalesReport["byProduct"]>
+  ) {
+    const title = family === "hub" ? t("prod.hub") : t("prod.drum");
+    const isDrum = family === "drum";
+    const headerBg = isDrum ? "bg-yellow-300" : "bg-sky-600";
+    const headerText = isDrum ? "text-yellow-950" : "text-white";
+    const totals = rows.reduce(
       (acc, p) => {
         acc.quantity += p.quantity || 0;
         acc.revenue += p.revenue || 0;
@@ -149,7 +165,96 @@ export default function SalesReportsHubPage() {
       },
       { quantity: 0, revenue: 0 }
     );
-  }, [byProduct]);
+    const avgPrice = totals.quantity > 0 ? totals.revenue / totals.quantity : 0;
+
+    return (
+      <Card className="gap-0 overflow-visible py-0">
+        <div className={`sticky top-0 z-20 rounded-t-xl shadow-md ${headerBg} ${headerText}`}>
+          <div className="px-4 py-3 sm:px-5">
+            <h2 className="text-nameplate text-base tracking-[0.12em] uppercase sm:text-lg">
+              {title}
+            </h2>
+            <p className={`mt-0.5 text-xs ${isDrum ? "text-yellow-950/70" : "text-white/80"}`}>
+              {t("salesReportsHub.itemsSoldDesc")}
+            </p>
+          </div>
+        </div>
+        <CardContent className="px-0 pt-0">
+          {rows.length === 0 ? (
+            <p className="px-6 py-8 text-center text-sm text-muted-foreground">
+              {t("salesReportsHub.none")}
+            </p>
+          ) : (
+            <Table containerClassName="overflow-visible">
+              <TableHeader className="sticky top-12 z-10 shadow-sm [&_tr]:border-b-0">
+                <TableRow className={`hover:bg-transparent ${headerBg}`}>
+                  <TableHead className={`${headerBg} ${headerText} font-semibold`}>
+                    {t("salesReportsHub.col.product")}
+                  </TableHead>
+                  <TableHead
+                    className={`${headerBg} ${headerText} text-right font-semibold`}
+                  >
+                    {t("salesReportsHub.col.qty")}
+                  </TableHead>
+                  <TableHead
+                    className={`${headerBg} ${headerText} text-right font-semibold`}
+                  >
+                    {t("salesReportsHub.col.avgPrice")}
+                  </TableHead>
+                  <TableHead
+                    className={`${headerBg} ${headerText} text-right font-semibold`}
+                  >
+                    {t("salesReportsHub.col.sales")}
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((p) => (
+                  <TableRow
+                    key={p.productId || p.name}
+                    className={
+                      isDrum
+                        ? "border-yellow-500/20 bg-yellow-400/15 hover:bg-yellow-400/25"
+                        : "border-sky-500/10 bg-sky-500/5 hover:bg-sky-500/10"
+                    }
+                  >
+                    <TableCell className="font-medium">{p.name}</TableCell>
+                    <TableCell className="font-data text-right text-xs">{p.quantity}</TableCell>
+                    <TableCell className="font-data text-right text-xs">
+                      {formatMoney(p.avgUnitPrice)}
+                    </TableCell>
+                    <TableCell className="font-data text-right text-xs">
+                      {formatMoney(p.revenue)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+              <TableFooter>
+                <TableRow
+                  className={
+                    isDrum
+                      ? "bg-yellow-400/20 font-medium hover:bg-yellow-400/20"
+                      : "bg-sky-600/15 font-medium hover:bg-sky-600/15"
+                  }
+                >
+                  <TableCell>{t("recvReports.grandTotal")}</TableCell>
+                  <TableCell className="font-data text-right text-xs">
+                    {totals.quantity}
+                  </TableCell>
+                  <TableCell className="font-data text-right text-xs">
+                    {formatMoney(avgPrice)}
+                  </TableCell>
+                  <TableCell className="font-data text-right text-sm font-medium">
+                    {formatMoney(totals.revenue)}
+                  </TableCell>
+                </TableRow>
+              </TableFooter>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -281,76 +386,10 @@ export default function SalesReportsHubPage() {
             ))}
           </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-nameplate text-sm">
-                {t("salesReportsHub.itemsSold")}
-              </CardTitle>
-              <CardDescription>{t("salesReportsHub.itemsSoldDesc")}</CardDescription>
-            </CardHeader>
-            <CardContent className="px-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t("salesReportsHub.col.product")}</TableHead>
-                    <TableHead>{t("prod.family")}</TableHead>
-                    <TableHead className="text-right">{t("salesReportsHub.col.qty")}</TableHead>
-                    <TableHead className="text-right">{t("salesReportsHub.col.avgPrice")}</TableHead>
-                    <TableHead className="text-right">{t("salesReportsHub.col.sales")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {byProduct.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-muted-foreground">
-                        {t("salesReportsHub.none")}
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    byProduct.map((p) => (
-                      <TableRow key={p.productId || p.name}>
-                        <TableCell className="font-medium">{p.name}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {p.family === "drum"
-                            ? t("salesReportsHub.family.drum")
-                            : t("salesReportsHub.family.hub")}
-                        </TableCell>
-                        <TableCell className="font-data text-right text-xs">
-                          {p.quantity}
-                        </TableCell>
-                        <TableCell className="font-data text-right text-xs">
-                          {formatMoney(p.avgUnitPrice)}
-                        </TableCell>
-                        <TableCell className="font-data text-right text-xs">
-                          {formatMoney(p.revenue)}
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-                {byProduct.length > 0 ? (
-                  <TableFooter>
-                    <TableRow>
-                      <TableCell colSpan={2} className="font-medium">
-                        {t("recvReports.grandTotal")}
-                      </TableCell>
-                      <TableCell className="font-data text-right text-xs">
-                        {productTotals.quantity}
-                      </TableCell>
-                      <TableCell className="font-data text-right text-xs">
-                        {productTotals.quantity > 0
-                          ? formatMoney(productTotals.revenue / productTotals.quantity)
-                          : formatMoney(0)}
-                      </TableCell>
-                      <TableCell className="font-data text-right text-sm font-medium">
-                        {formatMoney(productTotals.revenue)}
-                      </TableCell>
-                    </TableRow>
-                  </TableFooter>
-                ) : null}
-              </Table>
-            </CardContent>
-          </Card>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {renderItemsSoldTable("hub", hubProducts)}
+            {renderItemsSoldTable("drum", drumProducts)}
+          </div>
 
           {view === "group" && !drilledParty ? (
             <Card>

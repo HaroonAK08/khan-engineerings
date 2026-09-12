@@ -22,7 +22,7 @@ function setCors(res, req) {
   const requested = req?.headers?.["access-control-request-headers"];
   res.setHeader(
     "Access-Control-Allow-Headers",
-    requested || "Content-Type, Authorization, X-Vault-Token"
+    requested || "Content-Type, Authorization"
   );
   res.setHeader("Vary", "Origin, Access-Control-Request-Headers");
 }

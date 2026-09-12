@@ -20,7 +20,7 @@ import {
   FolderKanban,
   CalendarDays,
   CalendarRange,
-  Shield,
+  Landmark,
   Mic,
   History,
 } from "lucide-react";
@@ -76,9 +76,9 @@ export const FINANCE_CHILDREN: NavChild[] = [
     icon: CalendarRange,
   },
   {
-    labelKey: "financeSubnav.vault",
-    href: "/dashboard/finance/vault",
-    icon: Shield,
+    labelKey: "financeSubnav.assets",
+    href: "/dashboard/finance/assets",
+    icon: Landmark,
   },
 ];
 

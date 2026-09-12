@@ -7,7 +7,7 @@ import { History, Loader2, Pencil, Plus } from "lucide-react";
 import { InventorySubnav } from "@/components/layout/inventory-subnav";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { ProductSearchSelect } from "@/components/products/product-search-select";
-import { apiError } from "@/lib/materials-api";
+import { apiError, formatMoney } from "@/lib/materials-api";
 import { todayInput } from "@/lib/date-range";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 import {
@@ -202,6 +202,18 @@ export default function FinishedGoodsPage() {
     if (family === "drum") return t("finished.stat.drum");
     return "—";
   }
+
+  const selectedProduct = useMemo(
+    () => products.find((p) => p._id === productId) || null,
+    [products, productId]
+  );
+
+  const stockProduct = useMemo(() => {
+    if (dialogMode === "edit" && editing) {
+      return products.find((p) => p._id === editing.productId) || null;
+    }
+    return selectedProduct;
+  }, [dialogMode, editing, products, selectedProduct]);
 
   function openAdd() {
     setEditing(null);
@@ -553,6 +565,16 @@ export default function FinishedGoodsPage() {
                 onChange={(e) => setQuantity(e.target.value)}
               />
             </div>
+
+            {stockProduct ? (
+              <p className="text-[11px] text-muted-foreground">
+                {Number(stockProduct.standardCost) > 0
+                  ? t("finished.currentMakeCost", {
+                      cost: formatMoney(Number(stockProduct.standardCost) || 0),
+                    })
+                  : t("finished.currentMakeCostAuto")}
+              </p>
+            ) : null}
 
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="finished-notes">{t("finished.notes")}</Label>

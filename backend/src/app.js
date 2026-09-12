@@ -19,7 +19,7 @@ const reportsRoutes = require("./modules/reports/reports.routes");
 const claimRoutes = require("./modules/claims/claim.routes");
 const workerRoutes = require("./modules/workers/worker.routes");
 const settingsRoutes = require("./modules/settings/settings.routes");
-const vaultRoutes = require("./modules/vault/vault.routes");
+const assetRoutes = require("./modules/assets/asset.routes");
 const { notFound, errorHandler } = require("./middleware/errorHandler");
 
 const app = express();
@@ -38,7 +38,7 @@ app.use(
       return callback(null, false);
     },
     credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization", "X-Vault-Token"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
@@ -76,7 +76,7 @@ app.use("/api/production", productionRoutes);
 app.use("/api/expenses", expenseRoutes);
 app.use("/api/workers", workerRoutes);
 app.use("/api/settings", settingsRoutes);
-app.use("/api/vault", vaultRoutes);
+app.use("/api/assets", assetRoutes);
 app.use("/api/customers", customerRoutes);
 app.use("/api/party-groups", partyGroupRoutes);
 app.use("/api/salesmen", salesmanRoutes);

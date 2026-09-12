@@ -12,6 +12,9 @@ router.put("/waste-percent", controller.setWastePercent);
 router.get("/tax-split", controller.getTaxSplit);
 router.put("/tax-split", controller.setTaxSplit);
 
+router.get("/electricity-split", controller.getElectricitySplit);
+router.put("/electricity-split", controller.setElectricitySplit);
+
 router.get("/payroll-periods", controller.listPayrollPeriods);
 router.get("/payroll-periods/:month", controller.getPayrollPeriod);
 router.put("/payroll-periods/:month", controller.upsertPayrollPeriod);

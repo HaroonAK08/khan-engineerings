@@ -68,6 +68,7 @@ async function normalizeItems(items, { asOfDate, useAsOfWeight = false } = {}) {
     }
 
     const mode = raw.pricingMode === "fixed" ? "fixed" : "rate_kg";
+    const priceBasis = raw.priceBasis === "casting_only" ? "casting_only" : "selling";
     const locked = Number(raw.weightKg);
     const asOf = resolveWeightKg(product, asOfDate);
     const catalog = Number.isFinite(asOf) && asOf > 0 ? asOf : Number(product.weightKg);
@@ -106,6 +107,7 @@ async function normalizeItems(items, { asOfDate, useAsOfWeight = false } = {}) {
       quantity,
       claimedQuantity: Number(raw.claimedQuantity) || 0,
       pricingMode: mode,
+      priceBasis,
       ratePerKg: roundMoney(ratePerKg),
       weightKg: roundMoney(weightKg),
       unitPrice,

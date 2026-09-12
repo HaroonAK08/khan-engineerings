@@ -60,7 +60,33 @@ async function getTaxSplit(req, res, next) {
 
 async function setTaxSplit(req, res, next) {
   try {
-    const result = await settingsService.setTaxSplit(req.body.mode);
+    const result = await settingsService.setTaxSplit({
+      mode: req.body.mode,
+      hubPercent: req.body.hubPercent,
+      drumPercent: req.body.drumPercent,
+    });
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getElectricitySplit(req, res, next) {
+  try {
+    const result = await settingsService.getElectricitySplit();
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function setElectricitySplit(req, res, next) {
+  try {
+    const result = await settingsService.setElectricitySplit({
+      mode: req.body.mode,
+      hubPercent: req.body.hubPercent,
+      drumPercent: req.body.drumPercent,
+    });
     res.json(result);
   } catch (err) {
     next(err);
@@ -89,4 +115,6 @@ module.exports = {
   setWastePercent,
   getTaxSplit,
   setTaxSplit,
+  getElectricitySplit,
+  setElectricitySplit,
 };

@@ -13,6 +13,7 @@ router.get("/customer-revenue", controller.customerRevenue);
 router.get("/supplier-expenses", controller.supplierExpenses);
 router.get("/product-profit", controller.productProfit);
 router.get("/production-margin", controller.productionMargin);
+router.get("/casting-rates", controller.castingRates);
 router.get("/party-sales-margin", controller.partySalesMargin);
 router.get("/charges-calculator", controller.chargesCalculator);
 router.post("/charges-calculator/preview", controller.chargesCalculatorPreview);

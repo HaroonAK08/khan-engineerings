@@ -135,6 +135,15 @@ async function chargesCalculatorPreview(req, res, next) {
   }
 }
 
+async function castingRates(req, res, next) {
+  try {
+    const rates = await financeService.getCastingRates(req.query);
+    res.json(rates);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   overview,
   monthly,
@@ -151,4 +160,5 @@ module.exports = {
   removeEntry,
   chargesCalculator,
   chargesCalculatorPreview,
+  castingRates,
 };

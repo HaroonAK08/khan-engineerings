@@ -25,13 +25,8 @@ api.interceptors.response.use(
         url.includes("/auth/login") ||
         url.includes("/auth/me") ||
         url.includes("/auth/logout");
-      const isVaultPin =
-        url.includes("/vault/unlock") ||
-        url.includes("/vault/change-pin") ||
-        url.includes("/vault/reset-pin") ||
-        url.includes("/vault/setup");
 
-      if (!isAuthEndpoint && !isVaultPin && typeof window !== "undefined") {
+      if (!isAuthEndpoint && typeof window !== "undefined") {
         clearAuthToken();
         useAuthStore.getState().clear();
         if (window.location.pathname.startsWith("/dashboard")) {

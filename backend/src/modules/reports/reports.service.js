@@ -488,22 +488,28 @@ async function exportSales(query, format, res) {
     o.paymentStatus,
   ]);
 
-  const itemColumns = ["Product", "Family", "Qty sold", "Avg price", "Sales"];
-  const itemRows = (report.byProduct || []).map((p) => [
-    p.name,
-    p.family === "drum" ? "Drum" : "Hub",
-    p.quantity,
-    money(p.avgUnitPrice),
-    money(p.revenue),
-  ]);
+  const itemColumns = ["Product", "Qty sold", "Avg price", "Sales"];
+  const hubItemRows = (report.byProduct || [])
+    .filter((p) => (p.family || "hub") === "hub")
+    .map((p) => [p.name, p.quantity, money(p.avgUnitPrice), money(p.revenue)]);
+  const drumItemRows = (report.byProduct || [])
+    .filter((p) => p.family === "drum")
+    .map((p) => [p.name, p.quantity, money(p.avgUnitPrice), money(p.revenue)]);
 
   if (format === "pdf") {
     const sections = [];
-    if ((report.byProduct || []).length) {
+    if (hubItemRows.length) {
       sections.push({
-        heading: "Items sold",
+        heading: "Hub — items sold",
         columns: itemColumns,
-        rows: itemRows,
+        rows: hubItemRows,
+      });
+    }
+    if (drumItemRows.length) {
+      sections.push({
+        heading: "Drum — items sold",
+        columns: itemColumns,
+        rows: drumItemRows,
       });
     }
     if (drilledParty) {

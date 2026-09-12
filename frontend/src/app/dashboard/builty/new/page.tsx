@@ -17,10 +17,12 @@ import {
   type BuiltyLineInput,
   type Customer,
   type PartyProductPrice,
+  type PriceBasis,
   type PricingMode,
 } from "@/lib/sales-api";
 import type { Product } from "@/types/production";
 import { productWeightOnDate } from "@/lib/product-weight";
+import { getCastingRates, type CastingRatesReport } from "@/lib/finance-api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -33,7 +35,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useI18n } from "@/hooks/use-i18n";
-import { todayInput } from "@/lib/date-range";
+import { thisMonthRange, todayInput } from "@/lib/date-range";
 import {
   familyFilterChipClass,
   familyMetaTextClass,
@@ -51,6 +53,7 @@ type Line = {
   product: string;
   quantity: number;
   pricingMode: PricingMode;
+  priceBasis: PriceBasis;
   ratePerKg: number;
   fixedAmount: number;
 };
@@ -58,7 +61,14 @@ type Line = {
 const NEW_CUSTOMER = "__new__";
 
 function emptyLine(): Line {
-  return { product: "", quantity: 1, pricingMode: "rate_kg", ratePerKg: 0, fixedAmount: 0 };
+  return {
+    product: "",
+    quantity: 1,
+    pricingMode: "rate_kg",
+    priceBasis: "selling",
+    ratePerKg: 0,
+    fixedAmount: 0,
+  };
 }
 
 function applyPartyPrice(
@@ -69,6 +79,7 @@ function applyPartyPrice(
   if (last) {
     return {
       product: product._id,
+      priceBasis: "selling",
       pricingMode: last.pricingMode,
       ratePerKg: last.pricingMode === "rate_kg" ? last.ratePerKg : 0,
       fixedAmount: last.pricingMode === "fixed" ? last.unitPrice : 0,
@@ -76,6 +87,7 @@ function applyPartyPrice(
   }
   return {
     product: product._id,
+    priceBasis: "selling",
     ratePerKg:
       Number(product.pricePerKg) > 0 ? Number(product.pricePerKg) : current.ratePerKg || 0,
   };
@@ -113,6 +125,7 @@ function BuiltyForm() {
   const [productSearch, setProductSearch] = useState("");
   const [productFamilyFilter, setProductFamilyFilter] = useState<"all" | "hub" | "drum">("all");
   const [partyPriceHint, setPartyPriceHint] = useState<Record<number, boolean>>({});
+  const [castingRates, setCastingRates] = useState<CastingRatesReport | null>(null);
 
   const [newCustomerOpen, setNewCustomerOpen] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState("");
@@ -123,13 +136,16 @@ function BuiltyForm() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [c, p, stock] = await Promise.all([
+      const month = thisMonthRange();
+      const [c, p, stock, rates] = await Promise.all([
         listCustomers({ active: "true" }),
         listProducts({ active: "true" }),
         getFinishedStock(),
+        getCastingRates({ dateFrom: month.from, dateTo: month.to }).catch(() => null),
       ]);
       setCustomers(c);
       setProducts(p);
+      setCastingRates(rates);
       const map: Record<string, number> = {};
       for (const item of stock.items) {
         map[item.productId] = (map[item.productId] || 0) + item.quantity;
@@ -178,6 +194,7 @@ function BuiltyForm() {
           if (payload.fixedOnly != null) {
             return {
               ...line,
+              priceBasis: "selling" as PriceBasis,
               pricingMode: "fixed" as PricingMode,
               fixedAmount: Number(payload.fixedOnly) || 0,
               ratePerKg: 0,
@@ -185,6 +202,7 @@ function BuiltyForm() {
           }
           return {
             ...line,
+            priceBasis: "selling" as PriceBasis,
             pricingMode: "rate_kg" as PricingMode,
             ratePerKg: Number(payload.rateOnly) || 0,
           };
@@ -206,6 +224,7 @@ function BuiltyForm() {
             const current = next[existingIdx];
             next[existingIdx] = {
               ...current,
+              priceBasis: "selling",
               pricingMode,
               ratePerKg:
                 pricingMode === "rate_kg"
@@ -228,6 +247,7 @@ function BuiltyForm() {
             next.push({
               product: row.productId,
               quantity: Math.max(1, Math.round(Number(row.quantity) || 1)),
+              priceBasis: "selling",
               pricingMode,
               ratePerKg: pricingMode === "rate_kg" ? Number(row.rate) || 0 : 0,
               fixedAmount: pricingMode === "fixed" ? Number(row.amount) || 0 : 0,
@@ -341,6 +361,51 @@ function BuiltyForm() {
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
   }
 
+  async function setLinePriceBasis(index: number, basis: PriceBasis) {
+    const line = lines[index];
+    if (!line?.product) {
+      updateLine(index, { priceBasis: basis });
+      return;
+    }
+    const product = products.find((p) => p._id === line.product);
+    if (!product) return;
+
+    if (basis === "selling") {
+      let last: PartyProductPrice | null = null;
+      if (customer) {
+        try {
+          last = await getPartyProductPrice(customer, product._id);
+        } catch {
+          last = null;
+        }
+      }
+      updateLine(index, applyPartyPrice(product, last, line));
+      setPartyPriceHint((prev) => ({ ...prev, [index]: Boolean(last) }));
+      return;
+    }
+
+    const weightKg = productWeightOnDate(product, builtyDate);
+    if (!(weightKg > 0)) {
+      toast.error(t("builtyNew.castingNeedWeight"));
+      return;
+    }
+    const family = product.family === "drum" ? "drum" : "hub";
+    const castingPerKg = castingRates?.[family]?.castingPerKg;
+    if (!(castingPerKg != null && castingPerKg > 0)) {
+      toast.error(t("builtyNew.castingRateMissing"));
+      return;
+    }
+    const unit = Math.round(weightKg * castingPerKg * 100) / 100;
+    updateLine(index, {
+      priceBasis: "casting_only",
+      pricingMode: "fixed",
+      fixedAmount: unit,
+      ratePerKg: 0,
+    });
+    setPartyPriceHint((prev) => ({ ...prev, [index]: false }));
+    toast.success(t("builtyNew.castingApplied"));
+  }
+
   async function selectProduct(index: number, product: Product) {
     let last: PartyProductPrice | null = null;
     if (customer) {
@@ -430,6 +495,7 @@ function BuiltyForm() {
       product: l.product,
       quantity: Number(l.quantity),
       pricingMode: l.pricingMode,
+      priceBasis: l.priceBasis || "selling",
       ...(l.pricingMode === "rate_kg"
         ? { ratePerKg: Number(l.ratePerKg) }
         : { fixedAmount: Number(l.fixedAmount) }),
@@ -745,18 +811,28 @@ function BuiltyForm() {
                               ? "bg-primary text-primary-foreground"
                               : "text-muted-foreground"
                           }`}
-                          onClick={() => updateLine(index, { pricingMode: "rate_kg" })}
+                          onClick={() =>
+                            updateLine(index, {
+                              pricingMode: "rate_kg",
+                              priceBasis: "selling",
+                            })
+                          }
                         >
                           {t("builtyNew.mode.rate")}
                         </button>
                         <button
                           type="button"
                           className={`flex-1 text-sm ${
-                            line.pricingMode === "fixed"
+                            line.pricingMode === "fixed" && line.priceBasis !== "casting_only"
                               ? "bg-primary text-primary-foreground"
                               : "text-muted-foreground"
                           }`}
-                          onClick={() => updateLine(index, { pricingMode: "fixed" })}
+                          onClick={() =>
+                            updateLine(index, {
+                              pricingMode: "fixed",
+                              priceBasis: "selling",
+                            })
+                          }
                         >
                           {t("builtyNew.mode.fixed")}
                         </button>
@@ -766,6 +842,31 @@ function BuiltyForm() {
                           {t("builtyNew.partyLastPrice")}
                         </p>
                       ) : null}
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <Label className="text-xs">{t("builtyNew.priceBasis")}</Label>
+                      <button
+                        type="button"
+                        className={cn(
+                          "h-11 rounded-lg border px-2 text-left text-sm transition-colors",
+                          line.priceBasis === "casting_only"
+                            ? "border-primary bg-primary/15 text-foreground"
+                            : "border-input text-muted-foreground hover:bg-muted/50"
+                        )}
+                        onClick={() =>
+                          void setLinePriceBasis(
+                            index,
+                            line.priceBasis === "casting_only" ? "selling" : "casting_only"
+                          )
+                        }
+                      >
+                        {line.priceBasis === "casting_only"
+                          ? t("builtyNew.basis.castingOnly")
+                          : t("builtyNew.basis.selling")}
+                      </button>
+                      <p className="text-[10px] text-muted-foreground">
+                        {t("builtyNew.castingOnlyHint")}
+                      </p>
                     </div>
                     {line.pricingMode === "rate_kg" ? (
                       <div className="flex flex-col gap-1">

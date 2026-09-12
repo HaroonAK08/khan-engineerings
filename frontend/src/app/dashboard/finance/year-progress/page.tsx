@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Loader2, Shield } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { FinanceSubnav } from "@/components/layout/finance-subnav";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,12 +17,8 @@ import {
 } from "@/components/ui/select";
 import { useI18n } from "@/hooks/use-i18n";
 import { getYearProgress, type YearProgressReport } from "@/lib/finance-api";
+import { getAssetsSummary } from "@/lib/assets-api";
 import { apiError, formatKg, formatMoney } from "@/lib/materials-api";
-import {
-  getVaultYearSummary,
-  isVaultUnlocked,
-  type VaultYearSummary,
-} from "@/lib/vault-api";
 
 function currentYear() {
   return new Date().getFullYear();
@@ -52,21 +48,18 @@ export default function YearProgressPage() {
   const { t } = useI18n();
   const [year, setYear] = useState(String(currentYear()));
   const [report, setReport] = useState<YearProgressReport | null>(null);
-  const [assets, setAssets] = useState<VaultYearSummary | null>(null);
+  const [assetsTotal, setAssetsTotal] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       setReport(await getYearProgress({ year: Number(year) }));
-      if (isVaultUnlocked()) {
-        try {
-          setAssets(await getVaultYearSummary(Number(year)));
-        } catch {
-          setAssets(null);
-        }
-      } else {
-        setAssets(null);
+      try {
+        const summary = await getAssetsSummary();
+        setAssetsTotal(summary.grandTotal);
+      } catch {
+        setAssetsTotal(null);
       }
     } catch (err) {
       toast.error(apiError(err, t("yearProgress.loadFailed")));
@@ -85,17 +78,6 @@ export default function YearProgressPage() {
   );
 
   const totals = report?.totals;
-  const assetsByMonth = useMemo(() => {
-    const map = new Map<string, { personal: number; company: number; all: number }>();
-    for (const m of assets?.months || []) {
-      map.set(m.label, {
-        personal: m.personal,
-        company: m.company,
-        all: m.all,
-      });
-    }
-    return map;
-  }, [assets]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -126,41 +108,18 @@ export default function YearProgressPage() {
         </div>
       </div>
 
-      {loading || !report || !totals ? (
-        <div className="flex justify-center py-16">
+      {loading || !report ? (
+        <div className="flex justify-center py-20">
           <Loader2 className="size-6 animate-spin text-primary" />
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {[
-              {
-                label: t("yearProgress.sales"),
-                value: formatMoney(totals.sales),
-                hint: t("yearProgress.builtiesCount", { count: totals.builtyCount }),
-              },
-              {
-                label: t("yearProgress.production"),
-                value: String(totals.productionPieces),
-                hint: `${formatKg(totals.productionKg)} · ${t("yearProgress.batchesCount", {
-                  count: totals.productionBatches,
-                })}`,
-              },
-              {
-                label: t("yearProgress.purchases"),
-                value: formatMoney(totals.purchaseSpend),
-                hint: `${formatKg(totals.purchaseKg)} · ${t("yearProgress.purchasesCount", {
-                  count: totals.purchaseCount,
-                })}`,
-              },
-              {
-                label: t("yearProgress.expenses"),
-                value: formatMoney(totals.expenses),
-              },
-              {
-                label: t("yearProgress.netProfit"),
-                value: formatMoney(totals.netProfit),
-              },
+              { label: t("yearProgress.sales"), value: formatMoney(totals?.sales || 0) },
+              { label: t("yearProgress.purchases"), value: formatMoney(totals?.purchaseSpend || 0) },
+              { label: t("yearProgress.expenses"), value: formatMoney(totals?.expenses || 0) },
+              { label: t("yearProgress.netProfit"), value: formatMoney(totals?.netProfit || 0) },
             ].map((s) => (
               <Card key={s.label} className="py-0">
                 <CardContent className="p-4">
@@ -168,63 +127,27 @@ export default function YearProgressPage() {
                     {s.label}
                   </p>
                   <p className="font-data mt-1 text-xl">{s.value}</p>
-                  {s.hint ? (
-                    <p className="mt-1 text-xs text-muted-foreground">{s.hint}</p>
-                  ) : null}
                 </CardContent>
               </Card>
             ))}
           </div>
 
-          {assets ? (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              {[
-                {
-                  label: t("yearProgress.assetsPersonal"),
-                  value: formatMoney(assets.yearEnd.personal),
-                },
-                {
-                  label: t("yearProgress.assetsCompany"),
-                  value: formatMoney(assets.yearEnd.company),
-                },
-                {
-                  label: t("yearProgress.assetsAll"),
-                  value: formatMoney(assets.yearEnd.all),
-                },
-              ].map((s) => (
-                <Card key={s.label} className="py-0">
-                  <CardContent className="p-4">
-                    <p className="font-data text-[10px] tracking-wider text-muted-foreground uppercase">
-                      {s.label}
-                    </p>
-                    <p className="font-data mt-1 text-xl">{s.value}</p>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          ) : (
+          {assetsTotal != null ? (
             <Card>
-              <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-start gap-3">
-                  <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                    <Shield className="size-5" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">{t("yearProgress.assetsLockedTitle")}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {t("yearProgress.assetsLockedHint")}
-                    </p>
-                  </div>
+              <CardContent className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium">{t("yearProgress.assets")}</p>
+                  <p className="font-data text-xl">{formatMoney(assetsTotal)}</p>
                 </div>
                 <Link
-                  href="/dashboard/finance/vault"
-                  className="inline-flex h-10 items-center justify-center rounded-lg border border-border bg-background px-3.5 text-base hover:bg-muted"
+                  href="/dashboard/finance/assets"
+                  className="inline-flex h-10 items-center justify-center rounded-lg border border-border bg-background px-3.5 text-sm hover:bg-muted"
                 >
-                  {t("yearProgress.openVault")}
+                  {t("financeSubnav.assets")}
                 </Link>
               </CardContent>
             </Card>
-          )}
+          ) : null}
 
           <div>
             <h2 className="text-nameplate text-sm">{t("yearProgress.monthsTitle")}</h2>
@@ -252,9 +175,7 @@ export default function YearProgressPage() {
                     <span className="text-muted-foreground">{t("yearProgress.sales")}</span>
                     <span className="font-data text-xs">
                       {formatMoney(m.sales)}
-                      <span className="ml-1 text-muted-foreground">
-                        ({m.builtyCount})
-                      </span>
+                      <span className="ml-1 text-muted-foreground">({m.builtyCount})</span>
                     </span>
                   </div>
                   <div className="flex justify-between gap-2">
@@ -289,14 +210,6 @@ export default function YearProgressPage() {
                     <span>{t("yearProgress.cashNet")}</span>
                     <span className="font-data">{formatMoney(m.cashNet)}</span>
                   </div>
-                  {assetsByMonth.get(m.label) ? (
-                    <div className="flex justify-between gap-2 text-xs text-muted-foreground">
-                      <span>{t("yearProgress.assets")}</span>
-                      <span className="font-data">
-                        {formatMoney(assetsByMonth.get(m.label)!.all)}
-                      </span>
-                    </div>
-                  ) : null}
                 </CardContent>
               </Card>
             ))}

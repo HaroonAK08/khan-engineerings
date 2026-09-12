@@ -6,6 +6,12 @@ const builtyItemSchema = new mongoose.Schema(
     quantity: { type: Number, required: true, min: 0 },
     claimedQuantity: { type: Number, min: 0, default: 0 },
     pricingMode: { type: String, enum: ["rate_kg", "fixed"], default: "rate_kg" },
+    /** selling = normal party/catalog price; casting_only = casting cost without kharad */
+    priceBasis: {
+      type: String,
+      enum: ["selling", "casting_only"],
+      default: "selling",
+    },
     ratePerKg: { type: Number, min: 0, default: 0 },
     weightKg: { type: Number, min: 0, default: 0 },
     unitPrice: { type: Number, min: 0, default: 0 },

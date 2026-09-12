@@ -239,9 +239,11 @@ export default function BuiltyDetailPage() {
                     <TableCell className="font-data text-right text-xs">{claimed || "—"}</TableCell>
                     <TableCell className="font-data text-right text-xs">{remaining}</TableCell>
                     <TableCell className="font-data text-xs">
-                      {item.pricingMode === "fixed"
-                        ? t("builtyNew.mode.fixed")
-                        : t("builtyNew.mode.rate")}
+                      {item.priceBasis === "casting_only"
+                        ? t("builtyNew.basis.castingOnly")
+                        : item.pricingMode === "fixed"
+                          ? t("builtyNew.mode.fixed")
+                          : t("builtyNew.mode.rate")}
                     </TableCell>
                     <TableCell className="font-data text-right text-xs">
                       {item.pricingMode === "fixed" ? "—" : formatMoney(item.ratePerKg)}

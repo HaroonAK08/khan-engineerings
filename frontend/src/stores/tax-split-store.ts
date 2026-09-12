@@ -3,61 +3,109 @@ import {
   getTaxSplit,
   setTaxSplit,
   type TaxSplitMode,
+  type TaxSplitSettings,
 } from "@/lib/settings-api";
 
-const STORAGE_KEY = "ke-tax-split";
+const STORAGE_KEY = "ke-tax-split-v2";
 
-function readCache(): TaxSplitMode {
-  if (typeof window === "undefined") return "per_kg";
-  try {
-    return localStorage.getItem(STORAGE_KEY) === "half" ? "half" : "per_kg";
-  } catch {
-    return "per_kg";
+function readCache(): TaxSplitSettings {
+  if (typeof window === "undefined") {
+    return { mode: "per_kg", hubPercent: 50, drumPercent: 50 };
   }
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<TaxSplitSettings>;
+      const mode: TaxSplitMode =
+        parsed.mode === "half" || parsed.mode === "percent" ? parsed.mode : "per_kg";
+      return {
+        mode,
+        hubPercent: Number(parsed.hubPercent) || 50,
+        drumPercent: Number(parsed.drumPercent) || 50,
+      };
+    }
+    const legacy = localStorage.getItem("ke-tax-split");
+    if (legacy === "half") return { mode: "half", hubPercent: 50, drumPercent: 50 };
+  } catch {
+    // ignore
+  }
+  return { mode: "per_kg", hubPercent: 50, drumPercent: 50 };
 }
 
-function writeCache(mode: TaxSplitMode) {
+function writeCache(settings: TaxSplitSettings) {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(STORAGE_KEY, mode);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
   } catch {
     // ignore
   }
 }
 
-type TaxSplitState = {
-  mode: TaxSplitMode;
+type TaxSplitState = TaxSplitSettings & {
   hydrated: boolean;
   saving: boolean;
   hydrate: () => Promise<void>;
   setMode: (mode: TaxSplitMode) => Promise<void>;
+  setPercents: (hubPercent: number, drumPercent: number) => Promise<void>;
 };
 
 export const useTaxSplitStore = create<TaxSplitState>((set, get) => ({
-  mode: readCache(),
+  ...readCache(),
   hydrated: false,
   saving: false,
   hydrate: async () => {
-    set({ mode: readCache() });
+    set({ ...readCache() });
     try {
-      const mode = await getTaxSplit();
-      writeCache(mode);
-      set({ mode, hydrated: true });
+      const settings = await getTaxSplit();
+      writeCache(settings);
+      set({ ...settings, hydrated: true });
     } catch {
       set({ hydrated: true });
     }
   },
   setMode: async (mode) => {
-    const previous = get().mode;
-    writeCache(mode);
-    set({ mode, saving: true });
+    const previous = {
+      mode: get().mode,
+      hubPercent: get().hubPercent,
+      drumPercent: get().drumPercent,
+    };
+    const next = { ...previous, mode };
+    writeCache(next);
+    set({ ...next, saving: true });
     try {
-      const saved = await setTaxSplit(mode);
+      const saved = await setTaxSplit({
+        mode,
+        hubPercent: next.hubPercent,
+        drumPercent: next.drumPercent,
+      });
       writeCache(saved);
-      set({ mode: saved, saving: false });
+      set({ ...saved, saving: false });
     } catch (err) {
       writeCache(previous);
-      set({ mode: previous, saving: false });
+      set({ ...previous, saving: false });
+      throw err;
+    }
+  },
+  setPercents: async (hubPercent, drumPercent) => {
+    const previous = {
+      mode: get().mode,
+      hubPercent: get().hubPercent,
+      drumPercent: get().drumPercent,
+    };
+    const next = {
+      mode: "percent" as const,
+      hubPercent,
+      drumPercent,
+    };
+    writeCache(next);
+    set({ ...next, saving: true });
+    try {
+      const saved = await setTaxSplit(next);
+      writeCache(saved);
+      set({ ...saved, saving: false });
+    } catch (err) {
+      writeCache(previous);
+      set({ ...previous, saving: false });
       throw err;
     }
   },

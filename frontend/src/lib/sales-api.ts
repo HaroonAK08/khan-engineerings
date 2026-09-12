@@ -54,6 +54,7 @@ export type ProductRef = {
 };
 
 export type PricingMode = "rate_kg" | "fixed";
+export type PriceBasis = "selling" | "casting_only";
 
 export type BuiltyItem = {
   _id?: string;
@@ -61,6 +62,7 @@ export type BuiltyItem = {
   quantity: number;
   claimedQuantity?: number;
   pricingMode: PricingMode;
+  priceBasis?: PriceBasis;
   ratePerKg: number;
   weightKg: number;
   unitPrice: number;
@@ -562,6 +564,7 @@ export type BuiltyLineInput = {
   product: string;
   quantity: number;
   pricingMode: PricingMode;
+  priceBasis?: PriceBasis;
   ratePerKg?: number;
   fixedAmount?: number;
   weightKg?: number;

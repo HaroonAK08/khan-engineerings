@@ -221,8 +221,8 @@ export default function HistoryPage() {
           date: claim.claimDate,
           title: claim.claimNo,
           detail: [claim.customer?.name, claim.builty?.builtyNo].filter(Boolean).join(" · "),
-          href: "/dashboard/claims",
-          canDelete: false,
+          href: `/dashboard/claims?edit=${claim._id}`,
+          canDelete: true,
         });
       }
 
@@ -264,6 +264,7 @@ export default function HistoryPage() {
       else if (row.kind === "production") await deleteBatch(rawId);
       else if (row.kind === "purchase") await deletePurchase(rawId);
       else if (row.kind === "expense") await deleteFactoryExpense(rawId);
+      else if (row.kind === "claim") await api.delete(`/claims/${rawId}`);
       toast.success(t("history.deleted"));
       await load();
     } catch (err) {

@@ -207,6 +207,15 @@ export type ProductionMarginProduct = {
   sellValue: number;
   soldCogs?: number;
   saleOnly?: boolean;
+  standardCost?: number;
+  costSource?:
+    | "period_production"
+    | "standard_cost"
+    | "family_kg"
+    | "material_rate"
+    | "mixed"
+    | "none"
+    | null;
   profit: number;
   profitPerPiece: number;
   marginPct: number | null;
@@ -311,11 +320,27 @@ export type ChannelManufactureLine = {
 export async function getProductionMargin(params?: {
   dateFrom?: string;
   dateTo?: string;
-  taxSplit?: "half" | "per_kg";
+  taxSplit?: "half" | "per_kg" | "percent";
 }) {
   const { data } = await api.get<ProductionMarginReport>("/finance/production-margin", {
     params,
   });
+  return data;
+}
+
+export type CastingFamilyRates = {
+  castingPerKg: number | null;
+  khradPerKg: number | null;
+};
+
+export type CastingRatesReport = {
+  period: { from: string; to: string };
+  hub: CastingFamilyRates;
+  drum: CastingFamilyRates;
+};
+
+export async function getCastingRates(params?: { dateFrom?: string; dateTo?: string }) {
+  const { data } = await api.get<CastingRatesReport>("/finance/casting-rates", { params });
   return data;
 }
 
@@ -547,7 +572,7 @@ export type PartySalesMarginReport = {
 export async function getPartySalesMargin(params?: {
   dateFrom?: string;
   dateTo?: string;
-  taxSplit?: "half" | "per_kg";
+  taxSplit?: "half" | "per_kg" | "percent";
 }) {
   const { data } = await api.get<PartySalesMarginReport>("/finance/party-sales-margin", {
     params,

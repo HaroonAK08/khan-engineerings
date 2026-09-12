@@ -221,22 +221,118 @@ async function setWastePercent({ family, percent, effectiveFrom }) {
 }
 
 function normalizeTaxSplit(value) {
-  return value === "half" ? "half" : "per_kg";
+  if (value === "half" || value === "percent") return value;
+  return "per_kg";
+}
+
+function normalizePercentPair(hubRaw, drumRaw, defaults) {
+  let hub = Number(hubRaw);
+  let drum = Number(drumRaw);
+  if (!Number.isFinite(hub)) hub = defaults.hub;
+  if (!Number.isFinite(drum)) drum = defaults.drum;
+  hub = Math.max(0, Math.min(100, hub));
+  drum = Math.max(0, Math.min(100, drum));
+  const sum = hub + drum;
+  if (Math.abs(sum - 100) > 0.01) {
+    if (sum <= 0) {
+      hub = defaults.hub;
+      drum = defaults.drum;
+    } else {
+      hub = Math.round((hub / sum) * 10000) / 100;
+      drum = Math.round((100 - hub) * 100) / 100;
+    }
+  }
+  return { hubPercent: hub, drumPercent: drum };
+}
+
+function assertPercentPair(hubRaw, drumRaw) {
+  const hub = Number(hubRaw);
+  const drum = Number(drumRaw);
+  if (!Number.isFinite(hub) || !Number.isFinite(drum)) {
+    throw httpError("Hub and drum percents are required", 400);
+  }
+  if (hub < 0 || drum < 0 || hub > 100 || drum > 100) {
+    throw httpError("Percents must be between 0 and 100", 400);
+  }
+  if (Math.abs(hub + drum - 100) > 0.05) {
+    throw httpError("Hub + drum must equal 100%", 400);
+  }
+  return {
+    hubPercent: Math.round(hub * 100) / 100,
+    drumPercent: Math.round(drum * 100) / 100,
+  };
 }
 
 async function getTaxSplit() {
   const doc = await getAppSettings();
-  return { mode: normalizeTaxSplit(doc.taxSplitMode) };
+  const mode = normalizeTaxSplit(doc.taxSplitMode);
+  const percents = normalizePercentPair(doc.taxHubPercent, doc.taxDrumPercent, {
+    hub: 50,
+    drum: 50,
+  });
+  return { mode, ...percents };
 }
 
-async function setTaxSplit(mode) {
-  if (mode !== "half" && mode !== "per_kg") {
-    throw httpError("Tax split must be half or per_kg", 400);
+async function setTaxSplit({ mode, hubPercent, drumPercent }) {
+  if (mode !== "half" && mode !== "per_kg" && mode !== "percent") {
+    throw httpError("Tax split must be half, per_kg, or percent", 400);
   }
   const doc = await getAppSettings();
   doc.taxSplitMode = mode;
+  if (mode === "percent") {
+    const percents = assertPercentPair(hubPercent, drumPercent);
+    doc.taxHubPercent = percents.hubPercent;
+    doc.taxDrumPercent = percents.drumPercent;
+  } else if (hubPercent != null || drumPercent != null) {
+    const percents = assertPercentPair(
+      hubPercent ?? doc.taxHubPercent ?? 50,
+      drumPercent ?? doc.taxDrumPercent ?? 50
+    );
+    doc.taxHubPercent = percents.hubPercent;
+    doc.taxDrumPercent = percents.drumPercent;
+  }
   await doc.save();
-  return { mode };
+  return getTaxSplit();
+}
+
+async function getElectricitySplit() {
+  const doc = await getAppSettings();
+  const mode = doc.electricitySplitMode === "percent" ? "percent" : "intensity";
+  const percents = normalizePercentPair(
+    doc.electricityHubPercent,
+    doc.electricityDrumPercent,
+    { hub: 60, drum: 40 }
+  );
+  const hubIntensity = mode === "percent" ? percents.hubPercent / 100 : 0.6;
+  const drumIntensity = mode === "percent" ? percents.drumPercent / 100 : 0.4;
+  return {
+    mode,
+    ...percents,
+    hubIntensity,
+    drumIntensity,
+  };
+}
+
+async function setElectricitySplit({ mode, hubPercent, drumPercent }) {
+  if (mode !== "intensity" && mode !== "percent") {
+    throw httpError("Electricity split must be intensity or percent", 400);
+  }
+  const doc = await getAppSettings();
+  doc.electricitySplitMode = mode;
+  if (mode === "percent") {
+    const percents = assertPercentPair(hubPercent, drumPercent);
+    doc.electricityHubPercent = percents.hubPercent;
+    doc.electricityDrumPercent = percents.drumPercent;
+  } else if (hubPercent != null || drumPercent != null) {
+    const percents = assertPercentPair(
+      hubPercent ?? doc.electricityHubPercent ?? 60,
+      drumPercent ?? doc.electricityDrumPercent ?? 40
+    );
+    doc.electricityHubPercent = percents.hubPercent;
+    doc.electricityDrumPercent = percents.drumPercent;
+  }
+  await doc.save();
+  return getElectricitySplit();
 }
 
 async function deletePayrollPeriod(month) {
@@ -262,4 +358,6 @@ module.exports = {
   setWastePercent,
   getTaxSplit,
   setTaxSplit,
+  getElectricitySplit,
+  setElectricitySplit,
 };

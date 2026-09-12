@@ -33,9 +33,18 @@ const settingsSchema = new mongoose.Schema(
     wasteHistory: { type: [wasteHistorySchema], default: [] },
     taxSplitMode: {
       type: String,
-      enum: ["half", "per_kg"],
+      enum: ["half", "per_kg", "percent"],
       default: "per_kg",
     },
+    taxHubPercent: { type: Number, min: 0, max: 100, default: 50 },
+    taxDrumPercent: { type: Number, min: 0, max: 100, default: 50 },
+    electricitySplitMode: {
+      type: String,
+      enum: ["intensity", "percent"],
+      default: "intensity",
+    },
+    electricityHubPercent: { type: Number, min: 0, max: 100, default: 60 },
+    electricityDrumPercent: { type: Number, min: 0, max: 100, default: 40 },
   },
   { timestamps: true }
 );

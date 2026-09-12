@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { History, Loader2, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
@@ -50,7 +51,7 @@ type Claim = {
     mfgLossAmount?: number;
     unitPrice?: number | null;
     reason?: string;
-    product?: { _id?: string; name: string };
+    product?: { _id?: string; name: string } | string;
   }>;
 };
 
@@ -94,6 +95,8 @@ function lineSuggestedTotal(line: Line) {
 
 export default function ClaimsPage() {
   const { t } = useI18n();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [claims, setClaims] = useState<Claim[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [orders, setOrders] = useState<BuiltyOption[]>([]);
@@ -120,6 +123,41 @@ export default function ClaimsPage() {
     setLines([emptyLine()]);
     setPartyPickerOpen(false);
     setPartySearch("");
+  }
+
+  function applyClaimToForm(claim: Claim) {
+    const customerId =
+      typeof claim.customer === "object" && claim.customer?._id
+        ? claim.customer._id
+        : "";
+    const nextBuilty =
+      typeof claim.builty === "object" && claim.builty?._id ? claim.builty._id : "";
+    setEditingId(claim._id);
+    setSelectedBuilty(null);
+    setParty(customerId);
+    setBuiltyId(nextBuilty);
+    setClaimDate(calendarDay(claim.claimDate) || todayInput());
+    setLines(
+      claim.items.length
+        ? claim.items.map((item) => ({
+            product:
+              typeof item.product === "object" && item.product?._id
+                ? item.product._id
+                : typeof item.product === "string"
+                  ? item.product
+                  : "",
+            quantity: Number(item.quantity) || 1,
+            weightKg: Number(item.weightKg) || 0,
+            unitPrice: Number(item.unitPrice) || 0,
+            disposition:
+              item.disposition === "rework" ? ("rework" as const) : ("returned" as const),
+            reason: item.reason || "",
+          }))
+        : [emptyLine()]
+    );
+    setPartyPickerOpen(false);
+    setPartySearch("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   const load = useCallback(async () => {
@@ -152,6 +190,7 @@ export default function ClaimsPage() {
       setSelectedBuilty(null);
       return;
     }
+    setSelectedBuilty(null);
     getBuilty(builtyId)
       .then((data) => {
         if (!cancelled) setSelectedBuilty(data.builty);
@@ -165,9 +204,15 @@ export default function ClaimsPage() {
   }, [builtyId]);
 
   const partyBuilties = useMemo(() => {
-    if (!party) return orders;
-    return orders.filter((o) => customerIdOf(o.customer) === party);
-  }, [orders, party]);
+    const list = !party
+      ? orders
+      : orders.filter((o) => customerIdOf(o.customer) === party);
+    if (builtyId && !list.some((o) => o._id === builtyId)) {
+      const extra = orders.find((o) => o._id === builtyId);
+      if (extra) return [extra, ...list];
+    }
+    return list;
+  }, [orders, party, builtyId]);
 
   const filteredCustomers = useMemo(() => {
     const q = partySearch.trim().toLowerCase();
@@ -186,15 +231,23 @@ export default function ClaimsPage() {
   );
 
   const builtyProducts = useMemo(() => {
-    if (!selectedBuilty?.items?.length) return allProducts;
-    const ids = new Set(
-      selectedBuilty.items.map((i) =>
-        typeof i.product === "object" && i.product ? i.product._id : String(i.product)
-      )
+    let base = allProducts;
+    if (selectedBuilty?.items?.length) {
+      const ids = new Set(
+        selectedBuilty.items.map((i) =>
+          typeof i.product === "object" && i.product ? i.product._id : String(i.product)
+        )
+      );
+      const fromBuilty = allProducts.filter((p) => ids.has(p._id));
+      if (fromBuilty.length > 0) base = fromBuilty;
+    }
+    const selectedIds = new Set(lines.map((l) => l.product).filter(Boolean));
+    if (selectedIds.size === 0) return base;
+    const missing = allProducts.filter(
+      (p) => selectedIds.has(p._id) && !base.some((b) => b._id === p._id)
     );
-    const fromBuilty = allProducts.filter((p) => ids.has(p._id));
-    return fromBuilty.length > 0 ? fromBuilty : allProducts;
-  }, [selectedBuilty, allProducts]);
+    return missing.length ? [...base, ...missing] : base;
+  }, [selectedBuilty, allProducts, lines]);
 
   function updateLine(index: number, patch: Partial<Line>) {
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
@@ -221,7 +274,7 @@ export default function ClaimsPage() {
   }
 
   useEffect(() => {
-    if (!selectedBuilty) return;
+    if (!selectedBuilty || editingId) return;
     setLines((prev) =>
       prev.map((line) => {
         if (!line.product) return line;
@@ -242,7 +295,7 @@ export default function ClaimsPage() {
         return { ...line, weightKg, unitPrice };
       })
     );
-  }, [selectedBuilty]);
+  }, [selectedBuilty, editingId]);
 
   function soldPriceFromBuilty(productId: string) {
     const builtyLine = selectedBuilty?.items?.find((i) => {
@@ -349,28 +402,28 @@ export default function ClaimsPage() {
     }
   }
 
-  function startEdit(claim: Claim) {
-    const customerId = claim.customer?._id || "";
-    const nextBuilty = claim.builty?._id || "";
-    setEditingId(claim._id);
-    setParty(customerId);
-    setBuiltyId(nextBuilty);
-    setClaimDate(calendarDay(claim.claimDate) || todayInput());
-    setLines(
-      claim.items.length
-        ? claim.items.map((item) => ({
-            product: item.product?._id || "",
-            quantity: Number(item.quantity) || 1,
-            weightKg: Number(item.weightKg) || 0,
-            unitPrice: Number(item.unitPrice) || 0,
-            disposition:
-              item.disposition === "rework" ? ("rework" as const) : ("returned" as const),
-            reason: item.reason || "",
-          }))
-        : [emptyLine()]
-    );
-    window.scrollTo({ top: 0, behavior: "smooth" });
+  async function startEdit(claim: Claim) {
+    applyClaimToForm(claim);
+    try {
+      const { data } = await api.get<{ claim: Claim }>(`/claims/${claim._id}`);
+      if (data.claim) applyClaimToForm(data.claim);
+    } catch {
+      // list row data is enough to edit if detail fetch fails
+    }
   }
+
+  useEffect(() => {
+    const editId = searchParams.get("edit");
+    if (!editId || loading || claims.length === 0) return;
+    if (editingId === editId) return;
+    const claim = claims.find((c) => c._id === editId);
+    if (!claim) return;
+    void startEdit(claim).then(() => {
+      router.replace("/dashboard/claims");
+    });
+    // intentionally only react to URL + loaded claims
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, loading, claims]);
 
   async function onDeleteClaim(claim: Claim) {
     if (!window.confirm(t("claims.confirmDelete"))) return;
@@ -709,14 +762,17 @@ export default function ClaimsPage() {
                     </TableCell>
                     <TableCell className="text-xs">
                       {c.items
-                        .map(
-                          (i) =>
-                            `${i.quantity} ${i.product?.name || ""} (${
-                              i.disposition === "rework"
-                                ? t("claims.disp.rework")
-                                : t("claims.disp.returned")
-                            })`
-                        )
+                        .map((i) => {
+                          const productName =
+                            typeof i.product === "object" && i.product
+                              ? i.product.name || ""
+                              : "";
+                          return `${i.quantity} ${productName} (${
+                            i.disposition === "rework"
+                              ? t("claims.disp.rework")
+                              : t("claims.disp.returned")
+                          })`;
+                        })
                         .join(", ")}
                     </TableCell>
                     <TableCell className="font-data text-xs">

@@ -37,12 +37,14 @@ function roundKg(n) {
   return Math.round((n || 0) * 1000) / 1000;
 }
 
-function splitCommonTax(amount, mode, hubKg, drumKg) {
+function splitCommonTax(amount, mode, hubKg, drumKg, hubPercent = 50, drumPercent = 50) {
   const out = { hub: 0, drum: 0, common: 0 };
   if (!(amount > 0)) return out;
-  if (mode === "half") {
+  if (mode === "half" || mode === "percent") {
+    const hubP = mode === "half" ? 50 : Number(hubPercent) || 50;
+    const drumP = mode === "half" ? 50 : Number(drumPercent) || 50;
     if (hubKg > 0 && drumKg > 0) {
-      const hubShare = roundMoney(amount / 2);
+      const hubShare = roundMoney((amount * hubP) / 100);
       out.hub = hubShare;
       out.drum = roundMoney(amount - hubShare);
       return out;
@@ -915,10 +917,18 @@ async function getProductionMargin(query = {}) {
   const { from, to } = periodBounds(query);
   const settingsService = require("../settings/settings.service");
   const salaryBounds = await settingsService.resolveSalaryBounds(from, to);
+  const taxSettings = await settingsService.getTaxSplit();
   const taxMode =
-    query.taxSplit === "half" || query.taxSplit === "per_kg"
+    query.taxSplit === "half" ||
+    query.taxSplit === "per_kg" ||
+    query.taxSplit === "percent"
       ? query.taxSplit
-      : (await settingsService.getTaxSplit()).mode;
+      : taxSettings.mode;
+  const taxHubPercent = Number(taxSettings.hubPercent) || 50;
+  const taxDrumPercent = Number(taxSettings.drumPercent) || 50;
+  const electricitySettings = await settingsService.getElectricitySplit();
+  const ELECTRICITY_HUB_INTENSITY = Number(electricitySettings.hubIntensity) || 0.6;
+  const ELECTRICITY_DRUM_INTENSITY = Number(electricitySettings.drumIntensity) || 0.4;
   const expenseMatch = settingsService.expenseMatchWithSalaryWindow(
     from,
     to,
@@ -1072,6 +1082,9 @@ async function getProductionMargin(query = {}) {
       row.name = prod.name || row.name;
       row.family = prod.family || row.family;
       row.catalogSellPrice = Number(prod.sellingPrice) || 0;
+      row.standardCost = Number(prod.standardCost) || 0;
+    } else {
+      row.standardCost = Number(row.standardCost) || 0;
     }
     const fromBatchKg = roundKg(
       Math.max(0, (row.scrapKg || 0) + (row.daigKg || 0) - (row.wasteKg || 0))
@@ -1164,6 +1177,7 @@ async function getProductionMargin(query = {}) {
       const row = byProductMap.get(pid);
       row.catalogSellPrice = Number(prod.sellingPrice) || 0;
       row.weightKg = Number(prod.weightKg) || 0;
+      row.standardCost = Number(prod.standardCost) || 0;
       row.finishedKg = 0;
       row.family = prod.family || row.family || "hub";
       row.name = prod.name || row.name;
@@ -1334,9 +1348,7 @@ async function getProductionMargin(query = {}) {
     salaryPools.common = roundMoney(salaryPools.common + amount);
   }
 
-  /** Hub vs drum electricity intensity when production kg is equal (60% / 40%). */
-  const ELECTRICITY_HUB_INTENSITY = 0.6;
-  const ELECTRICITY_DRUM_INTENSITY = 0.4;
+  /** Hub vs drum electricity intensity (settings: default 60/40 or custom %). */
   const overheadPools = {
     hub: salaryPools.hub,
     drum: salaryPools.drum,
@@ -1370,7 +1382,14 @@ async function getProductionMargin(query = {}) {
     producedRows.filter((r) => r.family === "drum").reduce((s, r) => s + (r.finishedKg || 0), 0)
   );
   const allFinishedKg = roundKg(hubFinishedKg + drumFinishedKg);
-  const taxPools = splitCommonTax(taxHeld, taxMode, hubFinishedKg, drumFinishedKg);
+  const taxPools = splitCommonTax(
+    taxHeld,
+    taxMode,
+    hubFinishedKg,
+    drumFinishedKg,
+    taxHubPercent,
+    taxDrumPercent
+  );
   addScopePools(overheadPools, taxPools);
   const overheadTotal = roundMoney(
     overheadPools.hub + overheadPools.drum + overheadPools.common + electricityCommon
@@ -1446,6 +1465,7 @@ async function getProductionMargin(query = {}) {
       costPerPiece: roundMoney(costPerPiece),
       costPerKg: costPerKg != null ? roundMoney(costPerKg) : null,
       overheadPerKg: overheadPerKg != null ? roundMoney(overheadPerKg) : null,
+      standardCost: roundMoney(row.standardCost || 0),
       sellPricePerPiece,
       sellPriceSource,
       unitsSoldPeriod,
@@ -1455,6 +1475,7 @@ async function getProductionMargin(query = {}) {
       profitPerPiece: roundMoney(sellPricePerPiece - costPerPiece),
       marginPct: null,
       soldCogs: 0,
+      costSource: null,
     };
   }
 
@@ -1499,32 +1520,75 @@ async function getProductionMargin(query = {}) {
       ? roundMoney(byFamily.drum.overhead / byFamily.drum.finishedKg)
       : null;
 
-  // P/L on sold goods: sold revenue − (units sold × unit mfg cost). Unsold production is not a period loss.
+  // P/L on sold goods: sold revenue − sold COGS.
+  // Period production uses actual cost/pc; units sold beyond production (opening / pre-system
+  // stock) use product make-cost (standardCost), then family $/kg as fallback.
   for (const row of productRows) {
     const fam = row.family === "drum" ? "drum" : "hub";
     const familyCostPerKg = byFamily[fam].costPerKg;
     const saleOnly = !(row.pieces > 0);
     row.saleOnly = saleOnly;
 
-    let unitMfgCost = row.costPerPiece || 0;
+    const unitsSold = Number(row.unitsSoldPeriod) || 0;
+    const piecesProduced = Number(row.pieces) || 0;
+    const standardCost = Number(row.standardCost) || 0;
+    const periodUnitCost = Number(row.costPerPiece) || 0;
+    const familyUnitCost =
+      familyCostPerKg != null && row.weightKg > 0
+        ? familyCostPerKg * row.weightKg
+        : 0;
+
+    function currentMfgCost() {
+      // 1) Product's current make cost (from latest production)
+      if (standardCost > 0) return { cost: standardCost, source: "standard_cost" };
+      // 2) This period's family manufacturing $/kg × piece weight
+      if (familyUnitCost > 0) return { cost: familyUnitCost, source: "family_kg" };
+      // 3) Current material rate × weight (scrap for hub, daig for drum)
+      const w = Number(row.weightKg) || 0;
+      if (w > 0) {
+        const rate = fam === "drum" ? avgDaigRate : avgScrapRate;
+        if (rate > 0) {
+          return { cost: w * rate, source: "material_rate" };
+        }
+      }
+      return { cost: 0, source: "none" };
+    }
+
+    let soldCogs = 0;
+    let unitMfgCost = periodUnitCost;
+    let costSource = piecesProduced > 0 ? "period_production" : "none";
+
     if (saleOnly) {
-      // Impute unit cost from family rate for P/L only — do not fake production kg metrics.
-      unitMfgCost =
-        familyCostPerKg != null && row.weightKg > 0
-          ? familyCostPerKg * row.weightKg
-          : 0;
+      const cur = currentMfgCost();
+      unitMfgCost = cur.cost;
+      soldCogs = roundMoney(unitsSold * unitMfgCost);
       row.costPerPiece = roundMoney(unitMfgCost);
       row.costPerKg = null;
       row.overheadPerKg = null;
+      costSource = cur.source;
+    } else if (unitsSold > piecesProduced) {
+      const openingUnits = unitsSold - piecesProduced;
+      const cur = currentMfgCost();
+      const openingUnit = cur.cost > 0 ? cur.cost : periodUnitCost;
+      soldCogs = roundMoney(piecesProduced * periodUnitCost + openingUnits * openingUnit);
+      unitMfgCost = unitsSold > 0 ? soldCogs / unitsSold : periodUnitCost;
+      costSource =
+        openingUnit > 0 && Math.abs(openingUnit - periodUnitCost) > 0.001
+          ? "mixed"
+          : "period_production";
+    } else {
+      soldCogs = roundMoney(unitsSold * periodUnitCost);
+      unitMfgCost = periodUnitCost;
+      costSource = "period_production";
     }
 
-    const soldCogs = roundMoney((row.unitsSoldPeriod || 0) * unitMfgCost);
     const profit = roundMoney(row.sellValue - soldCogs);
     row.soldCogs = soldCogs;
     row.profit = profit;
     row.profitPerPiece = roundMoney(row.sellPricePerPiece - unitMfgCost);
     row.marginPct =
       row.sellValue > 0 ? roundMoney((profit / row.sellValue) * 100) : null;
+    row.costSource = costSource;
   }
   // Produced first (best P/L), then sold-without-production this period.
   productRows.sort((a, b) => {
@@ -1883,6 +1947,14 @@ async function getProductionMargin(query = {}) {
       electricityIntensity: {
         hub: ELECTRICITY_HUB_INTENSITY,
         drum: ELECTRICITY_DRUM_INTENSITY,
+        mode: electricitySettings.mode,
+        hubPercent: electricitySettings.hubPercent,
+        drumPercent: electricitySettings.drumPercent,
+      },
+      taxSplit: {
+        mode: taxMode,
+        hubPercent: taxHubPercent,
+        drumPercent: taxDrumPercent,
       },
     },
     purchasedVsUsed: {
@@ -2926,12 +2998,14 @@ function computeRatesFromChargeLines({
   materialHubPerKg,
   materialDrumPerKg,
   salesmanSoldKg,
+  electricityHubIntensity = 0.6,
+  electricityDrumIntensity = 0.4,
 }) {
   const hubKg = hubFinishedKg || 0;
   const drumKg = drumFinishedKg || 0;
   const allKg = roundKg(hubKg + drumKg);
-  const ELECTRICITY_HUB_INTENSITY = 0.6;
-  const ELECTRICITY_DRUM_INTENSITY = 0.4;
+  const ELECTRICITY_HUB_INTENSITY = Number(electricityHubIntensity) || 0.6;
+  const ELECTRICITY_DRUM_INTENSITY = Number(electricityDrumIntensity) || 0.4;
   const electricityWeightTotal =
     hubKg * ELECTRICITY_HUB_INTENSITY + drumKg * ELECTRICITY_DRUM_INTENSITY;
 
@@ -3120,6 +3194,8 @@ async function getChargesCalculator(query = {}) {
     materialHubPerKg,
     materialDrumPerKg,
     salesmanSoldKg,
+    electricityHubIntensity: margin.summary?.electricityIntensity?.hub ?? 0.6,
+    electricityDrumIntensity: margin.summary?.electricityIntensity?.drum ?? 0.4,
   };
 
   return {
@@ -3192,6 +3268,25 @@ async function previewChargesCalculator(body = {}) {
   };
 }
 
+async function getCastingRates(query = {}) {
+  const { splitCastingKhrad } = require("./casting-khrad");
+  const margin = await getProductionMargin(query);
+  const ik = margin.channelManufacture?.ikEngineering;
+  const hub = splitCastingKhrad(ik?.hub, "hub");
+  const drum = splitCastingKhrad(ik?.drum, "drum");
+  return {
+    period: margin.period,
+    hub: {
+      castingPerKg: hub.castingPerKg,
+      khradPerKg: hub.khradPerKg,
+    },
+    drum: {
+      castingPerKg: drum.castingPerKg,
+      khradPerKg: drum.khradPerKg,
+    },
+  };
+}
+
 module.exports = {
   createEntry,
   listEntries,
@@ -3208,5 +3303,6 @@ module.exports = {
   getPartySalesMargin,
   getChargesCalculator,
   previewChargesCalculator,
+  getCastingRates,
   EXPENSE_CATEGORIES,
 };

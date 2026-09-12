@@ -358,6 +358,10 @@ function FamilyProductTable({
                         <span className="mt-0.5 block text-[10px] font-semibold leading-tight text-white">
                           {t("prodMargin.saleOnlyHint")}
                         </span>
+                      ) : p.costSource === "mixed" ? (
+                        <span className="mt-0.5 block text-[10px] font-semibold leading-tight text-white">
+                          {t("prodMargin.mixedCostHint")}
+                        </span>
                       ) : null}
                     </TableCell>
                     <TableCell className={numCell}>
