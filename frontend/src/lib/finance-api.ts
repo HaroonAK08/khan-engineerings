@@ -250,6 +250,23 @@ export type ProductionMarginReport = {
       common: number;
       electricity?: number;
     };
+    electricityAccrual?: {
+      source: "actual" | "estimated" | "none";
+      amount: number;
+      actualBill: number;
+      estimate?: {
+        priorFrom: string;
+        priorTo: string;
+        priorBill: number;
+        priorUnits: number;
+        priorHubKg: number;
+        priorDrumKg: number;
+        priorWeight: number;
+        ratePerWeightedKg: number;
+        currentWeight: number;
+        unitPrice: number | null;
+      } | null;
+    };
     electricityIntensity?: { hub: number; drum: number };
   };
   purchasedVsUsed: {
@@ -465,6 +482,7 @@ export type PartySalesMarginReport = {
   };
   electricity: {
     bill: number;
+    source?: "actual" | "estimated" | "none";
     hubShare: number;
     drumShare: number;
     hubPerKg: number | null;

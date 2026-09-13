@@ -17,10 +17,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
-  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -39,8 +45,33 @@ import {
   type AssetItem,
 } from "@/lib/assets-api";
 import { calendarDay, todayInput } from "@/lib/date-range";
-import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
+import { apiError, formatDate } from "@/lib/materials-api";
 import { cn } from "@/lib/utils";
+
+type CategoryTreeRow = AssetCategory & { depth: number };
+
+function buildCategoryTree(categories: AssetCategory[]): CategoryTreeRow[] {
+  const children = new Map<string, AssetCategory[]>();
+  const roots: AssetCategory[] = [];
+  for (const c of categories) {
+    if (c.parent) {
+      const key = String(c.parent);
+      if (!children.has(key)) children.set(key, []);
+      children.get(key)!.push(c);
+    } else {
+      roots.push(c);
+    }
+  }
+  const out: CategoryTreeRow[] = [];
+  function walk(list: AssetCategory[], depth: number) {
+    for (const c of list) {
+      out.push({ ...c, depth });
+      walk(children.get(String(c._id)) || [], depth + 1);
+    }
+  }
+  walk(roots, 0);
+  return out;
+}
 
 export default function AssetsPage() {
   const { t } = useI18n();
@@ -54,11 +85,11 @@ export default function AssetsPage() {
   const [editingCategory, setEditingCategory] = useState<AssetCategory | null>(null);
   const [categoryName, setCategoryName] = useState("");
   const [categoryNotes, setCategoryNotes] = useState("");
+  const [categoryParentId, setCategoryParentId] = useState<string>("");
 
   const [itemOpen, setItemOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<AssetItem | null>(null);
   const [itemName, setItemName] = useState("");
-  const [itemPrice, setItemPrice] = useState("");
   const [itemQty, setItemQty] = useState("1");
   const [itemDetails, setItemDetails] = useState("");
   const [itemDate, setItemDate] = useState("");
@@ -104,23 +135,29 @@ export default function AssetsPage() {
     [categories, selectedCategoryId]
   );
 
-  const itemsTotal = useMemo(
-    () =>
-      Math.round(
-        items.reduce((s, i) => s + (Number(i.price) || 0) * (Number(i.quantity) || 1), 0) * 100
-      ) / 100,
-    [items]
-  );
+  const categoryTree = useMemo(() => buildCategoryTree(categories), [categories]);
 
-  const grandTotal = useMemo(
-    () => Math.round(categories.reduce((s, c) => s + (Number(c.totalValue) || 0), 0) * 100) / 100,
+  const topLevelCategories = useMemo(
+    () => categories.filter((c) => !c.parent),
     [categories]
   );
 
-  function openNewCategory() {
+  const parentSelectItems = useMemo(() => {
+    const items: Record<string, string> = {
+      __none__: t("assets.noParent"),
+    };
+    for (const c of topLevelCategories) {
+      if (editingCategory && c._id === editingCategory._id) continue;
+      items[c._id] = c.name;
+    }
+    return items;
+  }, [topLevelCategories, editingCategory, t]);
+
+  function openNewCategory(parentId?: string) {
     setEditingCategory(null);
     setCategoryName("");
     setCategoryNotes("");
+    setCategoryParentId(parentId || "");
     setCategoryOpen(true);
   }
 
@@ -128,6 +165,7 @@ export default function AssetsPage() {
     setEditingCategory(cat);
     setCategoryName(cat.name);
     setCategoryNotes(cat.notes || "");
+    setCategoryParentId(cat.parent || "");
     setCategoryOpen(true);
   }
 
@@ -139,18 +177,23 @@ export default function AssetsPage() {
     }
     setBusy(true);
     try {
+      const parent = categoryParentId || null;
       if (editingCategory) {
         await updateAssetCategory(editingCategory._id, {
           name: categoryName.trim(),
           notes: categoryNotes.trim(),
+          parent,
         });
         toast.success(t("assets.categoryUpdated"));
       } else {
         const created = await createAssetCategory({
           name: categoryName.trim(),
           notes: categoryNotes.trim(),
+          parent,
         });
-        toast.success(t("assets.categoryCreated"));
+        toast.success(
+          parent ? t("assets.subcategoryCreated") : t("assets.categoryCreated")
+        );
         setSelectedCategoryId(created._id);
       }
       setCategoryOpen(false);
@@ -184,7 +227,6 @@ export default function AssetsPage() {
     }
     setEditingItem(null);
     setItemName("");
-    setItemPrice("");
     setItemQty("1");
     setItemDetails("");
     setItemDate(todayInput());
@@ -194,7 +236,6 @@ export default function AssetsPage() {
   function openEditItem(item: AssetItem) {
     setEditingItem(item);
     setItemName(item.name);
-    setItemPrice(String(item.price ?? ""));
     setItemQty(String(item.quantity ?? 1));
     setItemDetails(item.details || "");
     setItemDate(calendarDay(item.purchaseDate) || "");
@@ -216,7 +257,7 @@ export default function AssetsPage() {
       const body = {
         category: selectedCategoryId,
         name: itemName.trim(),
-        price: Number(itemPrice) || 0,
+        price: 0,
         quantity: Math.max(1, Number(itemQty) || 1),
         details: itemDetails.trim(),
         purchaseDate: itemDate || undefined,
@@ -251,6 +292,8 @@ export default function AssetsPage() {
     }
   }
 
+  const selectedIsTopLevel = selectedCategory && !selectedCategory.parent;
+
   return (
     <div className="flex flex-col gap-6">
       <FinanceSubnav />
@@ -263,12 +306,6 @@ export default function AssetsPage() {
           <h1 className="text-nameplate text-xl">{t("assets.title")}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{t("assets.subtitle")}</p>
         </div>
-        <div className="rounded-lg border border-border px-4 py-2 text-right">
-          <p className="font-data text-[10px] uppercase text-muted-foreground">
-            {t("assets.grandTotal")}
-          </p>
-          <p className="font-data text-xl">{formatMoney(grandTotal)}</p>
-        </div>
       </div>
 
       {loading ? (
@@ -276,43 +313,49 @@ export default function AssetsPage() {
           <Loader2 className="size-6 animate-spin text-primary" />
         </div>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+        <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
-              <div>
-                <CardTitle className="text-nameplate text-sm">{t("assets.categories")}</CardTitle>
-                <CardDescription>{t("assets.categoriesDesc")}</CardDescription>
-              </div>
-              <Button type="button" size="sm" className="gap-1" onClick={openNewCategory}>
+              <CardTitle className="text-nameplate text-sm">{t("assets.categories")}</CardTitle>
+              <Button type="button" size="sm" className="gap-1" onClick={() => openNewCategory()}>
                 <Plus className="size-3.5" />
                 {t("assets.addCategory")}
               </Button>
             </CardHeader>
             <CardContent className="flex flex-col gap-1 px-2 pb-3">
-              {categories.length === 0 ? (
-                <p className="px-2 py-8 text-center text-sm text-muted-foreground">
-                  {t("assets.noCategories")}
-                </p>
-              ) : (
-                categories.map((cat) => (
+              {categoryTree.map((cat) => (
+                <div key={cat._id} className="flex items-stretch gap-0.5" style={{ paddingLeft: cat.depth * 12 }}>
                   <button
-                    key={cat._id}
                     type="button"
                     onClick={() => setSelectedCategoryId(cat._id)}
                     className={cn(
-                      "flex w-full flex-col gap-0.5 rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
+                      "flex min-w-0 flex-1 flex-col gap-0.5 rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
                       selectedCategoryId === cat._id
                         ? "bg-primary/15 text-foreground"
                         : "hover:bg-muted"
                     )}
                   >
-                    <span className="font-medium">{cat.name}</span>
+                    <span className="truncate font-medium">
+                      {cat.depth > 0 ? `${cat.name}` : cat.name}
+                    </span>
                     <span className="font-data text-xs text-muted-foreground">
-                      {cat.itemCount || 0} · {formatMoney(cat.totalValue || 0)}
+                      {t("assets.itemCount", { count: String(cat.itemCount || 0) })}
                     </span>
                   </button>
-                ))
-              )}
+                  {cat.depth === 0 ? (
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="ghost"
+                      className="mt-1 shrink-0"
+                      title={t("assets.addSubcategory")}
+                      onClick={() => openNewCategory(cat._id)}
+                    >
+                      <Plus className="size-3.5" />
+                    </Button>
+                  ) : null}
+                </div>
+              ))}
             </CardContent>
           </Card>
 
@@ -320,7 +363,11 @@ export default function AssetsPage() {
             <CardHeader className="flex flex-col gap-3 space-y-0 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <CardTitle className="text-nameplate text-sm">
-                  {selectedCategory?.name || t("assets.items")}
+                  {selectedCategory
+                    ? selectedCategory.parentName
+                      ? `${selectedCategory.parentName} · ${selectedCategory.name}`
+                      : selectedCategory.name
+                    : t("assets.items")}
                 </CardTitle>
                 <CardDescription>
                   {selectedCategory
@@ -331,6 +378,18 @@ export default function AssetsPage() {
               <div className="flex flex-wrap gap-2">
                 {selectedCategory ? (
                   <>
+                    {selectedIsTopLevel ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="gap-1"
+                        onClick={() => openNewCategory(selectedCategory._id)}
+                      >
+                        <Plus className="size-3.5" />
+                        {t("assets.addSubcategory")}
+                      </Button>
+                    ) : null}
                     <Button
                       type="button"
                       size="sm"
@@ -375,74 +434,49 @@ export default function AssetsPage() {
                     <TableRow>
                       <TableHead>{t("assets.col.name")}</TableHead>
                       <TableHead className="text-right">{t("assets.col.qty")}</TableHead>
-                      <TableHead className="text-right">{t("assets.col.price")}</TableHead>
-                      <TableHead className="text-right">{t("assets.col.value")}</TableHead>
                       <TableHead>{t("assets.col.date")}</TableHead>
                       <TableHead>{t("assets.col.details")}</TableHead>
                       <TableHead className="w-[1%]">{t("cus.col.actions")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {items.map((item) => {
-                      const value =
-                        Math.round(
-                          (Number(item.price) || 0) * (Number(item.quantity) || 1) * 100
-                        ) / 100;
-                      return (
-                        <TableRow key={item._id}>
-                          <TableCell className="font-medium">{item.name}</TableCell>
-                          <TableCell className="font-data text-right text-xs">
-                            {item.quantity}
-                          </TableCell>
-                          <TableCell className="font-data text-right text-xs">
-                            {formatMoney(item.price)}
-                          </TableCell>
-                          <TableCell className="font-data text-right text-xs">
-                            {formatMoney(value)}
-                          </TableCell>
-                          <TableCell className="font-data text-xs text-muted-foreground">
-                            {item.purchaseDate ? formatDate(item.purchaseDate) : "—"}
-                          </TableCell>
-                          <TableCell className="max-w-[220px] truncate text-xs text-muted-foreground">
-                            {item.details || "—"}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-1">
-                              <Button
-                                type="button"
-                                size="icon-sm"
-                                variant="ghost"
-                                onClick={() => openEditItem(item)}
-                              >
-                                <Pencil className="size-3.5" />
-                              </Button>
-                              <Button
-                                type="button"
-                                size="icon-sm"
-                                variant="ghost"
-                                className="text-destructive"
-                                disabled={busy}
-                                onClick={() => void onDeleteItem(item)}
-                              >
-                                <Trash2 className="size-3.5" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
+                    {items.map((item) => (
+                      <TableRow key={item._id}>
+                        <TableCell className="font-medium">{item.name}</TableCell>
+                        <TableCell className="font-data text-right text-xs">
+                          {item.quantity}
+                        </TableCell>
+                        <TableCell className="font-data text-xs text-muted-foreground">
+                          {item.purchaseDate ? formatDate(item.purchaseDate) : "—"}
+                        </TableCell>
+                        <TableCell className="max-w-[220px] truncate text-xs text-muted-foreground">
+                          {item.details || "—"}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              type="button"
+                              size="icon-sm"
+                              variant="ghost"
+                              onClick={() => openEditItem(item)}
+                            >
+                              <Pencil className="size-3.5" />
+                            </Button>
+                            <Button
+                              type="button"
+                              size="icon-sm"
+                              variant="ghost"
+                              className="text-destructive"
+                              disabled={busy}
+                              onClick={() => void onDeleteItem(item)}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
                   </TableBody>
-                  <TableFooter>
-                    <TableRow>
-                      <TableCell colSpan={3} className="font-medium">
-                        {t("recvReports.grandTotal")}
-                      </TableCell>
-                      <TableCell className="font-data text-right text-sm font-medium">
-                        {formatMoney(itemsTotal)}
-                      </TableCell>
-                      <TableCell colSpan={3} />
-                    </TableRow>
-                  </TableFooter>
                 </Table>
               )}
             </CardContent>
@@ -454,12 +488,40 @@ export default function AssetsPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-nameplate text-base">
-              {editingCategory ? t("assets.editCategory") : t("assets.addCategory")}
+              {editingCategory
+                ? t("assets.editCategory")
+                : categoryParentId
+                  ? t("assets.addSubcategory")
+                  : t("assets.addCategory")}
             </DialogTitle>
           </DialogHeader>
           <form onSubmit={saveCategory} className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label>{t("assets.categoryName")}</Label>
+              <Label>{t("assets.parentCategory")}</Label>
+              <Select
+                value={categoryParentId || "__none__"}
+                onValueChange={(v) => setCategoryParentId(!v || v === "__none__" ? "" : v)}
+                items={parentSelectItems}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder={t("assets.noParent")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">{parentSelectItems.__none__}</SelectItem>
+                  {topLevelCategories
+                    .filter((c) => !editingCategory || c._id !== editingCategory._id)
+                    .map((c) => (
+                      <SelectItem key={c._id} value={c._id}>
+                        {parentSelectItems[c._id]}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>
+                {categoryParentId ? t("assets.subcategoryName") : t("assets.categoryName")}
+              </Label>
               <Input
                 value={categoryName}
                 onChange={(e) => setCategoryName(e.target.value)}
@@ -507,28 +569,15 @@ export default function AssetsPage() {
                 required
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1.5">
-                <Label>{t("assets.col.price")}</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={itemPrice}
-                  onChange={(e) => setItemPrice(e.target.value)}
-                  placeholder="0"
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label>{t("assets.col.qty")}</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={itemQty}
-                  onChange={(e) => setItemQty(e.target.value)}
-                />
-              </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>{t("assets.col.qty")}</Label>
+              <Input
+                type="number"
+                min={1}
+                step={1}
+                value={itemQty}
+                onChange={(e) => setItemQty(e.target.value)}
+              />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label>{t("assets.col.date")}</Label>

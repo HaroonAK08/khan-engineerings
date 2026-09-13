@@ -1391,15 +1391,28 @@ async function getProductionMargin(query = {}) {
     taxDrumPercent
   );
   addScopePools(overheadPools, taxPools);
-  const overheadTotal = roundMoney(
-    overheadPools.hub + overheadPools.drum + overheadPools.common + electricityCommon
-  );
+
   const electricityWeightTotal = producedRows.reduce((s, r) => {
     const kg = r.finishedKg || 0;
     const intensity =
       r.family === "drum" ? ELECTRICITY_DRUM_INTENSITY : ELECTRICITY_HUB_INTENSITY;
     return s + kg * intensity;
   }, 0);
+
+  // Accrue electricity from prior-month rate × this period's intensity-weighted kg when no bill yet.
+  const electricityAccrual = await resolveElectricityAccrual({
+    actualAmount: electricityCommon,
+    currentWeight: electricityWeightTotal,
+    hubIntensity: ELECTRICITY_HUB_INTENSITY,
+    drumIntensity: ELECTRICITY_DRUM_INTENSITY,
+    periodFrom: from,
+    dateFromStr: query.dateFrom,
+  });
+  electricityCommon = electricityAccrual.amount;
+
+  const overheadTotal = roundMoney(
+    overheadPools.hub + overheadPools.drum + overheadPools.common + electricityCommon
+  );
 
   const totalPieces = producedRows.reduce((s, r) => s + r.pieces, 0);
 
@@ -1610,7 +1623,8 @@ async function getProductionMargin(query = {}) {
   const mfgExpensePools = { hub: 0, drum: 0, common: 0 };
   /** category -> { hub, drum, common } for non-salary mfg expenses */
   const mfgCategoryPools = {};
-  let mfgElectricity = 0;
+  // Use resolved electricity (actual bill, or prior-month accrual estimate).
+  let mfgElectricity = electricityCommon;
   let salesmanChannelLoad = 0;
   for (const row of expenseByScopeCategory) {
     const scope =
@@ -1628,7 +1642,7 @@ async function getProductionMargin(query = {}) {
       continue;
     }
     if (category === "electricity" && scope === "common") {
-      mfgElectricity = roundMoney(mfgElectricity + amount);
+      // Already resolved into electricityCommon / mfgElectricity above.
       continue;
     }
     mfgExpensePools[scope] = roundMoney((mfgExpensePools[scope] || 0) + amount);
@@ -1866,7 +1880,11 @@ async function getProductionMargin(query = {}) {
       .map((c) => ({
         id: c.id,
         label: c.label,
-        amount: roundMoney(categoryAmountMap[c.id] || 0),
+        amount: roundMoney(
+          c.id === "electricity" && electricityAccrual.source === "estimated"
+            ? electricityCommon
+            : categoryAmountMap[c.id] || 0
+        ),
         kind: "overhead",
       }))
       .filter((c) => c.amount > 0),
@@ -1891,6 +1909,22 @@ async function getProductionMargin(query = {}) {
           divisorKg > 0 ? roundMoney(e.amount / divisorKg) : null,
       };
     });
+
+  // When estimated and electricity isn't in expenseCats filter path somehow, ensure it's present.
+  if (
+    electricityAccrual.source === "estimated" &&
+    electricityCommon > 0 &&
+    !expenseBreakdown.some((e) => e.id === "electricity")
+  ) {
+    expenseBreakdown.push({
+      id: "electricity",
+      label: categoryLabel.electricity || "Electricity",
+      amount: electricityCommon,
+      kind: "overhead",
+      amountPerKg:
+        allFinishedKg > 0 ? roundMoney(electricityCommon / allFinishedKg) : null,
+    });
+  }
 
   const purchasedScrap = purchasedByType.scrap;
   const purchasedDaig = purchasedByType.daig;
@@ -1943,6 +1977,12 @@ async function getProductionMargin(query = {}) {
         drum: overheadPools.drum,
         common: overheadPools.common,
         electricity: electricityCommon,
+      },
+      electricityAccrual: {
+        source: electricityAccrual.source,
+        amount: electricityCommon,
+        actualBill: electricityAccrual.actualBill,
+        estimate: electricityAccrual.estimate,
       },
       electricityIntensity: {
         hub: ELECTRICITY_HUB_INTENSITY,
@@ -2511,8 +2551,10 @@ async function getPartySalesMargin(query = {}) {
     .sort((a, b) => a.profit - b.profit);
 
   const elecBill = margin.summary?.overheadPools?.electricity || 0;
-  const hubW = hubFinishedKg * 0.6;
-  const drumW = drumFinishedKg * 0.4;
+  const hubI = Number(margin.summary?.electricityIntensity?.hub) || 0.6;
+  const drumI = Number(margin.summary?.electricityIntensity?.drum) || 0.4;
+  const hubW = hubFinishedKg * hubI;
+  const drumW = drumFinishedKg * drumI;
   const elecW = hubW + drumW;
   const elecHubShare = elecW > 0 ? (hubW / elecW) * elecBill : 0;
   const elecDrumShare = elecW > 0 ? (drumW / elecW) * elecBill : 0;
@@ -2582,6 +2624,7 @@ async function getPartySalesMargin(query = {}) {
     },
     electricity: {
       bill: roundMoney(elecBill),
+      source: margin.summary?.electricityAccrual?.source || (elecBill > 0 ? "actual" : "none"),
       hubShare: roundMoney(elecHubShare),
       drumShare: roundMoney(elecDrumShare),
       hubPerKg: hubFinishedKg > 0 ? roundMoney(elecHubShare / hubFinishedKg) : null,
@@ -2625,6 +2668,222 @@ function previousMonthWindow(from, dateFromStr) {
   const prevFrom = new Date(prevY, prevM - 1, 1, 0, 0, 0, 0);
   const prevTo = new Date(prevY, prevM, 0, 23, 59, 59, 999);
   return { from: prevFrom, to: prevTo };
+}
+
+function electricityIntensityWeight(hubKg, drumKg, hubIntensity, drumIntensity) {
+  return (hubKg || 0) * (hubIntensity || 0) + (drumKg || 0) * (drumIntensity || 0);
+}
+
+async function sumElectricityInRange(from, to) {
+  const rows = await BatchExpense.aggregate([
+    {
+      $match: {
+        category: "electricity",
+        ...dateMatch("expenseDate", from, to),
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        amount: { $sum: "$amount" },
+        units: { $sum: { $ifNull: ["$quantity", 0] } },
+      },
+    },
+  ]);
+  return {
+    amount: roundMoney(rows[0]?.amount || 0),
+    units: roundKg(rows[0]?.units || 0),
+  };
+}
+
+/** Finished hub/drum kg for a window — same net-material rule as production margin. */
+async function getFamilyFinishedKg(from, to) {
+  const Product = require("../products/product.model");
+  const batches = await ProductionBatch.find({
+    status: { $ne: "cancelled" },
+    ...dateMatch("productionDate", from, to),
+  })
+    .populate("outputs.product", "family weightKg")
+    .populate("outputProgress.product", "family weightKg")
+    .populate("product", "family weightKg")
+    .lean();
+
+  const byProductMap = new Map();
+
+  function ensureRow(pid, family) {
+    let row = byProductMap.get(pid);
+    if (!row) {
+      row = { productId: pid, family: family || "hub", pieces: 0, scrapKg: 0, daigKg: 0, wasteKg: 0 };
+      byProductMap.set(pid, row);
+    }
+    return row;
+  }
+
+  for (const b of batches) {
+    let batchScrapKg = 0;
+    let batchDaigKg = 0;
+    if (Array.isArray(b.inputs) && b.inputs.length) {
+      for (const inp of b.inputs) {
+        const qty = inp.quantityKg || 0;
+        if (inp.materialType === "daig") batchDaigKg += qty;
+        else if (inp.materialType === "scrap" || !inp.materialType) batchScrapKg += qty;
+      }
+    } else {
+      batchScrapKg = Math.max(0, (b.inputScrapKg || 0) - (b.returnedScrapKg || 0));
+    }
+    const batchWasteKg = b.furnaceWasteKg || b.materialLossKg || 0;
+
+    const pieceLines = [];
+    if (Array.isArray(b.outputProgress) && b.outputProgress.length) {
+      for (const p of b.outputProgress) {
+        const fin = p.finishedQty || p.goodAfterTurning || 0;
+        if (fin <= 0) continue;
+        const pid = String(p.product?._id || p.product || "");
+        if (!pid) continue;
+        const prodObj = typeof p.product === "object" ? p.product : null;
+        pieceLines.push({
+          productId: pid,
+          quantity: fin,
+          family: prodObj?.family || b.family || "hub",
+        });
+      }
+    } else if (Array.isArray(b.outputs) && b.outputs.length) {
+      for (const out of b.outputs) {
+        const qty = out.quantity || 0;
+        if (qty <= 0) continue;
+        const pid = String(out.product?._id || out.product || "");
+        if (!pid) continue;
+        const prodObj = typeof out.product === "object" ? out.product : null;
+        pieceLines.push({
+          productId: pid,
+          quantity: qty,
+          family: out.family || prodObj?.family || b.family || "hub",
+        });
+      }
+    } else {
+      const legacyPid = String(b.product?._id || b.product || "");
+      const qty = b.goodUnits || 0;
+      if (legacyPid && qty > 0) {
+        const prodObj = typeof b.product === "object" ? b.product : null;
+        pieceLines.push({
+          productId: legacyPid,
+          quantity: qty,
+          family: prodObj?.family || b.family || "hub",
+        });
+      }
+    }
+
+    const batchFinished = pieceLines.reduce((s, l) => s + l.quantity, 0);
+    for (const line of pieceLines) {
+      const row = ensureRow(line.productId, line.family);
+      row.pieces += line.quantity;
+      if (batchFinished > 0) {
+        const share = line.quantity / batchFinished;
+        row.scrapKg = roundKg(row.scrapKg + batchScrapKg * share);
+        row.daigKg = roundKg(row.daigKg + batchDaigKg * share);
+        row.wasteKg = roundKg(row.wasteKg + batchWasteKg * share);
+      }
+    }
+  }
+
+  const productIds = [...byProductMap.keys()].filter(Boolean);
+  const products = productIds.length
+    ? await Product.find({ _id: { $in: productIds } })
+        .select("family weightKg")
+        .lean()
+    : [];
+  const productMap = Object.fromEntries(products.map((p) => [String(p._id), p]));
+
+  let hubFinishedKg = 0;
+  let drumFinishedKg = 0;
+  for (const row of byProductMap.values()) {
+    const prod = productMap[row.productId];
+    if (prod?.family) row.family = prod.family;
+    const fromBatchKg = roundKg(
+      Math.max(0, (row.scrapKg || 0) + (row.daigKg || 0) - (row.wasteKg || 0))
+    );
+    let finishedKg;
+    if (fromBatchKg > 0 && row.pieces > 0) {
+      finishedKg = fromBatchKg;
+    } else {
+      const weightKg = Number(prod?.weightKg) || 0;
+      finishedKg = roundKg(weightKg * (row.pieces || 0));
+    }
+    if ((row.family || "hub") === "drum") drumFinishedKg += finishedKg;
+    else hubFinishedKg += finishedKg;
+  }
+
+  return {
+    hubFinishedKg: roundKg(hubFinishedKg),
+    drumFinishedKg: roundKg(drumFinishedKg),
+  };
+}
+
+/**
+ * If the period has a real electricity bill, use it.
+ * Otherwise accrue from the most recent prior month that has both a bill and production:
+ * rate = priorBill / priorIntensityWeight, estimate = rate × currentIntensityWeight.
+ */
+async function resolveElectricityAccrual({
+  actualAmount,
+  currentWeight,
+  hubIntensity,
+  drumIntensity,
+  periodFrom,
+  dateFromStr,
+  maxLookbackMonths = 3,
+}) {
+  const actual = roundMoney(actualAmount || 0);
+  if (actual > 0) {
+    return {
+      amount: actual,
+      source: "actual",
+      actualBill: actual,
+      estimate: null,
+    };
+  }
+  if (!(currentWeight > 0)) {
+    return { amount: 0, source: "none", actualBill: 0, estimate: null };
+  }
+
+  let window = previousMonthWindow(periodFrom, dateFromStr);
+  for (let i = 0; i < maxLookbackMonths; i++) {
+    const [bill, kg] = await Promise.all([
+      sumElectricityInRange(window.from, window.to),
+      getFamilyFinishedKg(window.from, window.to),
+    ]);
+    const priorWeight = electricityIntensityWeight(
+      kg.hubFinishedKg,
+      kg.drumFinishedKg,
+      hubIntensity,
+      drumIntensity
+    );
+    if (bill.amount > 0 && priorWeight > 0) {
+      const ratePerWeightedKg = bill.amount / priorWeight;
+      const estimatedAmount = roundMoney(ratePerWeightedKg * currentWeight);
+      return {
+        amount: estimatedAmount,
+        source: "estimated",
+        actualBill: 0,
+        estimate: {
+          priorFrom: window.from,
+          priorTo: window.to,
+          priorBill: roundMoney(bill.amount),
+          priorUnits: bill.units,
+          priorHubKg: kg.hubFinishedKg,
+          priorDrumKg: kg.drumFinishedKg,
+          priorWeight: roundKg(priorWeight),
+          ratePerWeightedKg: roundMoney(ratePerWeightedKg),
+          currentWeight: roundKg(currentWeight),
+          unitPrice:
+            bill.units > 0 ? roundMoney(bill.amount / bill.units) : null,
+        },
+      };
+    }
+    window = previousMonthWindow(window.from, toDateInput(window.from));
+  }
+
+  return { amount: 0, source: "none", actualBill: 0, estimate: null };
 }
 
 async function collectEditableChargeLines(from, to) {

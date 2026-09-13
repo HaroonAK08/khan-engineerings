@@ -784,7 +784,10 @@ export default function ProductionMarginPage() {
               {
                 label: t("prodMargin.electricityCharges"),
                 value: formatMoney(summary.overheadPools?.electricity ?? 0),
-                hint: t("prodMargin.electricityPeriodHint"),
+                hint:
+                  summary.electricityAccrual?.source === "estimated"
+                    ? t("prodMargin.electricityEstimatedHint")
+                    : t("prodMargin.electricityPeriodHint"),
                 accent: "bg-chart-2",
               },
               {

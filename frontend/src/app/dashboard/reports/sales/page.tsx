@@ -386,7 +386,7 @@ export default function SalesReportsHubPage() {
             ))}
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="flex flex-col gap-4">
             {renderItemsSoldTable("hub", hubProducts)}
             {renderItemsSoldTable("drum", drumProducts)}
           </div>

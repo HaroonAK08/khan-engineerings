@@ -3,10 +3,13 @@ import { api } from "@/lib/api";
 export type AssetCategory = {
   _id: string;
   name: string;
+  parent?: string | null;
+  parentName?: string | null;
   notes?: string;
   sortOrder?: number;
   itemCount?: number;
   totalValue?: number;
+  childCount?: number;
 };
 
 export type AssetItem = {
@@ -28,6 +31,7 @@ export async function listAssetCategories() {
 export async function createAssetCategory(body: {
   name: string;
   notes?: string;
+  parent?: string | null;
 }) {
   const { data } = await api.post<{ category: AssetCategory }>("/assets/categories", body);
   return data.category;
@@ -35,7 +39,7 @@ export async function createAssetCategory(body: {
 
 export async function updateAssetCategory(
   id: string,
-  body: Partial<{ name: string; notes: string }>
+  body: Partial<{ name: string; notes: string; parent: string | null }>
 ) {
   const { data } = await api.patch<{ category: AssetCategory }>(
     `/assets/categories/${id}`,

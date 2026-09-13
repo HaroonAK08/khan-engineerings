@@ -18,11 +18,13 @@ import {
   matchesExpenseScope,
   usePersistedExpenseScope,
 } from "@/hooks/use-persisted-expense-scope";
+import { ElectricityAccrualStatus } from "@/components/expenses/electricity-accrual-status";
 
 export default function ElectricityExpensesPage() {
   const { t } = useI18n();
   const [expenses, setExpenses] = useState<BatchExpense[]>([]);
   const [busy, setBusy] = useState(false);
+  const [accrualRefresh, setAccrualRefresh] = useState(0);
 
   const [amount, setAmount] = useState("");
   const [units, setUnits] = useState("");
@@ -100,6 +102,7 @@ export default function ElectricityExpensesPage() {
       setUnits("");
       setNote("");
       setBillDate(todayInput());
+      setAccrualRefresh((n) => n + 1);
       await load();
     } catch (err) {
       toast.error(apiError(err, "Save failed"));
@@ -212,6 +215,8 @@ export default function ElectricityExpensesPage() {
           </div>
         </CardContent>
       </Card>
+
+      <ElectricityAccrualStatus refreshKey={accrualRefresh} />
     </div>
   );
 }

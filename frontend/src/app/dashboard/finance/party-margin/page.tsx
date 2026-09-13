@@ -461,11 +461,19 @@ export default function PartySalesMarginPage() {
                 {
                   label: t("partyMargin.elecHub"),
                   value: moneyOrDash(report.electricity.hubPerKg),
+                  hint:
+                    report.electricity.source === "estimated"
+                      ? t("prodMargin.electricityEstimatedHint")
+                      : undefined,
                   fill: "hub" as const,
                 },
                 {
                   label: t("partyMargin.elecDrum"),
                   value: moneyOrDash(report.electricity.drumPerKg),
+                  hint:
+                    report.electricity.source === "estimated"
+                      ? t("prodMargin.electricityEstimatedHint")
+                      : undefined,
                   fill: "drum" as const,
                 },
                 {
