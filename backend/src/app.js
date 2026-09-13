@@ -20,6 +20,7 @@ const claimRoutes = require("./modules/claims/claim.routes");
 const workerRoutes = require("./modules/workers/worker.routes");
 const settingsRoutes = require("./modules/settings/settings.routes");
 const assetRoutes = require("./modules/assets/asset.routes");
+const personalBanksRoutes = require("./modules/personal-banks/personal-banks.routes");
 const { notFound, errorHandler } = require("./middleware/errorHandler");
 
 const app = express();
@@ -77,6 +78,7 @@ app.use("/api/expenses", expenseRoutes);
 app.use("/api/workers", workerRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/assets", assetRoutes);
+app.use("/api/personal-banks", personalBanksRoutes);
 app.use("/api/customers", customerRoutes);
 app.use("/api/party-groups", partyGroupRoutes);
 app.use("/api/salesmen", salesmanRoutes);

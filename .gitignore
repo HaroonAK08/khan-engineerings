@@ -19,3 +19,5 @@ node_modules/
 desktop/dist/
 desktop/out/
 desktop/resources/
+personal-banks-app/node_modules/
+personal-banks-app/.expo/

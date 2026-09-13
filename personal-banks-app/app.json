@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "Personal Banks",
+    "slug": "personal-banks-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F3F6F9"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.khan.personalbanks"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0F766E",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "package": "com.khan.personalbanks",
+      "versionCode": 1,
+      "predictiveBackGestureEnabled": false,
+      "usesCleartextTraffic": true
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "apiUrl": "http://10.0.2.2:5000/api"
+    }
+  }
+}
