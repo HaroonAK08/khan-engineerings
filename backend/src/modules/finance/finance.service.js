@@ -2861,6 +2861,24 @@ async function resolveElectricityAccrual({
     if (bill.amount > 0 && priorWeight > 0) {
       const ratePerWeightedKg = bill.amount / priorWeight;
       const estimatedAmount = roundMoney(ratePerWeightedKg * currentWeight);
+      const unitPrice = bill.units > 0 ? bill.amount / bill.units : null;
+      // Units attributed by intensity split, then ÷ finished kg → units/kg for each line.
+      const hubUnitsPerKg =
+        kg.hubFinishedKg > 0
+          ? roundKg(((hubIntensity || 0) * (bill.units || 0)) / priorWeight)
+          : null;
+      const drumUnitsPerKg =
+        kg.drumFinishedKg > 0
+          ? roundKg(((drumIntensity || 0) * (bill.units || 0)) / priorWeight)
+          : null;
+      const hubCostPerKg =
+        kg.hubFinishedKg > 0
+          ? roundMoney(((hubIntensity || 0) * bill.amount) / priorWeight)
+          : null;
+      const drumCostPerKg =
+        kg.drumFinishedKg > 0
+          ? roundMoney(((drumIntensity || 0) * bill.amount) / priorWeight)
+          : null;
       return {
         amount: estimatedAmount,
         source: "estimated",
@@ -2875,8 +2893,13 @@ async function resolveElectricityAccrual({
           priorWeight: roundKg(priorWeight),
           ratePerWeightedKg: roundMoney(ratePerWeightedKg),
           currentWeight: roundKg(currentWeight),
-          unitPrice:
-            bill.units > 0 ? roundMoney(bill.amount / bill.units) : null,
+          unitPrice: unitPrice != null ? roundMoney(unitPrice) : null,
+          hubUnitsPerKg,
+          drumUnitsPerKg,
+          hubCostPerKg,
+          drumCostPerKg,
+          hubIntensity: hubIntensity || 0,
+          drumIntensity: drumIntensity || 0,
         },
       };
     }

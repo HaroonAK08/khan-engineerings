@@ -265,6 +265,12 @@ export type ProductionMarginReport = {
         ratePerWeightedKg: number;
         currentWeight: number;
         unitPrice: number | null;
+        hubUnitsPerKg?: number | null;
+        drumUnitsPerKg?: number | null;
+        hubCostPerKg?: number | null;
+        drumCostPerKg?: number | null;
+        hubIntensity?: number;
+        drumIntensity?: number;
       } | null;
     };
     electricityIntensity?: { hub: number; drum: number };

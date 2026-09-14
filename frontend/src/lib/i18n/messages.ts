@@ -946,11 +946,15 @@ const en = {
   "elec.accrual.weightedKg": "weighted kg",
   "elec.accrual.priorKg": "Prior finished kg",
   "elec.accrual.actualHint":
-    "Costs use the electricity bills dated in this period (listed below).",
+    "Costs use the electricity bills dated in this period (listed below). Delete this month’s dummy/real bills if you want the prior-month estimate instead.",
   "elec.accrual.noneHint":
     "No bill in this period and no usable prior month bill + production to estimate from.",
   "elec.accrual.priorBillsList": "Prior month bill(s) driving the estimate",
   "elec.accrual.periodBillsList": "Bill(s) in this period",
+  "elec.accrual.unitsPerKg": "Units / kg (from prior month)",
+  "elec.accrual.costPerKg": "Electricity / kg (from prior month)",
+  "elec.accrual.scalesHint":
+    "This amount grows automatically as you produce more kg this month. At month end, enter the real bill to replace the estimate — or keep it if it looks right.",
 
   "tax.title": "Taxes",
   "tax.desc": "Record government tax payments with the date paid.",
@@ -3282,11 +3286,15 @@ const ur: Record<MessageKey, string> = {
   "elec.accrual.weightedKg": "وزن شدہ کلو",
   "elec.accrual.priorKg": "گذشتہ تیار کلو",
   "elec.accrual.actualHint":
-    "لاگت اس مدت کی تاریخ والے بجلی کے بل استعمال کرتی ہے (نیچے فہرست)۔",
+    "لاگت اس مدت کی تاریخ والے بجلی کے بل استعمال کرتی ہے (نیچے فہرست)۔ اگر گذشتہ مہینے کا تخمینہ چاہیے تو اس مہینے کے ڈمی/اصل بل حذف کریں۔",
   "elec.accrual.noneHint":
     "اس مدت میں کوئی بل نہیں، اور تخمینے کے لیے کوئی قابلِ استعمال گذشتہ بل + پیداوار نہیں ملی۔",
   "elec.accrual.priorBillsList": "تخمینے کی بنیاد والے گذشتہ بل",
   "elec.accrual.periodBillsList": "اس مدت کے بل",
+  "elec.accrual.unitsPerKg": "یونٹ / کلو (گذشتہ مہینے سے)",
+  "elec.accrual.costPerKg": "بجلی / کلو (گذشتہ مہینے سے)",
+  "elec.accrual.scalesHint":
+    "اس مہینے جتنی زیادہ پیداوار ہوگی، یہ رقم خود بڑھے گی۔ مہینے کے آخر میں اصل بل درج کر کے تخمینہ بدل دیں — یا اگر درست لگے تو رہنے دیں۔",
 
   "tax.title": "ٹیکس",
   "tax.desc": "حکومتی ٹیکس ادائیگیاں ادا شدہ تاریخ کے ساتھ درج کریں۔",

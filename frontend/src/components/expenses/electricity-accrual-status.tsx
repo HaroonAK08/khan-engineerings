@@ -167,14 +167,6 @@ export function ElectricityAccrualStatus({ refreshKey = 0, className }: Props) {
                     ({formatDate(priorFrom)} – {formatDate(priorTo)})
                   </span>
                 </p>
-                <p>
-                  <span className="text-muted-foreground">
-                    {t("elec.accrual.rate")}:{" "}
-                  </span>
-                  <span className="font-data">
-                    {formatMoney(estimate.ratePerWeightedKg)} / {t("elec.accrual.weightedKg")}
-                  </span>
-                </p>
                 {estimate.unitPrice != null ? (
                   <p>
                     <span className="text-muted-foreground">
@@ -199,6 +191,41 @@ export function ElectricityAccrualStatus({ refreshKey = 0, className }: Props) {
                     {formatKg(estimate.priorHubKg)} {t("prod.hub")} ·{" "}
                     {formatKg(estimate.priorDrumKg)} {t("prod.drum")}
                   </span>
+                </p>
+                {estimate.hubUnitsPerKg != null || estimate.drumUnitsPerKg != null ? (
+                  <p>
+                    <span className="text-muted-foreground">
+                      {t("elec.accrual.unitsPerKg")}:{" "}
+                    </span>
+                    <span className="font-data">
+                      {estimate.hubUnitsPerKg != null
+                        ? `${formatKg(estimate.hubUnitsPerKg)} ${t("prod.hub")}`
+                        : "—"}
+                      {" · "}
+                      {estimate.drumUnitsPerKg != null
+                        ? `${formatKg(estimate.drumUnitsPerKg)} ${t("prod.drum")}`
+                        : "—"}
+                    </span>
+                  </p>
+                ) : null}
+                {estimate.hubCostPerKg != null || estimate.drumCostPerKg != null ? (
+                  <p>
+                    <span className="text-muted-foreground">
+                      {t("elec.accrual.costPerKg")}:{" "}
+                    </span>
+                    <span className="font-data">
+                      {estimate.hubCostPerKg != null
+                        ? `${formatMoney(estimate.hubCostPerKg)} ${t("prod.hub")}`
+                        : "—"}
+                      {" · "}
+                      {estimate.drumCostPerKg != null
+                        ? `${formatMoney(estimate.drumCostPerKg)} ${t("prod.drum")}`
+                        : "—"}
+                    </span>
+                  </p>
+                ) : null}
+                <p className="sm:col-span-2 text-xs text-muted-foreground">
+                  {t("elec.accrual.scalesHint")}
                 </p>
               </div>
             ) : null}

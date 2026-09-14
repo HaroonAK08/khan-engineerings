@@ -31,7 +31,7 @@
       "favicon": "./assets/favicon.png"
     },
     "extra": {
-      "apiUrl": "http://10.0.2.2:5000/api"
+      "apiUrl": "https://khan-engineerings-api.vercel.app/api"
     }
   }
 }

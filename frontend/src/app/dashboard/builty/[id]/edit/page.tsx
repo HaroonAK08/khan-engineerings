@@ -37,6 +37,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useI18n } from "@/hooks/use-i18n";
 import { thisMonthRange } from "@/lib/date-range";
 import {
@@ -465,15 +472,47 @@ function EditBuiltyForm() {
       toast.error(t("builtyNew.castingRateMissing"));
       return;
     }
+    const mode = line.pricingMode === "fixed" ? "fixed" : "rate_kg";
     const unit = Math.round(weightKg * castingPerKg * 100) / 100;
     updateLine(index, {
       priceBasis: "casting_only",
-      pricingMode: "fixed",
-      fixedAmount: unit,
-      ratePerKg: 0,
+      pricingMode: mode,
       weightKg,
+      ...(mode === "fixed"
+        ? { fixedAmount: unit, ratePerKg: 0 }
+        : { ratePerKg: castingPerKg, fixedAmount: 0 }),
     });
     toast.success(t("builtyNew.castingApplied"));
+  }
+
+  function setLinePricingMode(index: number, mode: PricingMode) {
+    const line = lines[index];
+    if (!line) return;
+    if (line.priceBasis !== "casting_only") {
+      updateLine(index, { pricingMode: mode });
+      return;
+    }
+    const product = products.find((p) => p._id === line.product);
+    if (!product) {
+      updateLine(index, { pricingMode: mode });
+      return;
+    }
+    const weightKg = lineWeightKg(products, line) || Number(product.weightKg) || 0;
+    const family = product.family === "drum" ? "drum" : "hub";
+    const castingPerKg = castingRates?.[family]?.castingPerKg;
+    if (!(weightKg > 0) || !(castingPerKg != null && castingPerKg > 0)) {
+      updateLine(index, { pricingMode: mode });
+      return;
+    }
+    const unit = Math.round(weightKg * castingPerKg * 100) / 100;
+    updateLine(index, {
+      pricingMode: mode,
+      priceBasis: "casting_only",
+      weightKg,
+      ...(mode === "fixed"
+        ? { fixedAmount: unit, ratePerKg: 0 }
+        : { ratePerKg: castingPerKg, fixedAmount: 0 }),
+    });
   }
 
   async function selectProduct(index: number, product: Product) {
@@ -904,28 +943,18 @@ function EditBuiltyForm() {
                               ? "bg-primary text-primary-foreground"
                               : "text-muted-foreground"
                           }`}
-                          onClick={() =>
-                            updateLine(index, {
-                              pricingMode: "rate_kg",
-                              priceBasis: "selling",
-                            })
-                          }
+                          onClick={() => setLinePricingMode(index, "rate_kg")}
                         >
                           {t("builtyNew.mode.rate")}
                         </button>
                         <button
                           type="button"
                           className={`flex-1 text-sm ${
-                            line.pricingMode === "fixed" && line.priceBasis !== "casting_only"
+                            line.pricingMode === "fixed"
                               ? "bg-primary text-primary-foreground"
                               : "text-muted-foreground"
                           }`}
-                          onClick={() =>
-                            updateLine(index, {
-                              pricingMode: "fixed",
-                              priceBasis: "selling",
-                            })
-                          }
+                          onClick={() => setLinePricingMode(index, "fixed")}
                         >
                           {t("builtyNew.mode.fixed")}
                         </button>
@@ -933,28 +962,36 @@ function EditBuiltyForm() {
                     </div>
                     <div className="flex flex-col gap-1">
                       <Label className="text-xs">{t("builtyNew.priceBasis")}</Label>
-                      <button
-                        type="button"
-                        className={cn(
-                          "h-11 rounded-lg border px-2 text-left text-sm transition-colors",
-                          line.priceBasis === "casting_only"
-                            ? "border-primary bg-primary/15 text-foreground"
-                            : "border-input text-muted-foreground hover:bg-muted/50"
-                        )}
-                        onClick={() =>
+                      <Select
+                        value={line.priceBasis === "casting_only" ? "casting_only" : "selling"}
+                        onValueChange={(v) =>
                           void setLinePriceBasis(
                             index,
-                            line.priceBasis === "casting_only" ? "selling" : "casting_only"
+                            v === "casting_only" ? "casting_only" : "selling"
                           )
                         }
+                        items={{
+                          selling: t("builtyNew.basis.selling"),
+                          casting_only: t("builtyNew.basis.castingOnly"),
+                        }}
                       >
-                        {line.priceBasis === "casting_only"
-                          ? t("builtyNew.basis.castingOnly")
-                          : t("builtyNew.basis.selling")}
-                      </button>
-                      <p className="text-[10px] text-muted-foreground">
-                        {t("builtyNew.castingOnlyHint")}
-                      </p>
+                        <SelectTrigger className="h-11 w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent side="bottom" alignItemWithTrigger={false}>
+                          <SelectItem value="selling">
+                            {t("builtyNew.basis.selling")}
+                          </SelectItem>
+                          <SelectItem value="casting_only">
+                            {t("builtyNew.basis.castingOnly")}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {line.priceBasis === "casting_only" ? (
+                        <p className="text-[10px] text-muted-foreground">
+                          {t("builtyNew.castingOnlyHint")}
+                        </p>
+                      ) : null}
                     </div>
                     {line.pricingMode === "rate_kg" ? (
                       <div className="flex flex-col gap-1">
