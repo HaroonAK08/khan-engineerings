@@ -65,7 +65,7 @@ export function SendScreen({ navigation, route }: Props) {
   async function onSend() {
     const n = Number(amount);
     if (!accountId) return Alert.alert("Select an account");
-    if (!recipient.trim()) return Alert.alert("Enter recipient name");
+    if (!recipient.trim()) return Alert.alert("Enter who or what you paid");
     if (!(n > 0)) return Alert.alert("Enter amount");
     setBusy(true);
     try {
@@ -75,11 +75,11 @@ export function SendScreen({ navigation, route }: Props) {
         recipient: recipient.trim(),
         notes: notes.trim() || undefined,
       });
-      Alert.alert("Sent", `${formatMoney(n)} to ${recipient.trim()}`, [
+      Alert.alert("Paid", `${formatMoney(n)} → ${recipient.trim()}`, [
         { text: "OK", onPress: () => navigation.goBack() },
       ]);
     } catch (err: any) {
-      Alert.alert("Error", err?.message || "Send failed");
+      Alert.alert("Error", err?.message || "Payment failed");
     } finally {
       setBusy(false);
     }
@@ -105,7 +105,7 @@ export function SendScreen({ navigation, route }: Props) {
           <Ionicons name="paper-plane" size={22} color={colors.blue} />
         </View>
         <Text style={styles.introText}>
-          Deduct from an account — past people appear as you type
+          Pay anyone or anything — person, rent, petrol, shop. Past payees appear as you type.
         </Text>
       </View>
 
@@ -141,10 +141,10 @@ export function SendScreen({ navigation, route }: Props) {
         })}
       </View>
 
-      <Text style={styles.label}>Send to</Text>
+      <Text style={styles.label}>Paid to</Text>
       <TextInput
         style={styles.input}
-        placeholder="Type a name (e.g. Ahmad)"
+        placeholder="e.g. Ahmad, Rent, Petrol, Utility"
         placeholderTextColor={colors.muted}
         value={recipient}
         onChangeText={(v) => {
@@ -172,7 +172,7 @@ export function SendScreen({ navigation, route }: Props) {
               <View style={{ flex: 1 }}>
                 <Text style={styles.suggestName}>{p.name}</Text>
                 <Text style={styles.suggestMeta}>
-                  {p.count} {p.count === 1 ? "send" : "sends"} · {formatMoney(p.totalSent)}
+                  {p.count} {p.count === 1 ? "payment" : "payments"} · {formatMoney(p.totalSent)}
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color={colors.muted} />
@@ -183,7 +183,7 @@ export function SendScreen({ navigation, route }: Props) {
 
       {!recipient && people.length > 0 && !showSuggestions ? (
         <Pressable onPress={() => setShowSuggestions(true)}>
-          <Text style={styles.recentLink}>Show recent people</Text>
+          <Text style={styles.recentLink}>Show recent payees</Text>
         </Pressable>
       ) : null}
 
@@ -218,7 +218,7 @@ export function SendScreen({ navigation, route }: Props) {
         onPress={() => void onSend()}
       >
         <Ionicons name="send" size={18} color="#fff" />
-        <Text style={styles.btnText}>{busy ? "Sending…" : "Send & deduct"}</Text>
+        <Text style={styles.btnText}>{busy ? "Paying…" : "Pay & deduct"}</Text>
       </Pressable>
     </ScrollView>
   );

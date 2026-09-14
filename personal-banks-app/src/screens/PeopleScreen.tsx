@@ -72,8 +72,8 @@ export function PeopleScreen({ navigation }: Props) {
 
   function confirmDelete(person: Person) {
     Alert.alert(
-      "Delete person?",
-      `Remove “${person.name}” and all their send history. Money will be returned to the accounts.`,
+      "Delete payee?",
+      `Remove “${person.name}” and all related payments. Money will be returned to the accounts.`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -100,7 +100,7 @@ export function PeopleScreen({ navigation }: Props) {
         <Ionicons name="search" size={18} color={colors.muted} />
         <TextInput
           style={styles.input}
-          placeholder="Search people"
+          placeholder="Search payees (people, rent, petrol…)"
           placeholderTextColor={colors.muted}
           value={q}
           onChangeText={setQ}
@@ -118,8 +118,10 @@ export function PeopleScreen({ navigation }: Props) {
           contentContainerStyle={{ gap: 10, paddingBottom: 40 }}
           ListEmptyComponent={
             <View style={styles.emptyBox}>
-              <Ionicons name="people-outline" size={36} color={colors.muted} />
-              <Text style={styles.empty}>People you send to will show up here</Text>
+              <Ionicons name="pricetags-outline" size={36} color={colors.muted} />
+              <Text style={styles.empty}>
+                Anyone or anything you pay will show up here — people, bills, shops, etc.
+              </Text>
             </View>
           }
           renderItem={({ item }) => (
@@ -167,7 +169,7 @@ export function PeopleScreen({ navigation }: Props) {
                   onPress={() => navigation.navigate("Send", { recipient: item.name })}
                 >
                   <Ionicons name="paper-plane" size={15} color="#fff" />
-                  <Text style={styles.sendText}>Send</Text>
+                  <Text style={styles.sendText}>Pay</Text>
                 </Pressable>
               </View>
             </View>
@@ -183,12 +185,12 @@ export function PeopleScreen({ navigation }: Props) {
       >
         <Pressable style={styles.modalBg} onPress={() => setEditing(null)}>
           <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.modalTitle}>Rename person</Text>
+            <Text style={styles.modalTitle}>Rename payee</Text>
             <TextInput
               style={styles.modalInput}
               value={newName}
               onChangeText={setNewName}
-              placeholder="Name"
+              placeholder="Name or label"
               placeholderTextColor={colors.muted}
               autoFocus
             />

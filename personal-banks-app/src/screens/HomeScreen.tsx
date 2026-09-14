@@ -16,9 +16,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import {
+  createAccount,
   createBank,
   deleteBank,
   getSummary,
+  listAccounts,
+  listBanks,
   updateBank,
   type Bank,
 } from "../lib/banks-api";
@@ -28,8 +31,14 @@ import { colors, radius } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Home">;
 
+const CASH_BANK_NAME = "Cash";
+
 function accountLabel(n: number) {
   return n === 1 ? "1 account" : `${n} accounts`;
+}
+
+function isCashBank(bank: Bank) {
+  return bank.name.trim().toLowerCase() === CASH_BANK_NAME.toLowerCase();
 }
 
 export function HomeScreen({ navigation }: Props) {
@@ -135,6 +144,30 @@ export function HomeScreen({ navigation }: Props) {
     navigation.replace("Pin");
   }
 
+  async function openCash() {
+    setBusy(true);
+    try {
+      const all = await listBanks();
+      let cash = all.find(isCashBank) || null;
+      if (!cash) {
+        cash = await createBank({ name: CASH_BANK_NAME, notes: "Cash in hand" });
+      }
+      const accounts = await listAccounts(cash._id);
+      if (accounts.length === 0) {
+        await createAccount({ bank: cash._id, name: "Cash", balance: 0 });
+      }
+      navigation.navigate("Bank", { bankId: cash._id, bankName: cash.name });
+    } catch (err: any) {
+      Alert.alert("Error", err?.message || "Could not open cash");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const cashBank = banks.find(isCashBank) || null;
+  const otherBanks = banks.filter((b) => !isCashBank(b));
+  const cashBalance = cashBank?.totalBalance || 0;
+
   return (
     <View style={[styles.root, { paddingTop: insets.top + 8, paddingBottom: insets.bottom }]}>
       <View style={styles.topBar}>
@@ -170,16 +203,32 @@ export function HomeScreen({ navigation }: Props) {
 
         <Pressable
           style={({ pressed }) => [styles.actionTile, pressed && styles.pressed]}
+          onPress={() => void openCash()}
+          disabled={busy}
+        >
+          <View style={[styles.actionIcon, { backgroundColor: colors.successSoft }]}>
+            <Ionicons name="cash" size={26} color={colors.success} />
+          </View>
+          <Text style={styles.actionLabel}>Cash</Text>
+          {cashBank ? (
+            <Text style={styles.actionMeta}>{formatMoney(cashBalance)}</Text>
+          ) : (
+            <Text style={styles.actionMeta}>Tap to add</Text>
+          )}
+        </Pressable>
+      </View>
+
+      <View style={styles.actions}>
+        <Pressable
+          style={({ pressed }) => [styles.actionTile, pressed && styles.pressed]}
           onPress={() => navigation.navigate("Send")}
         >
           <View style={[styles.actionIcon, { backgroundColor: colors.blueSoft }]}>
             <Ionicons name="paper-plane" size={26} color={colors.blue} />
           </View>
-          <Text style={styles.actionLabel}>Send</Text>
+          <Text style={styles.actionLabel}>Pay</Text>
         </Pressable>
-      </View>
 
-      <View style={styles.actions}>
         <Pressable
           style={({ pressed }) => [styles.actionTile, pressed && styles.pressed]}
           onPress={() => navigation.navigate("History", {})}
@@ -189,15 +238,17 @@ export function HomeScreen({ navigation }: Props) {
           </View>
           <Text style={styles.actionLabel}>History</Text>
         </Pressable>
+      </View>
 
+      <View style={styles.actions}>
         <Pressable
           style={({ pressed }) => [styles.actionTile, pressed && styles.pressed]}
           onPress={() => navigation.navigate("People")}
         >
           <View style={[styles.actionIcon, { backgroundColor: colors.dangerSoft }]}>
-            <Ionicons name="people" size={26} color={colors.danger} />
+            <Ionicons name="pricetags" size={26} color={colors.danger} />
           </View>
-          <Text style={styles.actionLabel}>People</Text>
+          <Text style={styles.actionLabel}>Payees</Text>
         </Pressable>
       </View>
 
@@ -209,7 +260,7 @@ export function HomeScreen({ navigation }: Props) {
         <ActivityIndicator color={colors.accent} style={{ marginTop: 40 }} />
       ) : (
         <FlatList
-          data={banks}
+          data={otherBanks}
           keyExtractor={(item) => item._id}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 28, gap: 12 }}
@@ -224,11 +275,55 @@ export function HomeScreen({ navigation }: Props) {
               colors={[colors.accent]}
             />
           }
+          ListHeaderComponent={
+            cashBank ? (
+              <View style={[styles.card, { marginBottom: 12 }]}>
+                <Pressable
+                  style={styles.cardMain}
+                  onPress={() =>
+                    navigation.navigate("Bank", {
+                      bankId: cashBank._id,
+                      bankName: cashBank.name,
+                    })
+                  }
+                >
+                  <View style={[styles.bankIcon, { backgroundColor: colors.successSoft }]}>
+                    <Ionicons name="cash" size={22} color={colors.success} />
+                  </View>
+                  <View style={styles.cardBody}>
+                    <Text style={styles.bankName}>{cashBank.name}</Text>
+                    <Text style={styles.meta}>Cash in hand</Text>
+                  </View>
+                  <Text style={styles.bankBal}>{formatMoney(cashBank.totalBalance || 0)}</Text>
+                </Pressable>
+                <View style={styles.cardActions}>
+                  <Pressable style={styles.miniBtn} onPress={() => openEdit(cashBank)}>
+                    <Ionicons name="create-outline" size={15} color={colors.accent} />
+                    <Text style={styles.miniText}>Edit</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.miniBtn}
+                    onPress={() =>
+                      navigation.navigate("Bank", {
+                        bankId: cashBank._id,
+                        bankName: cashBank.name,
+                      })
+                    }
+                  >
+                    <Ionicons name="open-outline" size={15} color={colors.blue} />
+                    <Text style={[styles.miniText, { color: colors.blue }]}>Open</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : null
+          }
           ListEmptyComponent={
-            <View style={styles.emptyBox}>
-              <Ionicons name="wallet-outline" size={36} color={colors.muted} />
-              <Text style={styles.empty}>Add your first bank to get started</Text>
-            </View>
+            otherBanks.length === 0 && !cashBank ? (
+              <View style={styles.emptyBox}>
+                <Ionicons name="wallet-outline" size={36} color={colors.muted} />
+                <Text style={styles.empty}>Add Cash or a bank to get started</Text>
+              </View>
+            ) : null
           }
           renderItem={({ item }) => (
             <View style={styles.card}>
@@ -280,7 +375,7 @@ export function HomeScreen({ navigation }: Props) {
         <Pressable style={styles.modalBg} onPress={() => setModal(null)}>
           <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
             <Text style={styles.modalTitle}>{modal === "edit" ? "Edit bank" : "Add bank"}</Text>
-            <Text style={styles.modalHint}>e.g. HBL, Meezan, Cash</Text>
+            <Text style={styles.modalHint}>e.g. HBL, Meezan (use Cash tile for cash)</Text>
             <TextInput
               style={styles.input}
               placeholder="Bank name"
@@ -369,6 +464,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   actionLabel: { color: colors.text, fontWeight: "700", fontSize: 14 },
+  actionMeta: { color: colors.muted, fontSize: 11, fontWeight: "600", marginTop: 4 },
   pressed: { opacity: 0.88, transform: [{ scale: 0.98 }] },
   sectionHead: { marginBottom: 10, marginTop: 4 },
   sectionTitle: { color: colors.textSecondary, fontSize: 13, fontWeight: "700", letterSpacing: 0.4 },

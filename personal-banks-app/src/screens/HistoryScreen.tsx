@@ -87,7 +87,7 @@ export function HistoryScreen({ navigation, route }: Props) {
     const amount = Number(editAmount);
     if (!(amount > 0)) return Alert.alert("Enter a valid amount");
     if (editing.type === "send" && !editRecipient.trim()) {
-      return Alert.alert("Recipient required");
+      return Alert.alert("Payee required");
     }
     setBusy(true);
     try {
@@ -140,7 +140,7 @@ export function HistoryScreen({ navigation, route }: Props) {
           <Ionicons name="search" size={18} color={colors.muted} />
           <TextInput
             style={styles.input}
-            placeholder="Search recipient or notes"
+            placeholder="Search payee or notes"
             placeholderTextColor={colors.muted}
             value={q}
             onChangeText={setQ}
@@ -152,7 +152,7 @@ export function HistoryScreen({ navigation, route }: Props) {
           onPress={() => navigation.navigate("Send", { recipient: recipientFilter })}
         >
           <Ionicons name="paper-plane" size={16} color={colors.blue} />
-          <Text style={styles.personBannerText}>Send again to {recipientFilter}</Text>
+          <Text style={styles.personBannerText}>Pay again → {recipientFilter}</Text>
         </Pressable>
       )}
       {loading && rows.length === 0 ? (
@@ -189,7 +189,7 @@ export function HistoryScreen({ navigation, route }: Props) {
                     </Text>
                   </View>
                   {item.recipient ? (
-                    <Text style={styles.recipient}>To: {item.recipient}</Text>
+                    <Text style={styles.recipient}>Paid to: {item.recipient}</Text>
                   ) : null}
                   <Text style={styles.meta}>
                     {[bankName, accountName].filter(Boolean).join(" · ")}
@@ -231,7 +231,7 @@ export function HistoryScreen({ navigation, route }: Props) {
                 style={styles.modalInput}
                 value={editRecipient}
                 onChangeText={setEditRecipient}
-                placeholder="Recipient"
+                placeholder="Payee (person, rent, petrol…)"
                 placeholderTextColor={colors.muted}
               />
             ) : null}

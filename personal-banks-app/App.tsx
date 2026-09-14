@@ -87,9 +87,9 @@ export default function App() {
           </Stack.Screen>
           <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
           <Stack.Screen name="Bank" component={BankScreen} options={{ title: "Bank" }} />
-          <Stack.Screen name="Send" component={SendScreen} options={{ title: "Send money" }} />
+          <Stack.Screen name="Send" component={SendScreen} options={{ title: "Pay" }} />
           <Stack.Screen name="History" component={HistoryScreen} options={{ title: "History" }} />
-          <Stack.Screen name="People" component={PeopleScreen} options={{ title: "People" }} />
+          <Stack.Screen name="People" component={PeopleScreen} options={{ title: "Payees" }} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>

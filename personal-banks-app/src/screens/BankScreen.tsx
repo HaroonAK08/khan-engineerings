@@ -213,7 +213,7 @@ export function BankScreen({ navigation, route }: Props) {
                   }
                 >
                   <Ionicons name="paper-plane-outline" size={15} color={colors.blue} />
-                  <Text style={[styles.link, { color: colors.blue }]}>Send</Text>
+                  <Text style={[styles.link, { color: colors.blue }]}>Pay</Text>
                 </Pressable>
                 <Pressable
                   style={styles.miniBtn}
