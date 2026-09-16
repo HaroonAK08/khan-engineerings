@@ -151,6 +151,9 @@ export async function listTransactions(params?: {
   type?: string;
   q?: string;
   recipient?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
 }) {
   const sp = new URLSearchParams();
   if (params?.account) sp.set("account", params.account);
@@ -158,6 +161,9 @@ export async function listTransactions(params?: {
   if (params?.type) sp.set("type", params.type);
   if (params?.q) sp.set("q", params.q);
   if (params?.recipient) sp.set("recipient", params.recipient);
+  if (params?.from) sp.set("from", params.from);
+  if (params?.to) sp.set("to", params.to);
+  if (params?.limit) sp.set("limit", String(params.limit));
   const q = sp.toString() ? `?${sp}` : "";
   const data = await api<{ transactions: Transaction[] }>(`/personal-banks/transactions${q}`);
   return data.transactions;

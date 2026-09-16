@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
-  Modal,
+  LayoutAnimation,
+  Platform,
   Pressable,
   RefreshControl,
   StyleSheet,
   Text,
   TextInput,
+  UIManager,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -21,17 +22,32 @@ import {
   updateAccount,
   type Account,
 } from "../lib/banks-api";
-import { formatMoney } from "../lib/api";
+import { formatMoney, isOfflineError } from "../lib/api";
+import { hapticSuccess } from "../lib/haptics";
+import { AmountChips } from "../components/AmountChips";
+import { FormSheet } from "../components/FormSheet";
+import { ListSkeleton } from "../components/Skeleton";
+import { StateView } from "../components/StateView";
+import { useNotify } from "../components/Notify";
 import type { RootStackParamList } from "../navigation/types";
-import { colors, radius } from "../theme";
+import { useTheme } from "../theme/ThemeContext";
+import { radius } from "../theme";
+
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 type Props = NativeStackScreenProps<RootStackParamList, "Bank">;
 
 export function BankScreen({ navigation, route }: Props) {
   const { bankId, bankName } = route.params;
+  const { colors } = useTheme();
+  const notify = useNotify();
+  const isCash = bankName.trim().toLowerCase() === "cash";
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [modal, setModal] = useState<"add" | "edit" | "deposit" | null>(null);
   const [selected, setSelected] = useState<Account | null>(null);
   const [name, setName] = useState("");
@@ -41,25 +57,34 @@ export function BankScreen({ navigation, route }: Props) {
   const load = useCallback(
     async (soft = false) => {
       if (!soft) setLoading(true);
+      setLoadError(null);
       try {
-        setAccounts(await listAccounts(bankId));
-      } catch (err: any) {
-        if (!soft) Alert.alert("Error", err?.message || "Failed to load accounts");
+        const rows = await listAccounts(bankId);
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setAccounts(rows);
+      } catch (err) {
+        setLoadError(err);
+        if (!soft) notify.error("Couldn’t load accounts");
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
     },
-    [bankId]
+    [bankId, notify]
   );
 
   useEffect(() => {
-    navigation.setOptions({ title: bankName });
+    navigation.setOptions({
+      title: bankName,
+      headerBackTitle: "Back",
+    });
     void load();
   }, [navigation, bankName, load]);
 
+  const total = accounts.reduce((s, a) => s + (a.balance || 0), 0);
+
   async function onAdd() {
-    if (!name.trim()) return Alert.alert("Account name required");
+    if (!name.trim()) return notify.info("Account name required");
     setBusy(true);
     try {
       await createAccount({
@@ -70,9 +95,10 @@ export function BankScreen({ navigation, route }: Props) {
       setModal(null);
       setName("");
       setAmount("");
+      notify.success("Account added", name.trim());
       await load(true);
     } catch (err: any) {
-      Alert.alert("Error", err?.message || "Could not add");
+      notify.error("Couldn’t add account", err?.message);
     } finally {
       setBusy(false);
     }
@@ -80,34 +106,41 @@ export function BankScreen({ navigation, route }: Props) {
 
   async function onEdit() {
     if (!selected) return;
-    if (!name.trim()) return Alert.alert("Account name required");
+    if (!name.trim()) return notify.info("Account name required");
     setBusy(true);
     try {
       await updateAccount(selected._id, { name: name.trim() });
       setModal(null);
       setSelected(null);
       setName("");
+      notify.success("Account updated");
       await load(true);
     } catch (err: any) {
-      Alert.alert("Error", err?.message || "Could not update");
+      notify.error("Couldn’t update", err?.message);
     } finally {
       setBusy(false);
     }
   }
 
   async function onDeposit() {
-    if (!selected) return;
+    if (!selected || busy) return;
     const n = Number(amount);
-    if (!(n > 0)) return Alert.alert("Enter amount");
+    if (!(n > 0)) return notify.info("Enter an amount");
     setBusy(true);
     try {
       await deposit({ account: selected._id, amount: n });
+      const label = selected.name;
       setModal(null);
       setSelected(null);
       setAmount("");
+      hapticSuccess();
+      notify.success(
+        isCash ? "Cash added" : "Money added",
+        `${formatMoney(n)} → ${label}`
+      );
       await load(true);
     } catch (err: any) {
-      Alert.alert("Error", err?.message || "Deposit failed");
+      notify.error("Deposit failed", err?.message);
     } finally {
       setBusy(false);
     }
@@ -123,9 +156,10 @@ export function BankScreen({ navigation, route }: Props) {
           void (async () => {
             try {
               await deleteAccount(account._id);
+              notify.success("Account deleted");
               await load(true);
             } catch (err: any) {
-              Alert.alert("Error", err?.message || "Delete failed");
+              notify.error("Delete failed", err?.message);
             }
           })();
         },
@@ -135,36 +169,62 @@ export function BankScreen({ navigation, route }: Props) {
 
   function modalTitle() {
     if (modal === "edit") return "Edit account";
-    if (modal === "deposit") return `Deposit · ${selected?.name || ""}`;
-    return "Add account";
+    if (modal === "deposit") return isCash ? "Add cash" : `Add money · ${selected?.name || ""}`;
+    return "New account";
   }
 
   return (
-    <View style={styles.root}>
-      <View style={styles.actions}>
+    <View style={[styles.root, { backgroundColor: colors.bg }]}>
+      <View
+        style={[
+          styles.summary,
+          { backgroundColor: colors.surface, borderColor: colors.border },
+        ]}
+      >
+        <View>
+          <Text style={[styles.summaryLabel, { color: colors.muted }]}>
+            {isCash ? "Cash in hand" : "Bank total"}
+          </Text>
+          <Text style={[styles.summaryAmount, { color: colors.text }]}>{formatMoney(total)}</Text>
+        </View>
         <Pressable
-          style={({ pressed }) => [styles.primary, pressed && styles.pressed]}
-          onPress={() => {
-            setSelected(null);
-            setName("");
-            setAmount("");
-            setModal("add");
-          }}
-        >
-          <Ionicons name="add-circle" size={20} color="#fff" />
-          <Text style={styles.primaryText}>Account</Text>
-        </Pressable>
-        <Pressable
-          style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
+          style={({ pressed }) => [
+            styles.historyChip,
+            { backgroundColor: colors.accentSoft, opacity: pressed ? 0.9 : 1 },
+          ]}
           onPress={() => navigation.navigate("History", { bankId })}
         >
-          <Ionicons name="time-outline" size={18} color={colors.accent} />
-          <Text style={styles.secondaryText}>History</Text>
+          <Ionicons name="time-outline" size={16} color={colors.accent} />
+          <Text style={[styles.historyChipText, { color: colors.accent }]}>History</Text>
         </Pressable>
       </View>
 
+      <Pressable
+        style={({ pressed }) => [styles.addAccount, pressed && { opacity: 0.9 }]}
+        onPress={() => {
+          setSelected(null);
+          setName("");
+          setAmount("");
+          setModal("add");
+        }}
+      >
+        <Ionicons name="add-circle" size={22} color={colors.accent} />
+        <Text style={[styles.addAccountText, { color: colors.accent }]}>Add account</Text>
+      </Pressable>
+
       {loading && accounts.length === 0 ? (
-        <ActivityIndicator color={colors.accent} style={{ marginTop: 40 }} />
+        <ListSkeleton rows={4} />
+      ) : loadError && accounts.length === 0 ? (
+        <StateView
+          kind={isOfflineError(loadError) ? "offline" : "error"}
+          title={isOfflineError(loadError) ? "You’re offline" : "Couldn’t load accounts"}
+          message={
+            isOfflineError(loadError)
+              ? "Check your connection and try again."
+              : String((loadError as Error)?.message || "Something went wrong")
+          }
+          onRetry={() => void load()}
+        />
       ) : (
         <FlatList
           data={accounts}
@@ -183,52 +243,117 @@ export function BankScreen({ navigation, route }: Props) {
             />
           }
           ListEmptyComponent={
-            <View style={styles.emptyBox}>
-              <Ionicons name="card-outline" size={34} color={colors.muted} />
-              <Text style={styles.empty}>No accounts yet</Text>
-            </View>
+            <StateView
+              kind="empty"
+              title="No accounts"
+              message="Add an account to start tracking money"
+              icon="card-outline"
+            />
           }
           renderItem={({ item }) => (
-            <View style={styles.card}>
-              <Pressable onPress={() => navigation.navigate("History", { accountId: item._id })}>
-                <Text style={styles.name}>{item.name}</Text>
-                <Text style={styles.balance}>{formatMoney(item.balance)}</Text>
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                  shadowColor: colors.shadow,
+                },
+              ]}
+            >
+              <Pressable
+                style={styles.cardMain}
+                onPress={() =>
+                  navigation.navigate("Account", {
+                    accountId: item._id,
+                    accountName: item.name,
+                    bankId,
+                    bankName,
+                  })
+                }
+              >
+                <View
+                  style={[
+                    styles.accIcon,
+                    { backgroundColor: isCash ? colors.successSoft : colors.accentSoft },
+                  ]}
+                >
+                  <Ionicons
+                    name={isCash ? "cash" : "card"}
+                    size={20}
+                    color={isCash ? colors.success : colors.accent}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.name, { color: colors.textSecondary }]}>{item.name}</Text>
+                  <Text style={[styles.balance, { color: colors.text }]}>
+                    {formatMoney(item.balance)}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.muted} />
               </Pressable>
-              <View style={styles.row}>
+
+              <View style={styles.actions}>
                 <Pressable
-                  style={styles.miniBtn}
+                  style={({ pressed }) => [
+                    styles.primaryAction,
+                    { backgroundColor: colors.accent, opacity: pressed ? 0.9 : 1 },
+                  ]}
                   onPress={() => {
                     setSelected(item);
                     setAmount("");
                     setModal("deposit");
                   }}
                 >
-                  <Ionicons name="add" size={16} color={colors.accent} />
-                  <Text style={styles.link}>Add</Text>
+                  <Ionicons name="add" size={18} color="#fff" />
+                  <Text style={styles.primaryActionText}>
+                    {isCash ? "Add cash" : "Add money"}
+                  </Text>
                 </Pressable>
                 <Pressable
-                  style={styles.miniBtn}
+                  style={({ pressed }) => [
+                    styles.ghostAction,
+                    {
+                      backgroundColor: colors.surfaceMuted,
+                      borderColor: colors.border,
+                      opacity: pressed ? 0.9 : 1,
+                    },
+                  ]}
                   onPress={() =>
                     navigation.navigate("Send", { accountId: item._id, accountName: item.name })
                   }
                 >
-                  <Ionicons name="paper-plane-outline" size={15} color={colors.blue} />
-                  <Text style={[styles.link, { color: colors.blue }]}>Pay</Text>
+                  <Ionicons name="paper-plane-outline" size={16} color={colors.blue} />
                 </Pressable>
                 <Pressable
-                  style={styles.miniBtn}
+                  style={({ pressed }) => [
+                    styles.ghostAction,
+                    {
+                      backgroundColor: colors.surfaceMuted,
+                      borderColor: colors.border,
+                      opacity: pressed ? 0.9 : 1,
+                    },
+                  ]}
                   onPress={() => {
                     setSelected(item);
                     setName(item.name);
                     setModal("edit");
                   }}
                 >
-                  <Ionicons name="create-outline" size={15} color={colors.accent} />
-                  <Text style={styles.link}>Edit</Text>
+                  <Ionicons name="create-outline" size={16} color={colors.accent} />
                 </Pressable>
-                <Pressable style={styles.miniBtn} onPress={() => confirmDelete(item)}>
-                  <Ionicons name="trash-outline" size={15} color={colors.danger} />
-                  <Text style={[styles.link, { color: colors.danger }]}>Delete</Text>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.ghostAction,
+                    {
+                      backgroundColor: colors.surfaceMuted,
+                      borderColor: colors.border,
+                      opacity: pressed ? 0.9 : 1,
+                    },
+                  ]}
+                  onPress={() => confirmDelete(item)}
+                >
+                  <Ionicons name="trash-outline" size={16} color={colors.danger} />
                 </Pressable>
               </View>
             </View>
@@ -236,128 +361,160 @@ export function BankScreen({ navigation, route }: Props) {
         />
       )}
 
-      <Modal
-        visible={modal != null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setModal(null)}
-      >
-        <Pressable style={styles.modalBg} onPress={() => setModal(null)}>
-          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.modalTitle}>{modalTitle()}</Text>
-            {modal === "add" || modal === "edit" ? (
-              <TextInput
-                style={styles.input}
-                placeholder="Account name"
-                placeholderTextColor={colors.muted}
-                value={name}
-                onChangeText={setName}
-                autoFocus
-              />
-            ) : null}
-            {modal === "add" || modal === "deposit" ? (
-              <TextInput
-                style={styles.input}
-                placeholder={modal === "add" ? "Opening balance (optional)" : "Amount"}
-                placeholderTextColor={colors.muted}
-                keyboardType="decimal-pad"
-                value={amount}
-                onChangeText={setAmount}
-                autoFocus={modal === "deposit"}
-              />
-            ) : null}
-            <View style={styles.modalActions}>
-              <Pressable onPress={() => setModal(null)}>
-                <Text style={styles.cancel}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [styles.modalSave, pressed && styles.pressed]}
-                disabled={busy}
-                onPress={() =>
-                  void (modal === "add" ? onAdd() : modal === "edit" ? onEdit() : onDeposit())
-                }
-              >
-                <Text style={styles.modalSaveText}>{busy ? "…" : "Save"}</Text>
-              </Pressable>
-            </View>
+      <FormSheet visible={modal != null} onClose={() => setModal(null)}>
+        <Text style={[styles.modalTitle, { color: colors.text }]}>{modalTitle()}</Text>
+        {modal === "add" || modal === "edit" ? (
+          <TextInput
+            style={[
+              styles.input,
+              {
+                borderColor: colors.border,
+                color: colors.text,
+                backgroundColor: colors.surfaceMuted,
+              },
+            ]}
+            placeholder="Account name"
+            placeholderTextColor={colors.muted}
+            value={name}
+            onChangeText={setName}
+            autoFocus
+          />
+        ) : null}
+        {modal === "add" || modal === "deposit" ? (
+          <>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  borderColor: colors.border,
+                  color: colors.text,
+                  backgroundColor: colors.surfaceMuted,
+                },
+              ]}
+              placeholder={modal === "add" ? "Opening balance (optional)" : "Amount"}
+              placeholderTextColor={colors.muted}
+              keyboardType="decimal-pad"
+              value={amount}
+              onChangeText={setAmount}
+              autoFocus={modal === "deposit"}
+            />
+            {modal === "deposit" ? <AmountChips value={amount} onChange={setAmount} /> : null}
+          </>
+        ) : null}
+        <View style={styles.modalActions}>
+          <Pressable onPress={() => setModal(null)} style={styles.cancelBtn}>
+            <Text style={{ color: colors.textSecondary, fontWeight: "600" }}>Cancel</Text>
           </Pressable>
-        </Pressable>
-      </Modal>
+          <Pressable
+            style={({ pressed }) => [
+              styles.modalSave,
+              { backgroundColor: colors.accent, opacity: busy || pressed ? 0.88 : 1 },
+            ]}
+            disabled={busy}
+            onPress={() =>
+              void (modal === "add" ? onAdd() : modal === "edit" ? onEdit() : onDeposit())
+            }
+          >
+            <Text style={styles.modalSaveText}>{busy ? "…" : "Save"}</Text>
+          </Pressable>
+        </View>
+      </FormSheet>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg, padding: 20 },
-  actions: { flexDirection: "row", gap: 10, marginBottom: 16 },
-  primary: {
+  root: { flex: 1, paddingHorizontal: 20, paddingTop: 8 },
+  summary: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    backgroundColor: colors.accent,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: radius.md,
-  },
-  primaryText: { color: "#fff", fontWeight: "700" },
-  secondary: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  secondaryText: { color: colors.accent, fontWeight: "700" },
-  pressed: { opacity: 0.88 },
-  card: {
-    backgroundColor: colors.surface,
+    justifyContent: "space-between",
     borderRadius: radius.lg,
     padding: 16,
     borderWidth: 1,
-    borderColor: colors.border,
+    marginBottom: 12,
   },
-  name: { color: colors.textSecondary, fontSize: 14, fontWeight: "600" },
-  balance: { color: colors.text, fontSize: 28, fontWeight: "800", marginTop: 4, letterSpacing: -0.5 },
-  row: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 14 },
-  miniBtn: {
+  summaryLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  summaryAmount: { fontSize: 26, fontWeight: "800", marginTop: 4, letterSpacing: -0.5 },
+  historyChip: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    backgroundColor: colors.surfaceMuted,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 10,
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
   },
-  link: { color: colors.accent, fontWeight: "700", fontSize: 13 },
-  emptyBox: { alignItems: "center", marginTop: 48, gap: 8 },
-  empty: { color: colors.muted, textAlign: "center" },
-  modalBg: {
-    flex: 1,
-    backgroundColor: "rgba(15,23,42,0.35)",
+  historyChipText: { fontWeight: "700", fontSize: 13 },
+  addAccount: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    alignSelf: "flex-start",
+    marginBottom: 14,
+    paddingVertical: 6,
+  },
+  addAccountText: { fontWeight: "800", fontSize: 15 },
+  card: {
+    borderRadius: radius.lg,
+    padding: 14,
+    borderWidth: 1,
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 1,
+  },
+  cardMain: { flexDirection: "row", alignItems: "center", gap: 12 },
+  accIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: "center",
     justifyContent: "center",
-    padding: 24,
   },
-  modalCard: { backgroundColor: colors.surface, borderRadius: radius.xl, padding: 22 },
-  modalTitle: { color: colors.text, fontSize: 18, fontWeight: "800", marginBottom: 14 },
+  name: { fontSize: 13, fontWeight: "700" },
+  balance: { fontSize: 24, fontWeight: "800", marginTop: 2, letterSpacing: -0.4 },
+  actions: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 14 },
+  primaryAction: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: radius.sm,
+  },
+  primaryActionText: { color: "#fff", fontWeight: "800", fontSize: 14 },
+  ghostAction: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+  },
+  modalTitle: { fontSize: 18, fontWeight: "800", marginBottom: 14 },
   input: {
     borderWidth: 1,
-    borderColor: colors.border,
     borderRadius: radius.md,
     padding: 14,
-    color: colors.text,
     marginBottom: 12,
     fontSize: 16,
-    backgroundColor: colors.surfaceMuted,
   },
-  modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10, alignItems: "center" },
-  cancel: { color: colors.textSecondary, fontWeight: "600", padding: 12 },
+  modalActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 10,
+    alignItems: "center",
+    marginTop: 6,
+  },
+  cancelBtn: { paddingHorizontal: 14, paddingVertical: 12 },
   modalSave: {
-    backgroundColor: colors.accent,
-    paddingHorizontal: 20,
+    paddingHorizontal: 22,
     paddingVertical: 12,
     borderRadius: radius.sm,
   },

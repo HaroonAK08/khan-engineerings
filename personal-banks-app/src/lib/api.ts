@@ -26,6 +26,17 @@ type ApiOptions = {
   auth?: boolean;
 };
 
+export function isOfflineError(err: unknown) {
+  const msg = String((err as Error)?.message || err || "").toLowerCase();
+  return (
+    msg.includes("network request failed") ||
+    msg.includes("failed to fetch") ||
+    msg.includes("network error") ||
+    msg.includes("internet") ||
+    (err as { status?: number })?.status === 0
+  );
+}
+
 export async function api<T = unknown>(path: string, options: ApiOptions = {}): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -35,11 +46,19 @@ export async function api<T = unknown>(path: string, options: ApiOptions = {}): 
     if (token) headers.Authorization = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${getApiBase()}${path}`, {
-    method: options.method || (options.body ? "POST" : "GET"),
-    headers,
-    body: options.body != null ? JSON.stringify(options.body) : undefined,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${getApiBase()}${path}`, {
+      method: options.method || (options.body ? "POST" : "GET"),
+      headers,
+      body: options.body != null ? JSON.stringify(options.body) : undefined,
+    });
+  } catch (e) {
+    const err = new Error("No internet connection") as Error & { status?: number; offline?: boolean };
+    err.status = 0;
+    err.offline = true;
+    throw err;
+  }
 
   const text = await res.text();
   let data: any = null;
@@ -60,5 +79,9 @@ export async function api<T = unknown>(path: string, options: ApiOptions = {}): 
 }
 
 export function formatMoney(n: number) {
-  return `Rs ${Math.round((Number(n) || 0) * 100) / 100}`;
+  const value = Math.round((Number(n) || 0) * 100) / 100;
+  const fixed = Number.isInteger(value) ? String(Math.trunc(value)) : value.toFixed(2);
+  const [whole, dec] = fixed.split(".");
+  const withCommas = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return dec ? `Rs ${withCommas}.${dec}` : `Rs ${withCommas}`;
 }

@@ -339,7 +339,7 @@ async function send(data) {
   };
 }
 
-async function listTransactions({ account, bank, type, q, recipient, limit } = {}) {
+async function listTransactions({ account, bank, type, q, recipient, limit, from, to } = {}) {
   const filter = {};
   if (account) filter.account = account;
   if (bank) filter.bank = bank;
@@ -351,6 +351,15 @@ async function listTransactions({ account, bank, type, q, recipient, limit } = {
       { recipient: new RegExp(escapeRegex(q.trim()), "i") },
       { notes: new RegExp(escapeRegex(q.trim()), "i") },
     ];
+  }
+  if (from || to) {
+    filter.txnDate = {};
+    if (from) filter.txnDate.$gte = parseDate(from, "From date");
+    if (to) {
+      const end = parseDate(to, "To date");
+      end.setHours(23, 59, 59, 999);
+      filter.txnDate.$lte = end;
+    }
   }
   const cap = Math.min(Math.max(Number(limit) || 100, 1), 500);
   return PersonalTransaction.find(filter)

@@ -1,6 +1,8 @@
 import { useRef, useState } from "react";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -10,7 +12,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { resetPin, setupPin, unlockPin, type AuthStatus } from "../lib/banks-api";
-import { colors, radius } from "../theme";
+import { useTheme } from "../theme/ThemeContext";
+import { radius } from "../theme";
 
 type Props = {
   status: AuthStatus;
@@ -21,6 +24,7 @@ type Step = "enter" | "confirm" | "reset_factory" | "reset_new";
 
 export function PinScreen({ status, onUnlocked }: Props) {
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
   const [digits, setDigits] = useState("");
   const [firstPin, setFirstPin] = useState("");
   const [factoryPin, setFactoryPin] = useState("");
@@ -163,17 +167,34 @@ export function PinScreen({ status, onUnlocked }: Props) {
   const showPad = !(resetting && step === "reset_factory");
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top + 40, paddingBottom: insets.bottom + 16 }]}>
-      <View style={styles.badge}>
+    <KeyboardAvoidingView
+      style={[
+        styles.root,
+        {
+          backgroundColor: colors.bg,
+          paddingTop: insets.top + 40,
+          paddingBottom: insets.bottom + 16,
+        },
+      ]}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      <View style={[styles.badge, { backgroundColor: colors.accentSoft }]}>
         <Ionicons name="shield-checkmark" size={22} color={colors.accent} />
       </View>
-      <Text style={styles.eyebrow}>PERSONAL BANKS</Text>
-      <Text style={styles.title}>{title}</Text>
-      <Text style={styles.hint}>{hint}</Text>
+      <Text style={[styles.eyebrow, { color: colors.muted }]}>PERSONAL BANKS</Text>
+      <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
+      <Text style={[styles.hint, { color: colors.textSecondary }]}>{hint}</Text>
 
       {resetting && step === "reset_factory" ? (
         <TextInput
-          style={styles.input}
+          style={[
+            styles.input,
+            {
+              borderColor: colors.border,
+              backgroundColor: colors.surface,
+              color: colors.text,
+            },
+          ]}
           value={factoryPin}
           onChangeText={(v) => setFactoryPin(v.replace(/\D/g, "").slice(0, 8))}
           placeholder="Factory code"
@@ -186,12 +207,26 @@ export function PinScreen({ status, onUnlocked }: Props) {
       ) : (
         <View style={styles.dots}>
           {[0, 1, 2, 3].map((i) => (
-            <View key={i} style={[styles.dot, digits.length > i && styles.dotOn]} />
+            <View
+              key={i}
+              style={[
+                styles.dot,
+                {
+                  borderColor: colors.border,
+                  backgroundColor: digits.length > i ? colors.accent : colors.surface,
+                },
+                digits.length > i ? { borderColor: colors.accent } : null,
+              ]}
+            />
           ))}
         </View>
       )}
 
-      {error ? <Text style={styles.error}>{error}</Text> : <View style={styles.errorSlot} />}
+      {error ? (
+        <Text style={[styles.error, { color: colors.danger }]}>{error}</Text>
+      ) : (
+        <View style={styles.errorSlot} />
+      )}
 
       {busy ? <ActivityIndicator color={colors.accent} style={{ marginVertical: 8 }} /> : null}
 
@@ -202,8 +237,11 @@ export function PinScreen({ status, onUnlocked }: Props) {
               key={`${key}-${idx}`}
               style={({ pressed }) => [
                 styles.key,
-                !key && styles.keyEmpty,
-                pressed && key ? styles.keyPressed : null,
+                {
+                  backgroundColor: key ? colors.surface : "transparent",
+                  borderColor: key ? colors.border : "transparent",
+                },
+                pressed && key ? { backgroundColor: colors.accentSoft, transform: [{ scale: 0.96 }] } : null,
               ]}
               disabled={!key || busy}
               onPress={() => {
@@ -214,14 +252,17 @@ export function PinScreen({ status, onUnlocked }: Props) {
               {key === "⌫" ? (
                 <Ionicons name="backspace-outline" size={24} color={colors.text} />
               ) : (
-                <Text style={styles.keyText}>{key}</Text>
+                <Text style={[styles.keyText, { color: colors.text }]}>{key}</Text>
               )}
             </Pressable>
           ))}
         </View>
       ) : (
         <Pressable
-          style={({ pressed }) => [styles.btn, pressed && styles.btnPressed]}
+          style={({ pressed }) => [
+            styles.btn,
+            { backgroundColor: colors.accent, opacity: pressed ? 0.9 : 1 },
+          ]}
           onPress={() => void submitResetFactory()}
         >
           <Text style={styles.btnText}>Continue</Text>
@@ -230,17 +271,18 @@ export function PinScreen({ status, onUnlocked }: Props) {
 
       {!status.setupRequired || resetting ? (
         <Pressable onPress={resetting ? cancelReset : startReset} hitSlop={12}>
-          <Text style={styles.link}>{resetting ? "Back to unlock" : "Forgot PIN?"}</Text>
+          <Text style={[styles.link, { color: colors.accent }]}>
+            {resetting ? "Back to unlock" : "Forgot PIN?"}
+          </Text>
         </Pressable>
       ) : null}
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: colors.bg,
     paddingHorizontal: 28,
     alignItems: "center",
   },
@@ -248,27 +290,23 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 18,
-    backgroundColor: colors.accentSoft,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 18,
   },
   eyebrow: {
-    color: colors.muted,
     fontSize: 11,
     letterSpacing: 2.2,
     fontWeight: "700",
     marginBottom: 8,
   },
   title: {
-    color: colors.text,
     fontSize: 28,
     fontWeight: "800",
     marginBottom: 8,
     letterSpacing: -0.4,
   },
   hint: {
-    color: colors.textSecondary,
     textAlign: "center",
     marginBottom: 28,
     lineHeight: 22,
@@ -280,10 +318,7 @@ const styles = StyleSheet.create({
     height: 14,
     borderRadius: 7,
     borderWidth: 1.5,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
   },
-  dotOn: { backgroundColor: colors.accent, borderColor: colors.accent },
   pad: {
     width: "100%",
     maxWidth: 300,
@@ -297,36 +332,27 @@ const styles = StyleSheet.create({
     width: 78,
     height: 64,
     borderRadius: 20,
-    backgroundColor: colors.surface,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: colors.border,
   },
-  keyPressed: { backgroundColor: colors.accentSoft, transform: [{ scale: 0.96 }] },
-  keyEmpty: { backgroundColor: "transparent", borderColor: "transparent" },
-  keyText: { color: colors.text, fontSize: 24, fontWeight: "600" },
+  keyText: { fontSize: 24, fontWeight: "600" },
   btn: {
     marginTop: 20,
-    backgroundColor: colors.accent,
     paddingHorizontal: 32,
     paddingVertical: 15,
     borderRadius: radius.md,
     minWidth: 200,
     alignItems: "center",
   },
-  btnPressed: { opacity: 0.9 },
   btnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
-  link: { color: colors.accent, marginTop: 28, fontSize: 14, fontWeight: "600" },
-  error: { color: colors.danger, textAlign: "center", minHeight: 22, marginBottom: 4 },
+  link: { marginTop: 28, fontSize: 14, fontWeight: "600" },
+  error: { textAlign: "center", minHeight: 22, marginBottom: 4 },
   errorSlot: { minHeight: 22, marginBottom: 4 },
   input: {
     width: "100%",
     maxWidth: 280,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    color: colors.text,
     borderRadius: radius.md,
     paddingHorizontal: 16,
     paddingVertical: 14,

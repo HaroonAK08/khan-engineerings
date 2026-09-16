@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
-  Modal,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -14,17 +15,44 @@ import { Ionicons } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import {
   deleteTransaction,
+  listAccounts,
+  listBanks,
   listTransactions,
   updateTransaction,
+  type Account,
+  type Bank,
   type Transaction,
 } from "../lib/banks-api";
-import { formatMoney } from "../lib/api";
+import { formatMoney, isOfflineError } from "../lib/api";
+import { hapticLight } from "../lib/haptics";
+import { FormSheet } from "../components/FormSheet";
+import { ListSkeleton } from "../components/Skeleton";
+import { StateView } from "../components/StateView";
+import { useNotify } from "../components/Notify";
 import type { RootStackParamList } from "../navigation/types";
-import { colors, radius } from "../theme";
+import { useTheme } from "../theme/ThemeContext";
+import { radius } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "History">;
 
-function typeMeta(t: Transaction["type"]) {
+type TypeFilter = "all" | "deposit" | "send";
+type DateFilter = "all" | "7d" | "30d" | "month";
+
+function startOfMonthISO() {
+  const d = new Date();
+  d.setDate(1);
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+
+function daysAgoISO(days: number) {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - days);
+  return d.toISOString();
+}
+
+function typeMeta(t: Transaction["type"], colors: ReturnType<typeof useTheme>["colors"]) {
   if (t === "send") {
     return { label: "Sent", icon: "arrow-up" as const, tint: colors.dangerSoft, color: colors.danger };
   }
@@ -35,10 +63,23 @@ function typeMeta(t: Transaction["type"]) {
 }
 
 export function HistoryScreen({ navigation, route }: Props) {
-  const { accountId, bankId, recipient: recipientFilter } = route.params || {};
+  const { colors } = useTheme();
+  const notify = useNotify();
+  const { accountId: routeAccountId, bankId: routeBankId, recipient: recipientFilter } =
+    route.params || {};
+  const bankLocked = Boolean(routeBankId);
+  const accountLocked = Boolean(routeAccountId);
+
   const [rows, setRows] = useState<Transaction[]>([]);
+  const [banks, setBanks] = useState<Bank[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [q, setQ] = useState("");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [dateFilter, setDateFilter] = useState<DateFilter>("all");
+  const [bankId, setBankId] = useState(routeBankId || "");
+  const [accountId, setAccountId] = useState(routeAccountId || "");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [editRecipient, setEditRecipient] = useState("");
   const [editAmount, setEditAmount] = useState("");
@@ -51,24 +92,72 @@ export function HistoryScreen({ navigation, route }: Props) {
     }
   }, [navigation, recipientFilter]);
 
+  useEffect(() => {
+    if (bankLocked || accountLocked) return;
+    void (async () => {
+      try {
+        setBanks(await listBanks());
+      } catch {
+        /* ignore filter meta errors */
+      }
+    })();
+  }, [bankLocked, accountLocked]);
+
+  useEffect(() => {
+    if (accountLocked) return;
+    const id = bankId || routeBankId;
+    if (!id) {
+      setAccounts([]);
+      return;
+    }
+    void (async () => {
+      try {
+        setAccounts(await listAccounts(id));
+      } catch {
+        setAccounts([]);
+      }
+    })();
+  }, [bankId, routeBankId, accountLocked]);
+
+  const dateRange = useMemo(() => {
+    if (dateFilter === "7d") return { from: daysAgoISO(7), to: undefined as string | undefined };
+    if (dateFilter === "30d") return { from: daysAgoISO(30), to: undefined };
+    if (dateFilter === "month") return { from: startOfMonthISO(), to: undefined };
+    return { from: undefined, to: undefined };
+  }, [dateFilter]);
+
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       setRows(
         await listTransactions({
-          account: accountId,
-          bank: bankId,
+          account: accountId || routeAccountId || undefined,
+          bank: accountId || routeAccountId ? undefined : bankId || routeBankId || undefined,
           recipient: recipientFilter,
           q: recipientFilter ? undefined : q.trim() || undefined,
-          type: recipientFilter ? "send" : undefined,
+          type: recipientFilter ? "send" : typeFilter === "all" ? undefined : typeFilter,
+          from: dateRange.from,
+          to: dateRange.to,
         })
       );
-    } catch {
+    } catch (err) {
+      setLoadError(err);
       setRows([]);
     } finally {
       setLoading(false);
     }
-  }, [accountId, bankId, recipientFilter, q]);
+  }, [
+    accountId,
+    routeAccountId,
+    bankId,
+    routeBankId,
+    recipientFilter,
+    q,
+    typeFilter,
+    dateRange.from,
+    dateRange.to,
+  ]);
 
   useEffect(() => {
     const t = setTimeout(() => void load(), 180);
@@ -85,9 +174,9 @@ export function HistoryScreen({ navigation, route }: Props) {
   async function onSaveEdit() {
     if (!editing) return;
     const amount = Number(editAmount);
-    if (!(amount > 0)) return Alert.alert("Enter a valid amount");
+    if (!(amount > 0)) return notify.info("Enter a valid amount");
     if (editing.type === "send" && !editRecipient.trim()) {
-      return Alert.alert("Payee required");
+      return notify.info("Payee required");
     }
     setBusy(true);
     try {
@@ -97,9 +186,10 @@ export function HistoryScreen({ navigation, route }: Props) {
         recipient: editing.type === "send" ? editRecipient.trim() : undefined,
       });
       setEditing(null);
+      notify.success("Entry updated");
       await load();
     } catch (err: any) {
-      Alert.alert("Error", err?.message || "Update failed");
+      notify.error("Update failed", err?.message);
     } finally {
       setBusy(false);
     }
@@ -122,9 +212,11 @@ export function HistoryScreen({ navigation, route }: Props) {
             void (async () => {
               try {
                 await deleteTransaction(item._id);
+                hapticLight();
+                notify.success("Entry deleted");
                 await load();
               } catch (err: any) {
-                Alert.alert("Error", err?.message || "Delete failed");
+                notify.error("Delete failed", err?.message);
               }
             })();
           },
@@ -133,30 +225,162 @@ export function HistoryScreen({ navigation, route }: Props) {
     );
   }
 
+  function Chip({
+    label,
+    active,
+    onPress,
+  }: {
+    label: string;
+    active: boolean;
+    onPress: () => void;
+  }) {
+    return (
+      <Pressable
+        style={({ pressed }) => [
+          styles.chip,
+          {
+            backgroundColor: active ? colors.accent : colors.surface,
+            borderColor: active ? colors.accent : colors.border,
+            opacity: pressed ? 0.88 : 1,
+          },
+        ]}
+        onPress={onPress}
+      >
+        <Text style={{ color: active ? "#fff" : colors.textSecondary, fontWeight: "700", fontSize: 12 }}>
+          {label}
+        </Text>
+      </Pressable>
+    );
+  }
+
   return (
-    <View style={styles.root}>
+    <KeyboardAvoidingView
+      style={[styles.root, { backgroundColor: colors.bg }]}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={80}
+    >
       {!recipientFilter ? (
-        <View style={styles.searchWrap}>
-          <Ionicons name="search" size={18} color={colors.muted} />
-          <TextInput
-            style={styles.input}
-            placeholder="Search payee or notes"
-            placeholderTextColor={colors.muted}
-            value={q}
-            onChangeText={setQ}
-          />
-        </View>
+        <>
+          <View
+            style={[
+              styles.searchWrap,
+              { borderColor: colors.border, backgroundColor: colors.surface },
+            ]}
+          >
+            <Ionicons name="search" size={18} color={colors.muted} />
+            <TextInput
+              style={[styles.input, { color: colors.text }]}
+              placeholder="Search payee or notes"
+              placeholderTextColor={colors.muted}
+              value={q}
+              onChangeText={setQ}
+            />
+          </View>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filters}
+            style={{ flexGrow: 0, marginBottom: 8 }}
+          >
+            <Chip label="All" active={typeFilter === "all"} onPress={() => setTypeFilter("all")} />
+            <Chip
+              label="Deposit"
+              active={typeFilter === "deposit"}
+              onPress={() => setTypeFilter("deposit")}
+            />
+            <Chip label="Sent" active={typeFilter === "send"} onPress={() => setTypeFilter("send")} />
+          </ScrollView>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filters}
+            style={{ flexGrow: 0, marginBottom: 8 }}
+          >
+            <Chip label="All time" active={dateFilter === "all"} onPress={() => setDateFilter("all")} />
+            <Chip label="7d" active={dateFilter === "7d"} onPress={() => setDateFilter("7d")} />
+            <Chip label="30d" active={dateFilter === "30d"} onPress={() => setDateFilter("30d")} />
+            <Chip
+              label="This month"
+              active={dateFilter === "month"}
+              onPress={() => setDateFilter("month")}
+            />
+          </ScrollView>
+
+          {!bankLocked && !accountLocked ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filters}
+              style={{ flexGrow: 0, marginBottom: 8 }}
+            >
+              <Chip
+                label="All banks"
+                active={!bankId}
+                onPress={() => {
+                  setBankId("");
+                  setAccountId("");
+                }}
+              />
+              {banks.map((b) => (
+                <Chip
+                  key={b._id}
+                  label={b.name}
+                  active={bankId === b._id}
+                  onPress={() => {
+                    setBankId(b._id);
+                    setAccountId("");
+                  }}
+                />
+              ))}
+            </ScrollView>
+          ) : null}
+
+          {!accountLocked && (bankId || routeBankId) && accounts.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filters}
+              style={{ flexGrow: 0, marginBottom: 10 }}
+            >
+              <Chip label="All accounts" active={!accountId} onPress={() => setAccountId("")} />
+              {accounts.map((a) => (
+                <Chip
+                  key={a._id}
+                  label={a.name}
+                  active={accountId === a._id}
+                  onPress={() => setAccountId(a._id)}
+                />
+              ))}
+            </ScrollView>
+          ) : null}
+        </>
       ) : (
         <Pressable
-          style={styles.personBanner}
+          style={[styles.personBanner, { backgroundColor: colors.blueSoft }]}
           onPress={() => navigation.navigate("Send", { recipient: recipientFilter })}
         >
           <Ionicons name="paper-plane" size={16} color={colors.blue} />
-          <Text style={styles.personBannerText}>Pay again → {recipientFilter}</Text>
+          <Text style={[styles.personBannerText, { color: colors.blue }]}>
+            Pay again → {recipientFilter}
+          </Text>
         </Pressable>
       )}
+
       {loading && rows.length === 0 ? (
-        <ActivityIndicator color={colors.accent} style={{ marginTop: 30 }} />
+        <ListSkeleton rows={5} />
+      ) : loadError ? (
+        <StateView
+          kind={isOfflineError(loadError) ? "offline" : "error"}
+          title={isOfflineError(loadError) ? "You’re offline" : "Couldn’t load history"}
+          message={
+            isOfflineError(loadError)
+              ? "Check your connection and try again."
+              : String((loadError as Error)?.message || "Something went wrong")
+          }
+          onRetry={() => void load()}
+        />
       ) : (
         <FlatList
           data={rows}
@@ -164,48 +388,70 @@ export function HistoryScreen({ navigation, route }: Props) {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ gap: 10, paddingBottom: 40 }}
           ListEmptyComponent={
-            <View style={styles.emptyBox}>
-              <Ionicons name="receipt-outline" size={34} color={colors.muted} />
-              <Text style={styles.empty}>No history yet</Text>
-            </View>
+            <StateView
+              kind="empty"
+              title="No history yet"
+              message="Payments and deposits will show up here."
+              icon="receipt-outline"
+            />
           }
           renderItem={({ item }) => {
-            const meta = typeMeta(item.type);
+            const meta = typeMeta(item.type, colors);
             const negative = item.type === "send";
             const bankName = item.bank?.name || "";
             const accountName = item.account?.name || "";
             const canEditAmount = item.type === "send" || item.type === "deposit";
             return (
-              <View style={styles.card}>
+              <View
+                style={[
+                  styles.card,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                ]}
+              >
                 <View style={[styles.iconBubble, { backgroundColor: meta.tint }]}>
                   <Ionicons name={meta.icon} size={18} color={meta.color} />
                 </View>
                 <View style={styles.body}>
                   <View style={styles.row}>
-                    <Text style={styles.type}>{meta.label}</Text>
-                    <Text style={[styles.amount, negative && styles.out]}>
+                    <Text style={[styles.type, { color: colors.text }]}>{meta.label}</Text>
+                    <Text
+                      style={[
+                        styles.amount,
+                        { color: negative ? colors.danger : colors.success },
+                      ]}
+                    >
                       {negative ? "−" : "+"}
                       {formatMoney(item.amount)}
                     </Text>
                   </View>
                   {item.recipient ? (
-                    <Text style={styles.recipient}>Paid to: {item.recipient}</Text>
+                    <Text style={[styles.recipient, { color: colors.text }]}>
+                      Paid to: {item.recipient}
+                    </Text>
                   ) : null}
-                  <Text style={styles.meta}>
+                  <Text style={[styles.meta, { color: colors.muted }]}>
                     {[bankName, accountName].filter(Boolean).join(" · ")}
                   </Text>
-                  {item.notes ? <Text style={styles.notes}>{item.notes}</Text> : null}
-                  <Text style={styles.date}>
+                  {item.notes ? (
+                    <Text style={[styles.notes, { color: colors.textSecondary }]}>{item.notes}</Text>
+                  ) : null}
+                  <Text style={[styles.date, { color: colors.muted }]}>
                     {new Date(item.txnDate).toLocaleString()} · bal {formatMoney(item.balanceAfter)}
                   </Text>
                   <View style={styles.actions}>
                     {canEditAmount ? (
-                      <Pressable style={styles.miniBtn} onPress={() => openEdit(item)}>
+                      <Pressable
+                        style={[styles.miniBtn, { backgroundColor: colors.surfaceMuted }]}
+                        onPress={() => openEdit(item)}
+                      >
                         <Ionicons name="create-outline" size={14} color={colors.accent} />
-                        <Text style={styles.miniText}>Edit</Text>
+                        <Text style={[styles.miniText, { color: colors.accent }]}>Edit</Text>
                       </Pressable>
                     ) : null}
-                    <Pressable style={styles.miniBtn} onPress={() => confirmDelete(item)}>
+                    <Pressable
+                      style={[styles.miniBtn, { backgroundColor: colors.surfaceMuted }]}
+                      onPress={() => confirmDelete(item)}
+                    >
                       <Ionicons name="trash-outline" size={14} color={colors.danger} />
                       <Text style={[styles.miniText, { color: colors.danger }]}>Delete</Text>
                     </Pressable>
@@ -217,96 +463,106 @@ export function HistoryScreen({ navigation, route }: Props) {
         />
       )}
 
-      <Modal
-        visible={editing != null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setEditing(null)}
-      >
-        <Pressable style={styles.modalBg} onPress={() => setEditing(null)}>
-          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.modalTitle}>Edit entry</Text>
-            {editing?.type === "send" ? (
-              <TextInput
-                style={styles.modalInput}
-                value={editRecipient}
-                onChangeText={setEditRecipient}
-                placeholder="Payee (person, rent, petrol…)"
-                placeholderTextColor={colors.muted}
-              />
-            ) : null}
-            <TextInput
-              style={styles.modalInput}
-              value={editAmount}
-              onChangeText={setEditAmount}
-              placeholder="Amount"
-              placeholderTextColor={colors.muted}
-              keyboardType="decimal-pad"
-            />
-            <TextInput
-              style={styles.modalInput}
-              value={editNotes}
-              onChangeText={setEditNotes}
-              placeholder="Notes"
-              placeholderTextColor={colors.muted}
-            />
-            <View style={styles.modalActions}>
-              <Pressable onPress={() => setEditing(null)}>
-                <Text style={styles.cancel}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={styles.modalSave}
-                disabled={busy}
-                onPress={() => void onSaveEdit()}
-              >
-                <Text style={styles.modalSaveText}>{busy ? "…" : "Save"}</Text>
-              </Pressable>
-            </View>
+      <FormSheet visible={editing != null} onClose={() => setEditing(null)}>
+        <Text style={[styles.modalTitle, { color: colors.text }]}>Edit entry</Text>
+        {editing?.type === "send" ? (
+          <TextInput
+            style={[
+              styles.modalInput,
+              {
+                borderColor: colors.border,
+                color: colors.text,
+                backgroundColor: colors.surfaceMuted,
+              },
+            ]}
+            value={editRecipient}
+            onChangeText={setEditRecipient}
+            placeholder="Payee (person, rent, petrol…)"
+            placeholderTextColor={colors.muted}
+          />
+        ) : null}
+        <TextInput
+          style={[
+            styles.modalInput,
+            {
+              borderColor: colors.border,
+              color: colors.text,
+              backgroundColor: colors.surfaceMuted,
+            },
+          ]}
+          value={editAmount}
+          onChangeText={setEditAmount}
+          placeholder="Amount"
+          placeholderTextColor={colors.muted}
+          keyboardType="decimal-pad"
+          autoFocus
+        />
+        <TextInput
+          style={[
+            styles.modalInput,
+            {
+              borderColor: colors.border,
+              color: colors.text,
+              backgroundColor: colors.surfaceMuted,
+            },
+          ]}
+          value={editNotes}
+          onChangeText={setEditNotes}
+          placeholder="Notes"
+          placeholderTextColor={colors.muted}
+        />
+        <View style={styles.modalActions}>
+          <Pressable onPress={() => setEditing(null)}>
+            <Text style={[styles.cancel, { color: colors.textSecondary }]}>Cancel</Text>
           </Pressable>
-        </Pressable>
-      </Modal>
-    </View>
+          <Pressable
+            style={[styles.modalSave, { backgroundColor: colors.accent, opacity: busy ? 0.7 : 1 }]}
+            disabled={busy}
+            onPress={() => void onSaveEdit()}
+          >
+            <Text style={styles.modalSaveText}>{busy ? "…" : "Save"}</Text>
+          </Pressable>
+        </View>
+      </FormSheet>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg, padding: 20 },
+  root: { flex: 1, padding: 20 },
   searchWrap: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     borderWidth: 1,
-    borderColor: colors.border,
     borderRadius: radius.md,
     paddingHorizontal: 12,
-    backgroundColor: colors.surface,
-    marginBottom: 14,
+    marginBottom: 12,
   },
   personBanner: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: colors.blueSoft,
     borderRadius: radius.md,
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginBottom: 14,
   },
-  personBannerText: { color: colors.blue, fontWeight: "700", fontSize: 13 },
-  input: {
-    flex: 1,
-    paddingVertical: 13,
-    color: colors.text,
-    fontSize: 15,
+  personBannerText: { fontWeight: "700", fontSize: 13 },
+  input: { flex: 1, paddingVertical: 13, fontSize: 15 },
+  filters: { gap: 8, paddingRight: 8 },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.sm,
+    borderWidth: 1,
   },
   card: {
-    backgroundColor: colors.surface,
     borderRadius: radius.lg,
     padding: 14,
     flexDirection: "row",
     gap: 12,
     borderWidth: 1,
-    borderColor: colors.border,
   },
   iconBubble: {
     width: 40,
@@ -317,48 +573,33 @@ const styles = StyleSheet.create({
   },
   body: { flex: 1 },
   row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  type: { color: colors.text, fontWeight: "700" },
-  amount: { color: colors.success, fontWeight: "800" },
-  out: { color: colors.danger },
-  recipient: { color: colors.text, marginTop: 4, fontWeight: "600" },
-  meta: { color: colors.muted, marginTop: 3, fontSize: 12 },
-  notes: { color: colors.textSecondary, marginTop: 4, fontSize: 13 },
-  date: { color: colors.muted, marginTop: 8, fontSize: 11 },
+  type: { fontWeight: "700" },
+  amount: { fontWeight: "800" },
+  recipient: { marginTop: 4, fontWeight: "600" },
+  meta: { marginTop: 3, fontSize: 12 },
+  notes: { marginTop: 4, fontSize: 13 },
+  date: { marginTop: 8, fontSize: 11 },
   actions: { flexDirection: "row", gap: 8, marginTop: 10 },
   miniBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: colors.surfaceMuted,
     paddingHorizontal: 10,
     paddingVertical: 7,
     borderRadius: 8,
   },
-  miniText: { color: colors.accent, fontWeight: "700", fontSize: 12 },
-  emptyBox: { alignItems: "center", marginTop: 48, gap: 8 },
-  empty: { color: colors.muted, textAlign: "center" },
-  modalBg: {
-    flex: 1,
-    backgroundColor: "rgba(15,23,42,0.35)",
-    justifyContent: "center",
-    padding: 24,
-  },
-  modalCard: { backgroundColor: colors.surface, borderRadius: radius.xl, padding: 22 },
-  modalTitle: { color: colors.text, fontSize: 18, fontWeight: "800", marginBottom: 14 },
+  miniText: { fontWeight: "700", fontSize: 12 },
+  modalTitle: { fontSize: 18, fontWeight: "800", marginBottom: 14 },
   modalInput: {
     borderWidth: 1,
-    borderColor: colors.border,
     borderRadius: radius.md,
     padding: 14,
-    color: colors.text,
     marginBottom: 12,
     fontSize: 16,
-    backgroundColor: colors.surfaceMuted,
   },
   modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10, alignItems: "center" },
-  cancel: { color: colors.textSecondary, fontWeight: "600", padding: 12 },
+  cancel: { fontWeight: "600", padding: 12 },
   modalSave: {
-    backgroundColor: colors.accent,
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: radius.sm,
