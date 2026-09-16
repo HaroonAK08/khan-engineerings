@@ -123,7 +123,13 @@ export async function deleteAccount(id: string) {
   await api(`/personal-banks/accounts/${id}`, { method: "DELETE" });
 }
 
-export async function deposit(body: { account: string; amount: number; notes?: string }) {
+export async function deposit(body: {
+  account: string;
+  amount: number;
+  notes?: string;
+  from?: string;
+  recipient?: string;
+}) {
   return api<{ account: Account; transaction: Transaction }>("/personal-banks/deposit", {
     body,
   });

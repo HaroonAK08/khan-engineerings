@@ -57,7 +57,7 @@ function typeMeta(t: Transaction["type"], colors: ReturnType<typeof useTheme>["c
     return { label: "Sent", icon: "arrow-up" as const, tint: colors.dangerSoft, color: colors.danger };
   }
   if (t === "deposit") {
-    return { label: "Deposit", icon: "arrow-down" as const, tint: colors.successSoft, color: colors.success };
+    return { label: "Received", icon: "arrow-down" as const, tint: colors.successSoft, color: colors.success };
   }
   return { label: "Adjust", icon: "swap-horizontal" as const, tint: colors.amberSoft, color: colors.amber };
 }
@@ -285,7 +285,7 @@ export function HistoryScreen({ navigation, route }: Props) {
           >
             <Chip label="All" active={typeFilter === "all"} onPress={() => setTypeFilter("all")} />
             <Chip
-              label="Deposit"
+              label="Received"
               active={typeFilter === "deposit"}
               onPress={() => setTypeFilter("deposit")}
             />
@@ -426,7 +426,8 @@ export function HistoryScreen({ navigation, route }: Props) {
                   </View>
                   {item.recipient ? (
                     <Text style={[styles.recipient, { color: colors.text }]}>
-                      Paid to: {item.recipient}
+                      {item.type === "deposit" ? "From: " : "Paid to: "}
+                      {item.recipient}
                     </Text>
                   ) : null}
                   <Text style={[styles.meta, { color: colors.muted }]}>

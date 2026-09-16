@@ -198,6 +198,24 @@ export function AccountScreen({ navigation, route }: Props) {
           style={({ pressed }) => [
             styles.secondaryBtn,
             {
+              backgroundColor: colors.successSoft,
+              borderColor: colors.border,
+              opacity: pressed ? 0.9 : 1,
+            },
+          ]}
+          onPress={() =>
+            navigation.navigate("Receive", {
+              accountId,
+            })
+          }
+        >
+          <Ionicons name="arrow-down" size={16} color={colors.success} />
+          <Text style={[styles.secondaryText, { color: colors.success }]}>Receive</Text>
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [
+            styles.secondaryBtn,
+            {
               backgroundColor: colors.surfaceMuted,
               borderColor: colors.border,
               opacity: pressed ? 0.9 : 1,

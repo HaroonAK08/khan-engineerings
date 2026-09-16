@@ -291,13 +291,14 @@ async function deposit(data) {
   if (!(amount > 0)) throw httpError("Amount must be greater than 0", 400);
   account.balance = roundMoney(account.balance + amount);
   await account.save();
+  const from = String(data.from || data.recipient || "").trim();
   const txn = await PersonalTransaction.create({
     account: account._id,
     bank: account.bank,
     type: "deposit",
     amount,
     balanceAfter: account.balance,
-    recipient: "",
+    recipient: from,
     notes: String(data.notes || "").trim(),
     txnDate: data.txnDate ? parseDate(data.txnDate, "Date") : new Date(),
   });

@@ -15,6 +15,7 @@ import { BanksScreen } from "./src/screens/BanksScreen";
 import { BankScreen } from "./src/screens/BankScreen";
 import { AccountScreen } from "./src/screens/AccountScreen";
 import { SendScreen } from "./src/screens/SendScreen";
+import { ReceiveScreen } from "./src/screens/ReceiveScreen";
 import { HistoryScreen } from "./src/screens/HistoryScreen";
 import { PeopleScreen } from "./src/screens/PeopleScreen";
 
@@ -60,10 +61,11 @@ function ThemeAwareNav({
             headerTitleStyle: { fontWeight: "700", fontSize: 17 },
             headerShadowVisible: false,
             contentStyle: { backgroundColor: colors.bg },
-            animation: "fade_from_bottom",
-            animationDuration: 280,
+            animation: "slide_from_right",
+            animationDuration: 220,
             gestureEnabled: true,
             fullScreenGestureEnabled: true,
+            freezeOnBlur: true,
           }}
         >
           <Stack.Screen name="Pin" options={{ headerShown: false, animation: "fade" }}>
@@ -95,6 +97,7 @@ function ThemeAwareNav({
             options={{ title: "Account", animation: "slide_from_right" }}
           />
           <Stack.Screen name="Send" component={SendScreen} options={{ title: "Pay" }} />
+          <Stack.Screen name="Receive" component={ReceiveScreen} options={{ title: "Receive" }} />
           <Stack.Screen name="History" component={HistoryScreen} options={{ title: "History" }} />
           <Stack.Screen name="People" component={PeopleScreen} options={{ title: "Payees" }} />
         </Stack.Navigator>

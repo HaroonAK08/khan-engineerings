@@ -51,6 +51,7 @@ export function HomeScreen({ navigation }: Props) {
   const [banks, setBanks] = useState<Bank[]>([]);
   const [grandTotal, setGrandTotal] = useState(0);
   const [weekSpent, setWeekSpent] = useState(0);
+  const [weekReceived, setWeekReceived] = useState(0);
   const [recentTxns, setRecentTxns] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -74,7 +75,11 @@ export function HomeScreen({ navigation }: Props) {
         const spent = txns
           .filter((t) => t.type === "send" && new Date(t.txnDate).getTime() >= fromMs)
           .reduce((s, t) => s + (t.amount || 0), 0);
+        const received = txns
+          .filter((t) => t.type === "deposit" && new Date(t.txnDate).getTime() >= fromMs)
+          .reduce((s, t) => s + (t.amount || 0), 0);
         setWeekSpent(spent);
+        setWeekReceived(received);
         setRecentTxns(txns.slice(0, 3));
       } catch (err: any) {
         if (err?.status === 401) {
@@ -227,14 +232,28 @@ export function HomeScreen({ navigation }: Props) {
               { backgroundColor: colors.surface, borderColor: colors.border },
             ]}
           >
-            <View style={[styles.weekIcon, { backgroundColor: colors.dangerSoft }]}>
-              <Ionicons name="trending-down" size={18} color={colors.danger} />
+            <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 12 }}>
+              <View style={[styles.weekIcon, { backgroundColor: colors.dangerSoft }]}>
+                <Ionicons name="trending-down" size={18} color={colors.danger} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[type.label, { color: colors.muted }]}>Spent</Text>
+                <Text style={[type.subtitle, { color: colors.text, marginTop: 2 }]}>
+                  {formatMoney(weekSpent)}
+                </Text>
+              </View>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[type.label, { color: colors.muted }]}>This week</Text>
-              <Text style={[type.subtitle, { color: colors.text, marginTop: 2 }]}>
-                {formatMoney(weekSpent)} spent
-              </Text>
+            <View style={{ width: 1, height: 36, backgroundColor: colors.border }} />
+            <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 12 }}>
+              <View style={[styles.weekIcon, { backgroundColor: colors.successSoft }]}>
+                <Ionicons name="trending-up" size={18} color={colors.success} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[type.label, { color: colors.muted }]}>Received</Text>
+                <Text style={[type.subtitle, { color: colors.text, marginTop: 2 }]}>
+                  {formatMoney(weekReceived)}
+                </Text>
+              </View>
             </View>
           </View>
 
@@ -316,6 +335,26 @@ export function HomeScreen({ navigation }: Props) {
                   transform: [{ scale: pressed ? 0.98 : 1 }],
                 },
               ]}
+              onPress={() => navigation.navigate("Receive")}
+            >
+              <View style={[styles.tileIcon, { backgroundColor: colors.successSoft }]}>
+                <Ionicons name="arrow-down-circle" size={24} color={colors.success} />
+              </View>
+              <Text style={[styles.tileLabel, { color: colors.text }]}>Receive</Text>
+              <Text style={[styles.tileMeta, { color: colors.muted }]}>Cash or account</Text>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.tile,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                  shadowColor: colors.shadow,
+                  opacity: pressed ? 0.9 : 1,
+                  transform: [{ scale: pressed ? 0.98 : 1 }],
+                },
+              ]}
               onPress={() => navigation.navigate("History", {})}
             >
               <View style={[styles.tileIcon, { backgroundColor: colors.amberSoft }]}>
@@ -358,8 +397,15 @@ export function HomeScreen({ navigation }: Props) {
                 {recentTxns.map((item) => {
                   const negative = item.type === "send";
                   const title =
-                    item.recipient ||
-                    (item.type === "deposit" ? "Deposit" : item.type === "send" ? "Sent" : "Adjust");
+                    item.type === "deposit"
+                      ? item.recipient
+                        ? `From ${item.recipient}`
+                        : "Received"
+                      : item.type === "send"
+                        ? item.recipient
+                          ? `To ${item.recipient}`
+                          : "Sent"
+                        : item.recipient || "Adjust";
                   return (
                     <Pressable
                       key={item._id}
