@@ -86,6 +86,7 @@ export type PurchaseReport = {
   totals: {
     totalKg: number;
     totalSpend: number;
+    totalPaid?: number;
     purchaseCount: number;
     avgRate: number;
     supplierCount?: number;
@@ -129,6 +130,7 @@ export type PurchaseReport = {
     materialType: MaterialType | string;
     totalKg: number;
     totalSpend: number;
+    totalPaid?: number;
     purchaseCount: number;
     avgRate: number;
   }>;

@@ -32,6 +32,14 @@ function roundKg(n) {
   return Math.round(n * 1000) / 1000;
 }
 
+function recoveredMetalKg(item, originalKg) {
+  const original = roundKg(originalKg);
+  if (item.recoveredKg == null || item.recoveredKg === "") return original;
+  const recovered = roundKg(Number(item.recoveredKg));
+  if (!Number.isFinite(recovered) || recovered < 0) return original;
+  return recovered;
+}
+
 function productIdOf(ref) {
   if (!ref) return "";
   if (typeof ref === "object" && ref._id) return String(ref._id);
@@ -298,27 +306,39 @@ async function applyStockEffects(claim, items, warehouseId) {
         item.weightKg != null && Number(item.weightKg) > 0
           ? Number(item.weightKg)
           : Number(product.weightKg) || 0;
-      const kg = roundKg(perUnit * item.quantity);
-      if (kg <= 0) {
+      const originalKg = roundKg(perUnit * (Number(item.quantity) || 0));
+      const recoveredKg = recoveredMetalKg(item, originalKg);
+      if (originalKg <= 0) {
         throw httpError(
           `Set weight (kg) for "${product.name}" — scrap is reused, not lost`,
           400
         );
       }
+      if (recoveredKg > originalKg + 0.0005) {
+        throw httpError(
+          `Recovered kg cannot be more than ${originalKg} kg for "${product.name}"`,
+          400
+        );
+      }
       const materialType = product.family === "drum" ? "daig" : "scrap";
-      await inventoryService.recordMovement({
-        itemType: materialTypeToItemType(materialType),
-        direction: "in",
-        reason: "claim_return",
-        quantity: kg,
-        unit: "kg",
-        product: product._id,
-        warehouse: warehouseId,
-        refType: "claim",
-        refId: claim._id,
-        movementDate: claim.claimDate,
-        notes: `Claim ${claim.claimNo} rework → ${materialType} ${kg} kg (metal reused)`,
-      });
+      if (recoveredKg > 0) {
+        const lostKg = roundKg(Math.max(0, originalKg - recoveredKg));
+        await inventoryService.recordMovement({
+          itemType: materialTypeToItemType(materialType),
+          direction: "in",
+          reason: "claim_return",
+          quantity: recoveredKg,
+          unit: "kg",
+          product: product._id,
+          warehouse: warehouseId,
+          refType: "claim",
+          refId: claim._id,
+          movementDate: claim.claimDate,
+          notes: `Claim ${claim.claimNo} rework → ${materialType} ${recoveredKg} kg reused${
+            lostKg > 0 ? `, ${lostKg} kg lost` : ""
+          }`,
+        });
+      }
     }
   }
 }
@@ -451,6 +471,18 @@ async function buildClaimItems(customerId, data, { builty = null, excludeClaimId
       );
     }
 
+    const originalKg = roundKg((Number(weightKg) || 0) * quantity);
+    let recoveredKg = null;
+    if (disposition === "rework") {
+      recoveredKg = recoveredMetalKg(raw, originalKg);
+      if (recoveredKg > originalKg + 0.0005) {
+        throw httpError(
+          `Recovered kg cannot be more than ${originalKg} kg for "${product.name}"`,
+          400
+        );
+      }
+    }
+
     let unitPrice = null;
     if (raw.unitPrice != null && raw.unitPrice !== "") {
       unitPrice = roundMoney(Number(raw.unitPrice));
@@ -478,6 +510,7 @@ async function buildClaimItems(customerId, data, { builty = null, excludeClaimId
       reason: raw.reason?.trim() || "",
       disposition,
       weightKg,
+      recoveredKg,
       unitPrice,
       refundAmount,
       mfgLossAmount: 0,
@@ -517,12 +550,16 @@ async function computeReworkManufacturingLoss(items) {
       item.weightKg != null && Number(item.weightKg) > 0
         ? Number(item.weightKg)
         : Number(product.weightKg) || 0;
-    const totalKg = roundKg(perUnitKg * qty);
+    const originalKg = roundKg(perUnitKg * qty);
+    const recoveredKg = recoveredMetalKg(item, originalKg);
+    const lostKg = roundKg(Math.max(0, originalKg - recoveredKg));
     const materialType = product.family === "drum" ? "daig" : "scrap";
     const rate = await avgMaterialRate(materialType);
-    const materialValue = roundMoney(totalKg * rate);
+    const originalMetalValue = roundMoney(originalKg * rate);
+    const lostMetalValue = roundMoney(lostKg * rate);
     const fullMfgCost = roundMoney(qty * (Number(product.standardCost) || 0));
-    const loss = roundMoney(Math.max(0, fullMfgCost - materialValue));
+    const overheadLoss = roundMoney(Math.max(0, fullMfgCost - originalMetalValue));
+    const loss = roundMoney(overheadLoss + lostMetalValue);
     item.mfgLossAmount = loss;
     totalLoss = roundMoney(totalLoss + loss);
   }
@@ -539,7 +576,7 @@ async function postReworkManufacturingLoss(claim, totalLoss) {
     amount,
     entryDate: claim.claimDate,
     reference: claim.claimNo,
-    notes: `Rework mfg loss (metal recovered, manufacturing expense lost) · Claim ${claim.claimNo}`,
+    notes: `Rework loss (overhead + metal not recovered) · Claim ${claim.claimNo}`,
   });
 }
 
@@ -637,6 +674,7 @@ async function update(id, data) {
             product: i.product,
             quantity: i.quantity,
             weightKg: i.weightKg,
+            recoveredKg: i.recoveredKg,
             unitPrice: i.unitPrice,
             refundAmount: i.refundAmount,
             disposition: i.disposition,

@@ -61,6 +61,7 @@ function materialTotals(report: PurchaseReport | null, type: "scrap" | "daig") {
   return {
     totalKg: row?.totalKg ?? 0,
     totalSpend: row?.totalSpend ?? 0,
+    totalPaid: row?.totalPaid ?? 0,
     purchaseCount: row?.purchaseCount ?? 0,
   };
 }
@@ -91,6 +92,7 @@ export default function InventoryPage() {
     dateFrom,
     dateTo,
     hydrated: rangeHydrated,
+    isThisMonth,
   } = usePersistedDateRange();
   const [stock, setStock] = useState<StockSummary | null>(null);
   const [purchaseReport, setPurchaseReport] = useState<PurchaseReport | null>(null);
@@ -110,7 +112,12 @@ export default function InventoryPage() {
   }, []);
 
   const hydrated = rangeHydrated && modeHydrated;
-  const stockAsOf = mode === "asOf" ? asOf : dateTo || todayInput();
+  const stockAsOf =
+    mode === "asOf" ? asOf : isThisMonth ? todayInput() : dateTo || todayInput();
+  const stockHint =
+    mode !== "asOf" && isThisMonth
+      ? t("invReportsHub.stockThisMonthHint")
+      : t("invReportsHub.stockAsOfHint", { date: stockAsOf });
 
   function setMode(next: DateMode) {
     setModeState(next);
@@ -174,14 +181,13 @@ export default function InventoryPage() {
         mode === "asOf"
           ? { dateFrom: asOf, dateTo: asOf }
           : { dateFrom, dateTo };
-      const stockDate = mode === "asOf" ? asOf : dateTo || todayInput();
       const [supplierData, reportData, inventoryAsOf] = await Promise.all([
         listSuppliers(),
         getPurchaseReport(purchaseParams),
         getLiveInventoryReport({
-          asOf: stockDate,
-          dateFrom: stockDate,
-          dateTo: stockDate,
+          asOf: stockAsOf,
+          dateFrom: stockAsOf,
+          dateTo: stockAsOf,
         }),
       ]);
       setSuppliers(supplierData);
@@ -240,7 +246,7 @@ export default function InventoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [asOf, dateFrom, dateTo, hydrated, mode]);
+  }, [asOf, dateFrom, dateTo, hydrated, mode, stockAsOf]);
 
   useEffect(() => {
     void load();
@@ -367,22 +373,16 @@ export default function InventoryPage() {
             {[
               {
                 label: t("purchases.scrapPurchased"),
-                value: purchaseReport
-                  ? `${formatKg(scrapPurchased.totalKg)} kg`
-                  : "—",
-                hint: purchaseReport
-                  ? `${t("purchases.scrapHubLabel")} · ${formatMoney(scrapPurchased.totalSpend)}`
-                  : "—",
+                value: purchaseReport ? `${formatKg(scrapPurchased.totalKg)} kg` : "—",
+                detail: purchaseReport ? formatMoney(scrapPurchased.totalSpend) : "—",
+                hint: t("purchases.scrapHubLabel"),
                 accent: "bg-chart-1",
               },
               {
                 label: t("purchases.daigPurchased"),
-                value: purchaseReport
-                  ? `${formatKg(daigPurchased.totalKg)} kg`
-                  : "—",
-                hint: purchaseReport
-                  ? `${t("purchases.daigDrumLabel")} · ${formatMoney(daigPurchased.totalSpend)}`
-                  : "—",
+                value: purchaseReport ? `${formatKg(daigPurchased.totalKg)} kg` : "—",
+                detail: purchaseReport ? formatMoney(daigPurchased.totalSpend) : "—",
+                hint: t("purchases.daigDrumLabel"),
                 accent: "bg-chart-2",
               },
               {
@@ -390,9 +390,8 @@ export default function InventoryPage() {
                 value: purchaseReport
                   ? `${formatKg(purchaseReport.totals.totalKg)} kg`
                   : "—",
-                hint: purchaseReport
-                  ? formatMoney(purchaseReport.totals.totalSpend)
-                  : "—",
+                detail: purchaseReport ? formatMoney(purchaseReport.totals.totalSpend) : "—",
+                hint: t("purchases.purchasedKgHint"),
                 accent: "bg-chart-3",
               },
             ].map((stat) => (
@@ -403,6 +402,7 @@ export default function InventoryPage() {
                     {stat.label}
                   </p>
                   <p className="font-data mt-2 text-2xl font-medium">{stat.value}</p>
+                  <p className="font-data mt-1 text-lg">{stat.detail}</p>
                   <p className="mt-1 text-xs text-muted-foreground">{stat.hint}</p>
                 </CardContent>
               </Card>
@@ -413,22 +413,27 @@ export default function InventoryPage() {
             {[
               {
                 label: t("purchases.scrapSpend"),
-                value: purchaseReport ? formatMoney(scrapPurchased.totalSpend) : "—",
+                value: purchaseReport ? formatMoney(scrapPurchased.totalPaid) : "—",
+                detail: purchaseReport ? `${formatKg(scrapPurchased.totalKg)} kg` : "—",
                 hint: t("purchases.scrapHubLabel"),
                 accent: "bg-chart-1",
               },
               {
                 label: t("purchases.daigSpend"),
-                value: purchaseReport ? formatMoney(daigPurchased.totalSpend) : "—",
+                value: purchaseReport ? formatMoney(daigPurchased.totalPaid) : "—",
+                detail: purchaseReport ? `${formatKg(daigPurchased.totalKg)} kg` : "—",
                 hint: t("purchases.daigDrumLabel"),
                 accent: "bg-chart-2",
               },
               {
                 label: t("purchases.totalSpend"),
                 value: purchaseReport
-                  ? formatMoney(purchaseReport.totals.totalSpend)
+                  ? formatMoney(purchaseReport.totals.totalPaid || 0)
                   : "—",
-                hint: t("purchases.allRecorded"),
+                detail: purchaseReport
+                  ? `${formatKg(purchaseReport.totals.totalKg)} kg`
+                  : "—",
+                hint: t("purchases.actuallyPaid"),
                 accent: "bg-chart-3",
               },
             ].map((stat) => (
@@ -439,6 +444,7 @@ export default function InventoryPage() {
                     {stat.label}
                   </p>
                   <p className="font-data mt-2 text-2xl font-medium">{stat.value}</p>
+                  <p className="font-data mt-1 text-lg">{stat.detail}</p>
                   <p className="mt-1 text-xs text-muted-foreground">{stat.hint}</p>
                 </CardContent>
               </Card>
@@ -452,7 +458,7 @@ export default function InventoryPage() {
                 value: stock
                   ? `${formatKg(stock.byMaterial?.scrap?.availableKg ?? stock.totalKg)} kg`
                   : "—",
-                hint: t("invReportsHub.stockAsOfHint", { date: stockAsOf }),
+                hint: stockHint,
                 accent: "bg-chart-1",
               },
               {
@@ -460,19 +466,19 @@ export default function InventoryPage() {
                 value: stock?.byMaterial?.daig
                   ? `${formatKg(stock.byMaterial.daig.availableKg ?? stock.byMaterial.daig.totalKg)} kg`
                   : "—",
-                hint: t("invReportsHub.stockAsOfHint", { date: stockAsOf }),
+                hint: stockHint,
                 accent: "bg-chart-2",
               },
               {
                 label: t("purchases.hubOnHand"),
                 value: String(Math.round(hubUnits)),
-                hint: t("invReportsHub.stockAsOfHint", { date: stockAsOf }),
+                hint: stockHint,
                 accent: "bg-chart-3",
               },
               {
                 label: t("purchases.drumOnHand"),
                 value: String(Math.round(drumUnits)),
-                hint: t("invReportsHub.stockAsOfHint", { date: stockAsOf }),
+                hint: stockHint,
                 accent: "bg-chart-4",
               },
             ].map((stat) => (

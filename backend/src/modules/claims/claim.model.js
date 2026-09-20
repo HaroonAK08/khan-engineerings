@@ -11,6 +11,7 @@ const claimItemSchema = new mongoose.Schema(
       required: true,
     },
     weightKg: { type: Number, min: 0, default: null },
+    recoveredKg: { type: Number, min: 0, default: null },
     unitPrice: { type: Number, min: 0, default: null },
     refundAmount: { type: Number, min: 0, default: 0 },
     mfgLossAmount: { type: Number, min: 0, default: 0 },

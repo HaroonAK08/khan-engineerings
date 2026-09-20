@@ -503,6 +503,7 @@ async function getReport({ dateFrom, dateTo, supplier, materialType } = {}) {
 
   const totals = summary[0] || { totalKg: 0, totalSpend: 0, purchaseCount: 0, avgRate: 0 };
   const bestRateSupplier = suppliers.length > 0 ? suppliers[0] : null;
+  const paid = await paidInPeriodByMaterial({ dateFrom, dateTo, supplier });
 
   return {
     period: { from: dateFrom || null, to: dateTo || null },
@@ -510,6 +511,7 @@ async function getReport({ dateFrom, dateTo, supplier, materialType } = {}) {
     totals: {
       totalKg: Math.round((totals.totalKg || 0) * 1000) / 1000,
       totalSpend: roundMoney(totals.totalSpend || 0),
+      totalPaid: paid.total,
       purchaseCount: totals.purchaseCount || 0,
       avgRate: roundMoney(totals.avgRate || 0),
       supplierCount: byParty.length,
@@ -517,14 +519,99 @@ async function getReport({ dateFrom, dateTo, supplier, materialType } = {}) {
     records,
     byParty,
     bySupplier: suppliers,
-    byMaterialType: byMaterialType.map((row) => ({
-      materialType: row._id || "scrap",
-      totalKg: Math.round(row.totalKg * 1000) / 1000,
-      totalSpend: roundMoney(row.totalSpend),
-      purchaseCount: row.purchaseCount,
-      avgRate: roundMoney(row.avgRate),
-    })),
+    byMaterialType: ["scrap", "daig"].map((materialType) => {
+      const row = byMaterialType.find((r) => (r._id || "scrap") === materialType);
+      return {
+        materialType,
+        totalKg: Math.round((row?.totalKg || 0) * 1000) / 1000,
+        totalSpend: roundMoney(row?.totalSpend || 0),
+        totalPaid: materialType === "daig" ? paid.daig : paid.scrap,
+        purchaseCount: row?.purchaseCount || 0,
+        avgRate: roundMoney(row?.avgRate || 0),
+      };
+    }),
     bestRateSupplier,
+  };
+}
+
+async function paidInPeriodByMaterial({ dateFrom, dateTo, supplier } = {}) {
+  const mongoose = require("mongoose");
+  const match = { type: "payment" };
+  if (supplier) {
+    if (!mongoose.isValidObjectId(supplier)) throw httpError("Invalid supplier id", 400);
+    match.supplier = new mongoose.Types.ObjectId(supplier);
+  }
+  if (dateFrom || dateTo) {
+    match.entryDate = {};
+    if (dateFrom) match.entryDate.$gte = parseDate(dateFrom, "dateFrom");
+    if (dateTo) {
+      const end = parseDate(dateTo, "dateTo");
+      end.setHours(23, 59, 59, 999);
+      match.entryDate.$lte = end;
+    }
+  }
+
+  const payments = await LedgerEntry.find(match)
+    .populate("purchase", "materialType supplier")
+    .lean();
+
+  const paid = { scrap: 0, daig: 0, other: 0 };
+  const unlinkedIds = [
+    ...new Set(
+      payments
+        .filter((p) => !p.purchase)
+        .map((p) => String(p.supplier || ""))
+        .filter(Boolean)
+    ),
+  ];
+  const mixBySupplier = new Map();
+  if (unlinkedIds.length) {
+    const mixes = await Purchase.aggregate([
+      {
+        $match: {
+          supplier: { $in: unlinkedIds.map((id) => new mongoose.Types.ObjectId(id)) },
+        },
+      },
+      {
+        $group: {
+          _id: { supplier: "$supplier", materialType: "$materialType" },
+          spend: { $sum: { $add: ["$totalAmount", { $ifNull: ["$freightAmount", 0] }] } },
+        },
+      },
+    ]);
+    for (const row of mixes) {
+      const sid = String(row._id.supplier);
+      const cur = mixBySupplier.get(sid) || { scrap: 0, daig: 0 };
+      const mt = row._id.materialType === "daig" ? "daig" : "scrap";
+      cur[mt] += row.spend || 0;
+      mixBySupplier.set(sid, cur);
+    }
+  }
+
+  for (const p of payments) {
+    const amount = roundMoney(p.amount || 0);
+    const mt = p.purchase?.materialType;
+    if (mt === "daig" || mt === "scrap") {
+      paid[mt] += amount;
+      continue;
+    }
+    const mix = mixBySupplier.get(String(p.supplier || ""));
+    const scrap = mix?.scrap || 0;
+    const daig = mix?.daig || 0;
+    const mixTotal = scrap + daig;
+    if (mixTotal <= 0) {
+      paid.other += amount;
+      continue;
+    }
+    paid.scrap += amount * (scrap / mixTotal);
+    paid.daig += amount * (daig / mixTotal);
+  }
+
+  return {
+    scrap: roundMoney(paid.scrap),
+    daig: roundMoney(paid.daig),
+    other: roundMoney(paid.other),
+    total: roundMoney(paid.scrap + paid.daig + paid.other),
   };
 }
 

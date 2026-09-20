@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -18,14 +18,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ProductSearchSelect } from "@/components/products/product-search-select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 
 type BuiltyOption = {
   _id: string;
@@ -47,6 +39,7 @@ type Claim = {
     quantity: number;
     disposition: string;
     weightKg?: number | null;
+    recoveredKg?: number | null;
     refundAmount?: number;
     mfgLossAmount?: number;
     unitPrice?: number | null;
@@ -81,6 +74,7 @@ type Line = {
   product: string;
   quantity: number;
   weightKg: number;
+  recoveredKg: number;
   unitPrice: number;
   disposition: "returned" | "rework";
   reason: string;
@@ -91,10 +85,19 @@ function emptyLine(): Line {
     product: "",
     quantity: 1,
     weightKg: 0,
+    recoveredKg: 0,
     unitPrice: 0,
     disposition: "returned",
     reason: "",
   };
+}
+
+function roundKg(n: number) {
+  return Math.round((Number(n) || 0) * 1000) / 1000;
+}
+
+function lineOriginalKg(line: Pick<Line, "weightKg" | "quantity">) {
+  return roundKg((Number(line.weightKg) || 0) * (Number(line.quantity) || 0));
 }
 
 function customerIdOf(c: BuiltyOption["customer"]) {
@@ -136,6 +139,35 @@ export default function ClaimsPage() {
   const [lines, setLines] = useState<Line[]>([emptyLine()]);
   const [partyPickerOpen, setPartyPickerOpen] = useState(false);
   const [partySearch, setPartySearch] = useState("");
+  const formCardRef = useRef<HTMLDivElement>(null);
+
+  function scrollToForm() {
+    const el = formCardRef.current;
+    if (!el) return;
+    const parents: HTMLElement[] = [];
+    let node: HTMLElement | null = el.parentElement;
+    while (node && node !== document.body) {
+      const overflowY = getComputedStyle(node).overflowY;
+      if (
+        (overflowY === "auto" || overflowY === "scroll") &&
+        node.scrollHeight > node.clientHeight + 1
+      ) {
+        parents.push(node);
+      }
+      node = node.parentElement;
+    }
+    for (const parent of parents) {
+      const top =
+        el.getBoundingClientRect().top - parent.getBoundingClientRect().top + parent.scrollTop - 12;
+      parent.scrollTo({ top: Math.max(0, top), behavior: "auto" });
+    }
+    window.scrollTo({ top: 0, behavior: "auto" });
+    el.scrollIntoView({ behavior: "auto", block: "start" });
+    el.focus({ preventScroll: true });
+    if (window.location.hash && window.location.hash !== "#claim-form") {
+      window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#claim-form`);
+    }
+  }
 
   function resetForm() {
     setEditingId(null);
@@ -172,6 +204,10 @@ export default function ClaimsPage() {
                   : "",
             quantity: Number(item.quantity) || 1,
             weightKg: Number(item.weightKg) || 0,
+            recoveredKg:
+              item.recoveredKg != null
+                ? Number(item.recoveredKg)
+                : roundKg((Number(item.weightKg) || 0) * (Number(item.quantity) || 1)),
             unitPrice: Number(item.unitPrice) || 0,
             disposition:
               item.disposition === "rework" ? ("rework" as const) : ("returned" as const),
@@ -181,7 +217,6 @@ export default function ClaimsPage() {
     );
     setPartyPickerOpen(false);
     setPartySearch("");
-    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   const load = useCallback(async () => {
@@ -392,6 +427,7 @@ export default function ClaimsPage() {
     updateLine(index, {
       product: productId,
       weightKg,
+      recoveredKg: roundKg(weightKg),
       unitPrice,
       quantity: 1,
     });
@@ -411,7 +447,11 @@ export default function ClaimsPage() {
       unitPrice = calcUnitPrice(product, weightKg);
     }
 
-    updateLine(index, { weightKg, unitPrice });
+    updateLine(index, {
+      weightKg,
+      recoveredKg: roundKg(weightKg * (Number(line.quantity) || 0)),
+      unitPrice,
+    });
   }
 
   async function onSubmit(e: FormEvent) {
@@ -426,9 +466,16 @@ export default function ClaimsPage() {
       return;
     }
     for (const l of validLines) {
-      if (l.disposition === "rework" && !(Number(l.weightKg) > 0)) {
-        toast.error(t("claims.reworkHint"));
-        return;
+      if (l.disposition === "rework") {
+        if (!(Number(l.weightKg) > 0)) {
+          toast.error(t("claims.reworkHint"));
+          return;
+        }
+        const originalKg = lineOriginalKg(l);
+        if (Number(l.recoveredKg) > originalKg + 0.0005) {
+          toast.error(t("claims.recoveredTooMuch"));
+          return;
+        }
       }
     }
 
@@ -440,6 +487,8 @@ export default function ClaimsPage() {
         product: l.product,
         quantity: l.quantity,
         weightKg: l.weightKg || undefined,
+        recoveredKg:
+          l.disposition === "rework" ? Number(l.recoveredKg) || 0 : undefined,
         unitPrice: l.unitPrice || undefined,
         refundAmount: lineSuggestedTotal(l),
         disposition: l.disposition,
@@ -473,7 +522,22 @@ export default function ClaimsPage() {
     } catch {
       // list row data is enough to edit if detail fetch fails
     }
+    window.setTimeout(scrollToForm, 0);
+    window.setTimeout(scrollToForm, 120);
   }
+
+  useLayoutEffect(() => {
+    if (!editingId) return;
+    scrollToForm();
+    const t1 = window.setTimeout(scrollToForm, 50);
+    const t2 = window.setTimeout(scrollToForm, 180);
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+    };
+    // scroll whenever an edit session starts
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingId]);
 
   useEffect(() => {
     const editId = searchParams.get("edit");
@@ -521,12 +585,22 @@ export default function ClaimsPage() {
         </Link>
       </div>
 
-      <Card>
+      <div
+        id="claim-form"
+        ref={formCardRef}
+        tabIndex={-1}
+        className="scroll-mt-3 outline-none"
+      >
+      <Card
+        className={editingId ? "ring-2 ring-primary/50" : undefined}
+      >
         <CardHeader>
           <CardTitle className="text-nameplate text-sm">
             {editingId ? t("claims.edit") : t("claims.record")}
           </CardTitle>
-          <CardDescription>{t("claims.recordDesc")}</CardDescription>
+          <CardDescription>
+            {editingId ? t("claims.editingBanner") : t("claims.recordDesc")}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="flex flex-col gap-4">
@@ -703,8 +777,10 @@ export default function ClaimsPage() {
                             return;
                           }
                           const n = Math.round(Number(raw));
+                          const quantity = Number.isFinite(n) && n >= 0 ? n : 0;
                           updateLine(index, {
-                            quantity: Number.isFinite(n) && n >= 0 ? n : 0,
+                            quantity,
+                            recoveredKg: roundKg((Number(line.weightKg) || 0) * quantity),
                           });
                         }}
                         onBlur={() => {
@@ -765,11 +841,16 @@ export default function ClaimsPage() {
                       <select
                         className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
                         value={line.disposition}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          const disposition = e.target.value as Line["disposition"];
                           updateLine(index, {
-                            disposition: e.target.value as Line["disposition"],
-                          })
-                        }
+                            disposition,
+                            recoveredKg:
+                              disposition === "rework"
+                                ? lineOriginalKg(line) || line.recoveredKg
+                                : line.recoveredKg,
+                          });
+                        }}
                       >
                         <option value="returned">{t("claims.disp.returned")}</option>
                         <option value="rework">{t("claims.disp.rework")}</option>
@@ -780,6 +861,45 @@ export default function ClaimsPage() {
                           : t("claims.returnedHint")}
                       </p>
                     </div>
+                    {line.disposition === "rework" ? (
+                      <div className="flex flex-col gap-1.5">
+                        <Label>
+                          {t("claims.recoveredKg", {
+                            material:
+                              allProducts.find((p) => p._id === line.product)?.family === "drum"
+                                ? t("posReports.daig")
+                                : t("posReports.scrap"),
+                          })}
+                        </Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          max={lineOriginalKg(line) || undefined}
+                          value={line.recoveredKg}
+                          onChange={(e) =>
+                            updateLine(index, {
+                              recoveredKg: Math.max(0, Number(e.target.value) || 0),
+                            })
+                          }
+                        />
+                        {(() => {
+                          const originalKg = lineOriginalKg(line);
+                          const recoveredKg = Number(line.recoveredKg) || 0;
+                          const lostKg = roundKg(Math.max(0, originalKg - recoveredKg));
+                          return (
+                            <p className="text-[10px] text-muted-foreground">
+                              {lostKg > 0
+                                ? t("claims.lostMetalHint", {
+                                    recovered: String(recoveredKg),
+                                    lost: String(lostKg),
+                                  })
+                                : t("claims.recoveredHint")}
+                            </p>
+                          );
+                        })()}
+                      </div>
+                    ) : null}
                     <div className="flex flex-col gap-1.5 md:col-span-2 xl:col-span-5">
                       <Label>{t("claims.reason")}</Label>
                       <Input
@@ -820,6 +940,7 @@ export default function ClaimsPage() {
           </form>
         </CardContent>
       </Card>
+      </div>
 
       <Card id="claim-history">
         <CardHeader>
@@ -833,39 +954,31 @@ export default function ClaimsPage() {
           ) : claims.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">{t("claims.empty")}</p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("claims.col.claim")}</TableHead>
-                  <TableHead>{t("claims.col.date")}</TableHead>
-                  <TableHead>{t("claims.col.customer")}</TableHead>
-                  <TableHead>{t("claims.col.invoice")}</TableHead>
-                  <TableHead>{t("claims.col.items")}</TableHead>
-                  <TableHead>{t("claims.col.refund")}</TableHead>
-                  <TableHead>{t("claims.col.mfgLoss")}</TableHead>
-                  <TableHead>{t("claims.col.status")}</TableHead>
-                  <TableHead className="w-[1%]">{t("cus.col.actions")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {claims.map((c) => (
-                  <TableRow key={c._id}>
-                    <TableCell className="font-data text-xs">{c.claimNo}</TableCell>
-                    <TableCell className="font-data text-xs">{formatDate(c.claimDate)}</TableCell>
-                    <TableCell>{c.customer?.name || "—"}</TableCell>
-                    <TableCell className="font-data text-xs">
+            <div className="divide-y divide-border">
+              {claims.map((c) => (
+                <div key={c._id} className="flex items-start gap-2 py-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span className="font-data text-xs">{c.claimNo}</span>
+                      <span className="font-data text-xs text-muted-foreground">
+                        {formatDate(c.claimDate)}
+                      </span>
+                      <span className="text-sm">{c.customer?.name || "—"}</span>
                       {c.builty?._id ? (
                         <Link
                           href={`/dashboard/builty/${c.builty._id}`}
-                          className="text-primary hover:underline"
+                          className="font-data text-xs text-primary hover:underline"
                         >
                           {c.builty.builtyNo}
                         </Link>
-                      ) : (
-                        c.builty?.builtyNo || "—"
-                      )}
-                    </TableCell>
-                    <TableCell className="text-xs">
+                      ) : c.builty?.builtyNo ? (
+                        <span className="font-data text-xs">{c.builty.builtyNo}</span>
+                      ) : null}
+                      <Badge variant="outline" className="uppercase text-[10px]">
+                        {c.status}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 text-xs leading-snug">
                       {c.items
                         .map((i) => {
                           const productName =
@@ -874,55 +987,61 @@ export default function ClaimsPage() {
                               : "";
                           return `${i.quantity} ${productName} (${
                             i.disposition === "rework"
-                              ? t("claims.disp.rework")
+                              ? `${t("claims.disp.rework")}${
+                                  i.recoveredKg != null
+                                    ? ` · ${i.recoveredKg} kg ${t("claims.backToStock")}`
+                                    : ""
+                                }`
                               : t("claims.disp.returned")
                           })`;
                         })
                         .join(", ")}
-                    </TableCell>
-                    <TableCell className="font-data text-xs">
-                      {c.refundAmount ? formatMoney(c.refundAmount) : "—"}
-                    </TableCell>
-                    <TableCell className="font-data text-xs">
-                      {c.mfgLossAmount ? formatMoney(c.mfgLossAmount) : "—"}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="uppercase text-[10px]">
-                        {c.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1">
-                        <Button
-                          type="button"
-                          size="icon-sm"
-                          variant="ghost"
-                          title={t("claims.edit")}
-                          onClick={() => startEdit(c)}
-                        >
-                          <Pencil className="size-3.5" />
-                        </Button>
-                        <Button
-                          type="button"
-                          size="icon-sm"
-                          variant="ghost"
-                          className="text-destructive"
-                          title={t("claims.delete")}
-                          disabled={deletingId === c._id}
-                          onClick={() => void onDeleteClaim(c)}
-                        >
-                          {deletingId === c._id ? (
-                            <Loader2 className="size-3.5 animate-spin" />
-                          ) : (
-                            <Trash2 className="size-3.5" />
-                          )}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t("claims.col.refund")}:{" "}
+                      <span className="font-data text-foreground">
+                        {c.refundAmount ? formatMoney(c.refundAmount) : "—"}
+                      </span>
+                      {c.mfgLossAmount ? (
+                        <>
+                          {" · "}
+                          {t("claims.col.mfgLoss")}:{" "}
+                          <span className="font-data text-foreground">
+                            {formatMoney(c.mfgLossAmount)}
+                          </span>
+                        </>
+                      ) : null}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="ghost"
+                      title={t("claims.edit")}
+                      onClick={() => startEdit(c)}
+                    >
+                      <Pencil className="size-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="ghost"
+                      className="text-destructive"
+                      title={t("claims.delete")}
+                      disabled={deletingId === c._id}
+                      onClick={() => void onDeleteClaim(c)}
+                    >
+                      {deletingId === c._id ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="size-3.5" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>
