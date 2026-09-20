@@ -13,6 +13,7 @@ const LINKS: Array<{ href: string; labelKey: MessageKey; exact?: boolean }> = [
   { href: "/dashboard/reports/receivables", labelKey: "rep.nav.receivables" },
   { href: "/dashboard/reports/monthly-receivables", labelKey: "rep.nav.monthlyRecv" },
   { href: "/dashboard/reports/payables", labelKey: "rep.nav.payables" },
+  { href: "/dashboard/reports/position", labelKey: "rep.nav.position" },
   { href: "/dashboard/reports/sales", labelKey: "rep.nav.sales" },
   { href: "/dashboard/reports/purchases", labelKey: "rep.nav.purchases" },
   { href: "/dashboard/reports/production", labelKey: "rep.nav.production" },

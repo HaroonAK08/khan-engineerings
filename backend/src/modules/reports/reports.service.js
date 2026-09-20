@@ -891,6 +891,8 @@ async function exportFinance(query, format, res) {
   const overview = await financeService.getOverview(query);
   const columns = ["Line", "Amount"];
   const rows = [
+    ["Sales (invoiced)", money(overview.profitAndLoss.salesGross ?? overview.profitAndLoss.revenue)],
+    ["Claim credits / sales returns", money(overview.profitAndLoss.salesReturns || 0)],
     ["Revenue", money(overview.profitAndLoss.revenue)],
     ["COGS", money(overview.profitAndLoss.cogs)],
     ["Gross profit", money(overview.profitAndLoss.grossProfit)],
@@ -3130,6 +3132,7 @@ async function exportPayables(query, format, res) {
 }
 
 const COMBINED_MODULES = [
+  "position",
   "sales",
   "purchases",
   "production",
@@ -3140,7 +3143,290 @@ const COMBINED_MODULES = [
   "payables",
 ];
 
+async function avgPurchaseRate(materialType) {
+  const rateRow = await Purchase.aggregate([
+    { $match: { materialType } },
+    {
+      $group: {
+        _id: null,
+        spend: { $sum: { $add: ["$totalAmount", { $ifNull: ["$freightAmount", 0] }] } },
+        kg: { $sum: "$quantityKg" },
+      },
+    },
+  ]);
+  const kg = rateRow[0]?.kg || 0;
+  if (kg <= 0) return 0;
+  return (rateRow[0].spend || 0) / kg;
+}
+
+async function partyCreditHeld() {
+  const rows = await CustomerLedgerEntry.aggregate([
+    {
+      $group: {
+        _id: "$customer",
+        balance: {
+          $sum: {
+            $switch: {
+              branches: [
+                { case: { $eq: ["$type", "invoice"] }, then: "$amount" },
+                { case: { $eq: ["$type", "payment"] }, then: { $multiply: ["$amount", -1] } },
+                {
+                  case: { $eq: ["$type", "adjustment"] },
+                  then: { $ifNull: ["$signedAmount", 0] },
+                },
+              ],
+              default: 0,
+            },
+          },
+        },
+      },
+    },
+    { $match: { balance: { $lt: -0.001 } } },
+  ]);
+  const parties = [];
+  let total = 0;
+  const ids = rows.map((r) => r._id).filter(Boolean);
+  const customers = ids.length
+    ? await Customer.find({ _id: { $in: ids } }).select("name").lean()
+    : [];
+  const nameById = new Map(customers.map((c) => [String(c._id), c.name]));
+  for (const row of rows) {
+    const amount = roundMoney(Math.abs(row.balance || 0));
+    if (amount <= 0) continue;
+    total = roundMoney(total + amount);
+    parties.push({
+      partyId: String(row._id),
+      name: nameById.get(String(row._id)) || "—",
+      amount,
+    });
+  }
+  parties.sort((a, b) => b.amount - a.amount);
+  return { total, partyCount: parties.length, parties };
+}
+
+async function getPositionReport({ dateFrom, dateTo } = {}) {
+  const now = new Date();
+  const monthFrom = dateFrom
+    ? parseDate(dateFrom, "dateFrom")
+    : new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthTo = dateTo
+    ? (() => {
+        const end = parseDate(dateTo, "dateTo");
+        end.setHours(23, 59, 59, 999);
+        return end;
+      })()
+    : new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+  const asOf = dateTo || now.toISOString().slice(0, 10);
+
+  const { AssetItem } = require("../assets/asset.model");
+  const assetService = require("../assets/asset.service");
+  const claimService = require("../claims/claim.service");
+
+  const [receivables, payables, inventory, creditHeld, assetSummary, scrapRate, daigRate] =
+    await Promise.all([
+      getReceivablesReport({}),
+      getPayablesReport({}),
+      inventoryService.getInventoryReport({ asOf }),
+      partyCreditHeld(),
+      assetService.getSummary(),
+      avgPurchaseRate("scrap"),
+      avgPurchaseRate("daig"),
+    ]);
+
+  const scrapKg = Number(
+    inventory.raw?.scrapKg ?? inventory.raw?.byMaterial?.scrap?.availableKg ?? 0
+  );
+  const daigKg = Number(
+    inventory.raw?.daigKg ?? inventory.raw?.byMaterial?.daig?.availableKg ?? 0
+  );
+  const scrapValue = roundMoney(scrapKg * scrapRate);
+  const daigValue = roundMoney(daigKg * daigRate);
+  const rawValue = roundMoney(scrapValue + daigValue);
+
+  const finished = inventory.finishedStock || {};
+  const values = finished.values || {};
+  const hubMfg = roundMoney(values.hubMfg || 0);
+  const hubSale = roundMoney(values.hubSale || 0);
+  const drumMfg = roundMoney(values.drumMfg || 0);
+  const drumSale = roundMoney(values.drumSale || 0);
+  const finishedMfg = roundMoney(values.finishedMfg || hubMfg + drumMfg);
+  const finishedSale = roundMoney(values.finishedSale || hubSale + drumSale);
+
+  const assetDateFilter = {
+    $gte: monthFrom,
+    $lte: monthTo,
+  };
+  const newAssets = await AssetItem.find({
+    $or: [{ purchaseDate: assetDateFilter }, { createdAt: assetDateFilter }],
+  })
+    .populate("category", "name")
+    .sort({ purchaseDate: -1, createdAt: -1 })
+    .lean();
+  const assetsIncreased = roundMoney(
+    newAssets.reduce(
+      (sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 1),
+      0
+    )
+  );
+  const addedAssets = newAssets.map((item) => ({
+    id: String(item._id),
+    name: item.name,
+    category: item.category?.name || "",
+    quantity: Number(item.quantity) || 1,
+    price: roundMoney(item.price || 0),
+    value: roundMoney((Number(item.price) || 0) * (Number(item.quantity) || 1)),
+    date: item.purchaseDate || item.createdAt,
+  }));
+
+  return {
+    period: {
+      from: monthFrom,
+      to: monthTo,
+      asOf,
+    },
+    totals: {
+      totalReceivable: roundMoney(receivables.totals?.totalReceivable || 0),
+      totalPayable: roundMoney(payables.totals?.totalPayable || 0),
+      creditHeld: creditHeld.total,
+      rawValue,
+      finishedMfg,
+      finishedSale,
+      assetsTotal: roundMoney(assetSummary.grandTotal || 0),
+      assetsIncreased,
+    },
+    receivable: {
+      total: roundMoney(receivables.totals?.totalReceivable || 0),
+      partyCount: receivables.totals?.partyCount || 0,
+    },
+    payable: {
+      total: roundMoney(payables.totals?.totalPayable || 0),
+      supplierCount: payables.totals?.supplierCount || 0,
+    },
+    creditHeld,
+    inventory: {
+      scrap: { kg: scrapKg, rate: roundMoney(scrapRate), value: scrapValue },
+      daig: { kg: daigKg, rate: roundMoney(daigRate), value: daigValue },
+      rawValue,
+      hub: {
+        units: finished.hubUnits || 0,
+        mfgValue: hubMfg,
+        saleValue: hubSale,
+      },
+      drum: {
+        units: finished.drumUnits || 0,
+        mfgValue: drumMfg,
+        saleValue: drumSale,
+      },
+      finished: {
+        units: finished.totalUnits || 0,
+        mfgValue: finishedMfg,
+        saleValue: finishedSale,
+      },
+    },
+    assets: {
+      total: roundMoney(assetSummary.grandTotal || 0),
+      itemCount: assetSummary.itemCount || 0,
+      increased: assetsIncreased,
+      newItemCount: addedAssets.length,
+      added: addedAssets,
+    },
+    claimsThisPeriod: await claimService.summarizePeriod(monthFrom, monthTo),
+  };
+}
+
 async function collectModuleSection(kind, query) {
+  if (kind === "position") {
+    const report = await getPositionReport(query);
+    const inv = report.inventory;
+    const t = report.totals || {};
+    const conclusion = [
+      ["Total receivable", money(t.totalReceivable)],
+      ["Total payable", money(t.totalPayable)],
+      ["Money at our place (party credit)", money(t.creditHeld)],
+      ["Raw scrap kg (on hand)", inv.scrap.kg],
+      ["Raw scrap purchase value", money(inv.scrap.value)],
+      ["Raw daig kg (on hand)", inv.daig.kg],
+      ["Raw daig purchase value", money(inv.daig.value)],
+      ["Raw material purchase value", money(inv.rawValue)],
+      ["Finished hub units (on hand)", inv.hub.units],
+      ["Finished hub sale value", money(inv.hub.saleValue)],
+      ["Finished drum units (on hand)", inv.drum.units],
+      ["Finished drum sale value", money(inv.drum.saleValue)],
+      ["Finished total units (on hand)", inv.finished.units],
+      ["Finished sale value", money(inv.finished.saleValue)],
+      ["Assets total", money(report.assets.total)],
+      ["Assets increased this period", money(report.assets.increased)],
+    ];
+    return {
+      id: "position",
+      sheetName: "Position",
+      title: "Company position",
+      heading: "Company position",
+      columns: ["Item", "On hand", "Value"],
+      rows: [
+        ["Raw scrap", `${inv.scrap.kg} kg`, money(inv.scrap.value)],
+        ["Raw daig", `${inv.daig.kg} kg`, money(inv.daig.value)],
+        ["Raw total", "", money(inv.rawValue)],
+        ["Finished hub", inv.hub.units, money(inv.hub.saleValue)],
+        ["Finished drum", inv.drum.units, money(inv.drum.saleValue)],
+        ["Finished total", inv.finished.units, money(inv.finished.saleValue)],
+      ],
+      subsections: [
+        {
+          heading: "Money",
+          columns: ["Item", "Amount"],
+          rows: [
+            ["Total receivable (parties still owe)", money(t.totalReceivable)],
+            ["Total payable (we still owe)", money(t.totalPayable)],
+            ["Money at our place (party credit held)", money(t.creditHeld)],
+          ],
+        },
+        {
+          heading: "Inventory present (on hand now)",
+          columns: ["Item", "On hand", "Value"],
+          rows: [
+            ["Raw scrap — purchase value", `${inv.scrap.kg} kg`, money(inv.scrap.value)],
+            ["Raw daig — purchase value", `${inv.daig.kg} kg`, money(inv.daig.value)],
+            ["Finished hub — sale value", inv.hub.units, money(inv.hub.saleValue)],
+            ["Finished drum — sale value", inv.drum.units, money(inv.drum.saleValue)],
+            ["Finished altogether — sale value", inv.finished.units, money(inv.finished.saleValue)],
+          ],
+        },
+        {
+          heading: "Assets (from Finance → Assets)",
+          columns: ["Item", "Amount"],
+          rows: [
+            ["Assets total (all items)", money(report.assets.total)],
+            ["Assets increased this period", money(report.assets.increased)],
+            ["New asset items this period", report.assets.newItemCount],
+          ],
+        },
+        {
+          heading: "Assets purchased or added this period",
+          columns: ["Name", "Category", "Qty", "Value", "Date"],
+          rows:
+            (report.assets.added || []).length > 0
+              ? report.assets.added.map((item) => [
+                  item.name,
+                  item.category || "",
+                  item.quantity,
+                  money(item.value),
+                  fmtDate(item.date),
+                ])
+              : [["None", "", "", "", ""]],
+        },
+      ],
+      meta: {
+        "Total receivable": money(t.totalReceivable),
+        "Total payable": money(t.totalPayable),
+        "Money at our place": money(t.creditHeld),
+        "Finished sale value": money(inv.finished.saleValue),
+        "Assets increased this period": money(report.assets.increased),
+      },
+      conclusion,
+    };
+  }
+
   if (kind === "sales") {
     const report = await builtyService.getSalesReport(query);
     const t = report.totals || {};
@@ -3380,6 +3666,8 @@ async function collectModuleSection(kind, query) {
     const pnl = overview.profitAndLoss || {};
     const cash = overview.cashFlow || {};
     const conclusion = [
+      ["Sales (invoiced)", money(pnl.salesGross ?? pnl.revenue)],
+      ["Claim credits / sales returns", money(pnl.salesReturns || 0)],
       ["Revenue", money(pnl.revenue)],
       ["COGS", money(pnl.cogs)],
       ["Gross profit", money(pnl.grossProfit)],
@@ -3683,6 +3971,7 @@ module.exports = {
   getReceivedReport,
   getPaidReport,
   getPayablesReport,
+  getPositionReport,
   getYearlyBillReport,
   exportSales,
   exportPurchases,

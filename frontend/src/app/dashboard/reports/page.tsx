@@ -152,8 +152,8 @@ export default function ReportsHubPage() {
           </div>
           <p className="text-nameplate text-sm">Full report</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            All modules in one file — sales, purchases, production, expenses, inventory, finance,
-            receivables, payables.
+            All modules in one file — position, sales, purchases, production, expenses, inventory,
+            finance, receivables, payables.
           </p>
         </button>
 

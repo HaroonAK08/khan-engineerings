@@ -21,12 +21,17 @@ const claimItemSchema = new mongoose.Schema(
 const claimSchema = new mongoose.Schema(
   {
     claimNo: { type: String, required: true, unique: true, trim: true },
-    builty: { type: mongoose.Schema.Types.ObjectId, ref: "Builty", required: true, index: true },
+    builty: { type: mongoose.Schema.Types.ObjectId, ref: "Builty", default: null, index: true },
     customer: { type: mongoose.Schema.Types.ObjectId, ref: "Customer", required: true, index: true },
     claimDate: { type: Date, required: true, index: true },
     items: { type: [claimItemSchema], default: [] },
     refundAmount: { type: Number, min: 0, default: 0 },
     mfgLossAmount: { type: Number, min: 0, default: 0 },
+    ledgerEntry: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "CustomerLedgerEntry",
+      default: null,
+    },
     replacementBuilty: { type: mongoose.Schema.Types.ObjectId, ref: "Builty", default: null },
     reworkBatch: { type: mongoose.Schema.Types.ObjectId, ref: "ProductionBatch", default: null },
     notes: { type: String, trim: true, default: "" },

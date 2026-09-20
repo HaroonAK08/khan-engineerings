@@ -5,6 +5,7 @@ const { requireAuth } = require("../../middleware/auth");
 const router = Router();
 router.use(requireAuth);
 router.get("/", controller.list);
+router.get("/party-context", controller.partyContext);
 router.post("/", controller.create);
 router.get("/:id", controller.getOne);
 router.patch("/:id", controller.update);

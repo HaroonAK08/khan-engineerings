@@ -308,6 +308,22 @@ export const SEARCH_PAGES: SearchPage[] = [
     group: "reports",
   },
   {
+    href: "/dashboard/reports/position",
+    labelKey: "rep.nav.position",
+    keywords: [
+      "position",
+      "receivable",
+      "payable",
+      "inventory value",
+      "assets",
+      "پوزیشن",
+      "وصولی",
+      "ادائیگی",
+    ],
+    icon: Landmark,
+    group: "reports",
+  },
+  {
     href: "/dashboard/reports/sales",
     labelKey: "rep.nav.sales",
     keywords: ["sales report", "sales", "revenue"],

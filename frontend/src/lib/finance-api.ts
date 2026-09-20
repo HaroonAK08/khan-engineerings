@@ -5,6 +5,8 @@ export type FinanceOverview = {
   income: {
     customerPayments: number;
     salesInvoiced: number;
+    salesGross?: number;
+    salesReturns?: number;
     otherIncome: number;
     cashIn: number;
     revenue: number;
@@ -21,6 +23,8 @@ export type FinanceOverview = {
   };
   profitAndLoss: {
     revenue: number;
+    salesGross?: number;
+    salesReturns?: number;
     cogs: number;
     grossProfit: number;
     otherExpenses: number;

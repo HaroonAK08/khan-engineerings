@@ -9,6 +9,17 @@ async function list(req, res, next) {
   }
 }
 
+async function partyContext(req, res, next) {
+  try {
+    const context = await claimService.partyContext(req.query.customer, {
+      excludeClaimId: req.query.excludeClaimId,
+    });
+    res.json({ context });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function getOne(req, res, next) {
   try {
     const claim = await claimService.getById(req.params.id);
@@ -45,4 +56,4 @@ async function remove(req, res, next) {
   }
 }
 
-module.exports = { list, getOne, create, update, remove };
+module.exports = { list, partyContext, getOne, create, update, remove };

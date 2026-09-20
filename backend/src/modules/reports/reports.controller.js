@@ -54,6 +54,15 @@ async function payables(req, res, next) {
   }
 }
 
+async function position(req, res, next) {
+  try {
+    const report = await reportsService.getPositionReport(req.query);
+    res.json({ report });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function yearly(req, res, next) {
   try {
     const report = await reportsService.getYearlyBillReport(req.query);
@@ -117,6 +126,41 @@ function exportHandler(kind) {
       if (kind === "received") return await reportsService.exportReceived(q, format, res);
       if (kind === "paid") return await reportsService.exportPaid(q, format, res);
       if (kind === "payables") return await reportsService.exportPayables(q, format, res);
+      if (kind === "position") {
+        const report = await reportsService.getCombinedPreview({
+          ...q,
+          modules: "position",
+          summaryOnly: q.summaryOnly,
+        });
+        const section = report.sections[0];
+        const title = section?.title || "Company position";
+        if (format === "pdf") {
+          const buf = await require("./export.util").buildPdf({
+            title,
+            subtitle: "Khan Engineerings",
+            metaLines: [`Period: ${report.period}`],
+            sections: section?.subsections?.length
+              ? section.subsections
+              : [
+                  {
+                    heading: section?.heading || title,
+                    columns: section?.columns || ["Item", "Value"],
+                    rows: section?.rows || [],
+                  },
+                ],
+          });
+          return require("./export.util").sendPdf(res, buf, "position-report.pdf");
+        }
+        const buf = await require("./export.util").buildExcel({
+          title,
+          sheetName: "Position",
+          columns: section?.columns || ["Item", "Value"],
+          rows: section?.rows || [],
+          meta: section?.meta || {},
+          sections: section?.subsections || undefined,
+        });
+        return require("./export.util").sendExcel(res, buf, "position-report.xlsx");
+      }
       const err = new Error("Unknown export kind");
       err.statusCode = 404;
       throw err;
@@ -205,6 +249,7 @@ module.exports = {
   received,
   paid,
   payables,
+  position,
   yearly,
   customerStatement,
   supplierStatement,
@@ -221,6 +266,7 @@ module.exports = {
   exportReceived: exportHandler("received"),
   exportPaid: exportHandler("paid"),
   exportPayables: exportHandler("payables"),
+  exportPosition: exportHandler("position"),
   exportCustomerStatement,
   exportSupplierStatement,
   exportGroupStatement,

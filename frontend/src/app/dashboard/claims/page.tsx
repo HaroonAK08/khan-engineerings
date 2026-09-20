@@ -55,6 +55,28 @@ type Claim = {
   }>;
 };
 
+type PartySoldProduct = {
+  productId: string;
+  name: string;
+  family?: string;
+  soldQty: number;
+  claimedQty: number;
+  remainingQty: number;
+  weightKg: number;
+  unitPrice: number;
+  ratePerKg: number;
+  pricingMode?: string;
+};
+
+type PartyContext = {
+  customer: { id: string; name: string; phone?: string };
+  balance: number;
+  creditHeld: number;
+  partyDue: number;
+  claimCredit: number;
+  products: PartySoldProduct[];
+};
+
 type Line = {
   product: string;
   quantity: number;
@@ -102,6 +124,7 @@ export default function ClaimsPage() {
   const [orders, setOrders] = useState<BuiltyOption[]>([]);
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [selectedBuilty, setSelectedBuilty] = useState<Builty | null>(null);
+  const [partyContext, setPartyContext] = useState<PartyContext | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -119,6 +142,7 @@ export default function ClaimsPage() {
     setParty("");
     setBuiltyId("");
     setSelectedBuilty(null);
+    setPartyContext(null);
     setClaimDate(todayInput());
     setLines([emptyLine()]);
     setPartyPickerOpen(false);
@@ -166,7 +190,7 @@ export default function ClaimsPage() {
       const [claimsRes, builtyRes, productData, customerData] = await Promise.all([
         api.get<{ claims: Claim[] }>("/claims"),
         api.get<{ builties: BuiltyOption[] }>("/builty"),
-        listProducts({ active: "true" }),
+        listProducts(),
         listCustomers({ active: "true" }),
       ]);
       setClaims(claimsRes.data.claims);
@@ -203,6 +227,27 @@ export default function ClaimsPage() {
     };
   }, [builtyId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (!party) {
+      setPartyContext(null);
+      return;
+    }
+    api
+      .get<{ context: PartyContext }>("/claims/party-context", {
+        params: { customer: party, excludeClaimId: editingId || undefined },
+      })
+      .then(({ data }) => {
+        if (!cancelled) setPartyContext(data.context);
+      })
+      .catch(() => {
+        if (!cancelled) setPartyContext(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [party, editingId, claims]);
+
   const partyBuilties = useMemo(() => {
     const list = !party
       ? orders
@@ -231,23 +276,33 @@ export default function ClaimsPage() {
   );
 
   const builtyProducts = useMemo(() => {
-    let base = allProducts;
+    const soldFirst = new Set((partyContext?.products || []).map((p) => p.productId));
     if (selectedBuilty?.items?.length) {
-      const ids = new Set(
-        selectedBuilty.items.map((i) =>
-          typeof i.product === "object" && i.product ? i.product._id : String(i.product)
-        )
-      );
-      const fromBuilty = allProducts.filter((p) => ids.has(p._id));
-      if (fromBuilty.length > 0) base = fromBuilty;
+      for (const item of selectedBuilty.items) {
+        const pid =
+          typeof item.product === "object" && item.product
+            ? item.product._id
+            : String(item.product || "");
+        if (pid) soldFirst.add(pid);
+      }
     }
     const selectedIds = new Set(lines.map((l) => l.product).filter(Boolean));
-    if (selectedIds.size === 0) return base;
-    const missing = allProducts.filter(
-      (p) => selectedIds.has(p._id) && !base.some((b) => b._id === p._id)
-    );
-    return missing.length ? [...base, ...missing] : base;
-  }, [selectedBuilty, allProducts, lines]);
+    const seen = new Set<string>();
+    const ordered: Product[] = [];
+    for (const product of allProducts) {
+      if (!soldFirst.has(product._id)) continue;
+      seen.add(product._id);
+      ordered.push(product);
+    }
+    for (const product of allProducts) {
+      if (seen.has(product._id)) continue;
+      seen.add(product._id);
+      ordered.push(product);
+    }
+    if (selectedIds.size === 0) return ordered;
+    const missing = allProducts.filter((p) => selectedIds.has(p._id) && !seen.has(p._id));
+    return missing.length ? [...ordered, ...missing] : ordered;
+  }, [selectedBuilty, allProducts, lines, partyContext]);
 
   function updateLine(index: number, patch: Partial<Line>) {
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
@@ -297,26 +352,34 @@ export default function ClaimsPage() {
     );
   }, [selectedBuilty, editingId]);
 
-  function soldPriceFromBuilty(productId: string) {
+  function soldPriceFromParty(productId: string) {
     const builtyLine = selectedBuilty?.items?.find((i) => {
       const pid =
         typeof i.product === "object" && i.product ? i.product._id : String(i.product);
       return pid === productId;
     });
-    if (!builtyLine) return null;
-
-    const weightKg =
-      Number(builtyLine.weightKg) > 0 ? Number(builtyLine.weightKg) : 0;
-    const unitPrice = Number(builtyLine.unitPrice) || 0;
-    const ratePerKg = Number(builtyLine.ratePerKg) || 0;
-    const pricingMode = builtyLine.pricingMode || "rate_kg";
-
-    return { weightKg, unitPrice, ratePerKg, pricingMode, line: builtyLine };
+    if (builtyLine) {
+      const weightKg =
+        Number(builtyLine.weightKg) > 0 ? Number(builtyLine.weightKg) : 0;
+      const unitPrice = Number(builtyLine.unitPrice) || 0;
+      const ratePerKg = Number(builtyLine.ratePerKg) || 0;
+      const pricingMode = builtyLine.pricingMode || "rate_kg";
+      return { weightKg, unitPrice, ratePerKg, pricingMode, line: builtyLine };
+    }
+    const partyLine = partyContext?.products.find((p) => p.productId === productId);
+    if (!partyLine) return null;
+    return {
+      weightKg: Number(partyLine.weightKg) || 0,
+      unitPrice: Number(partyLine.unitPrice) || 0,
+      ratePerKg: Number(partyLine.ratePerKg) || 0,
+      pricingMode: partyLine.pricingMode || "rate_kg",
+      line: null,
+    };
   }
 
   function onSelectProduct(index: number, productId: string) {
     const product = allProducts.find((p) => p._id === productId);
-    const sold = soldPriceFromBuilty(productId);
+    const sold = soldPriceFromParty(productId);
     const weightKg =
       sold && sold.weightKg > 0
         ? sold.weightKg
@@ -337,7 +400,7 @@ export default function ClaimsPage() {
   function onWeightChange(index: number, weightKg: number) {
     const line = lines[index];
     const product = allProducts.find((p) => p._id === line.product);
-    const sold = line.product ? soldPriceFromBuilty(line.product) : null;
+    const sold = line.product ? soldPriceFromParty(line.product) : null;
 
     let unitPrice = line.unitPrice;
     if (sold && sold.pricingMode === "rate_kg" && sold.ratePerKg > 0 && weightKg > 0) {
@@ -353,8 +416,8 @@ export default function ClaimsPage() {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!builtyId) {
-      toast.error(t("claims.selectBuilty"));
+    if (!party) {
+      toast.error(t("claims.selectParty"));
       return;
     }
     const validLines = lines.filter((l) => l.product && l.quantity > 0);
@@ -370,8 +433,8 @@ export default function ClaimsPage() {
     }
 
     const body = {
-      builty: builtyId,
-      customer: party || undefined,
+      builty: builtyId || undefined,
+      customer: party,
       claimDate,
       items: validLines.map((l) => ({
         product: l.product,
@@ -527,13 +590,14 @@ export default function ClaimsPage() {
                 </div>
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label>{t("claims.invoice")}</Label>
+                <Label>{t("claims.invoiceOptional")}</Label>
                 <select
                   className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
                   value={builtyId}
                   onChange={(e) => onSelectBuilty(e.target.value)}
+                  disabled={!party}
                 >
-                  <option value="">{t("claims.select")}</option>
+                  <option value="">{t("claims.invoiceNone")}</option>
                   {partyBuilties.map((o) => (
                     <option key={o._id} value={o._id}>
                       {o.builtyNo}
@@ -554,6 +618,38 @@ export default function ClaimsPage() {
               </div>
             </div>
 
+            {partyContext ? (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="rounded-lg border border-border/70 px-3 py-2.5">
+                  <p className="text-[10px] tracking-wide text-muted-foreground uppercase">
+                    {t("claims.partyDue")}
+                  </p>
+                  <p className="font-data mt-0.5 text-sm">
+                    {formatMoney(partyContext.partyDue)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-border/70 px-3 py-2.5">
+                  <p className="text-[10px] tracking-wide text-muted-foreground uppercase">
+                    {t("claims.moneyHeld")}
+                  </p>
+                  <p className="font-data mt-0.5 text-sm">
+                    {formatMoney(partyContext.creditHeld)}
+                  </p>
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">
+                    {t("claims.moneyHeldHint")}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-border/70 px-3 py-2.5">
+                  <p className="text-[10px] tracking-wide text-muted-foreground uppercase">
+                    {t("claims.partyCredit")}
+                  </p>
+                  <p className="font-data mt-0.5 text-sm">
+                    {formatMoney(partyContext.claimCredit)}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+
             <div className="flex flex-col gap-3">
               <div className="flex items-center justify-between">
                 <Label>{t("claims.products")}</Label>
@@ -571,7 +667,11 @@ export default function ClaimsPage() {
 
               {lines.map((line, index) => {
                 const suggested = lineSuggestedTotal(line);
-                const sold = line.product ? soldPriceFromBuilty(line.product) : null;
+                const sold = line.product ? soldPriceFromParty(line.product) : null;
+                const remaining = line.product
+                  ? partyContext?.products.find((p) => p.productId === line.product)
+                      ?.remainingQty
+                  : undefined;
                 return (
                   <div
                     key={index}
@@ -613,6 +713,11 @@ export default function ClaimsPage() {
                           }
                         }}
                       />
+                      {remaining != null ? (
+                        <p className="text-[10px] text-muted-foreground">
+                          {t("claims.remainingQty", { qty: String(remaining) })}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="flex flex-col gap-1.5">
                       <Label>{t("claims.weight")}</Label>
@@ -639,7 +744,7 @@ export default function ClaimsPage() {
                       />
                       <p className="text-[10px] text-muted-foreground">
                         {sold && sold.unitPrice > 0
-                          ? t("claims.soldPriceHint")
+                          ? t("claims.soldPriceHintParty")
                           : `${t("claims.lineTotal")}: ${formatMoney(suggested)}`}
                         {sold && sold.unitPrice > 0
                           ? ` · ${t("claims.lineTotal")}: ${formatMoney(suggested)}`

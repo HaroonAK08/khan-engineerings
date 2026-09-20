@@ -156,6 +156,7 @@ async function getOverview(query = {}) {
     salaryBounds.to
   );
 
+  const claimService = require("../claims/claim.service");
   const [
     customerRevenueCash,
     salesInvoiced,
@@ -165,6 +166,7 @@ async function getOverview(query = {}) {
     manualIncome,
     manualExpense,
     materialEstimate,
+    claimsPeriod,
   ] = await Promise.all([
     sumField(CustomerPayment, dateMatch("paymentDate", from, to), "amount"),
     sumField(Builty, dateMatch("builtyDate", from, to), "totalAmount"),
@@ -178,16 +180,23 @@ async function getOverview(query = {}) {
     sumField(FinanceEntry, { ...dateMatch("entryDate", from, to), type: "income" }, "amount"),
     sumField(FinanceEntry, { ...dateMatch("entryDate", from, to), type: "expense" }, "amount"),
     estimateMaterialCost(from, to),
+    claimService.summarizePeriod(from, to),
   ]);
+
+  const salesReturns = roundMoney(claimsPeriod.totalRefund || 0);
+  const salesGross = roundMoney(salesInvoiced.total);
+  const salesNet = roundMoney(salesGross - salesReturns);
 
   const income = {
     customerPayments: customerRevenueCash.total,
-    salesInvoiced: salesInvoiced.total,
+    salesInvoiced: salesNet,
+    salesGross,
+    salesReturns,
     otherIncome: manualIncome.total,
     /** Cash-basis income used for cash flow */
     cashIn: roundMoney(customerRevenueCash.total + manualIncome.total),
-    /** Accrual revenue for P&L */
-    revenue: roundMoney(salesInvoiced.total + manualIncome.total),
+    /** Accrual revenue for P&L (invoiced sales minus party claim credits) */
+    revenue: roundMoney(salesNet + manualIncome.total),
   };
 
   const expenses = {
@@ -227,6 +236,8 @@ async function getOverview(query = {}) {
     },
     profitAndLoss: {
       revenue: income.revenue,
+      salesGross,
+      salesReturns,
       cogs,
       grossProfit: roundMoney(income.revenue - cogs),
       otherExpenses: operatingOther,
@@ -351,6 +362,7 @@ async function getYearProgress(query = {}) {
     mfgExpenseRows,
     manualIncomeRows,
     manualExpenseRows,
+    claimRows,
   ] = await Promise.all([
     Builty.aggregate([
       { $match: dateMatch("builtyDate", from, to) },
@@ -492,6 +504,15 @@ async function getYearProgress(query = {}) {
         },
       },
     ]),
+    require("../claims/claim.model").aggregate([
+      { $match: { status: { $ne: "cancelled" }, ...dateMatch("claimDate", from, to) } },
+      {
+        $group: {
+          _id: { y: { $year: "$claimDate" }, m: { $month: "$claimDate" } },
+          refund: { $sum: "$refundAmount" },
+        },
+      },
+    ]),
   ]);
 
   const salesMap = mapMonthAgg(salesRows);
@@ -502,6 +523,7 @@ async function getYearProgress(query = {}) {
   const mfgMap = mapMonthAgg(mfgExpenseRows);
   const manualIncomeMap = mapMonthAgg(manualIncomeRows);
   const manualExpenseMap = mapMonthAgg(manualExpenseRows);
+  const claimMap = mapMonthAgg(claimRows);
 
   const months = [];
   const totals = emptyYearProgressMonth(year, 0);
@@ -521,7 +543,8 @@ async function getYearProgress(query = {}) {
     const manualIncome = manualIncomeMap.get(key)?.total || 0;
     const manualExpense = manualExpenseMap.get(key)?.total || 0;
 
-    const salesTotal = roundMoney((sales?.sales || 0) + manualIncome);
+    const claimRefund = roundMoney(claimMap.get(key)?.refund || 0);
+    const salesTotal = roundMoney((sales?.sales || 0) - claimRefund + manualIncome);
     const purchaseSpend = roundMoney(purchase?.purchaseSpend || 0);
     const expenses = roundMoney(purchaseSpend + mfgOps + manualExpense);
     const netProfit = roundMoney(salesTotal - expenses);
@@ -719,9 +742,13 @@ async function getProductProfitability(query = {}) {
   const costMap = Object.fromEntries(batchCosts.map((c) => [String(c._id), c.operatingCost]));
   const totalGood = production.reduce((s, p) => s + (p.goodUnits || 0), 0) || 1;
 
+  const claimService = require("../claims/claim.service");
+  const claimsPeriod = await claimService.summarizePeriod(from, to);
+
   const productIds = new Set([
     ...sales.map((s) => String(s._id)),
     ...production.map((p) => String(p._id)),
+    ...Object.keys(claimsPeriod.byProduct || {}),
   ]);
 
   const Product = require("../products/product.model");
@@ -734,9 +761,10 @@ async function getProductProfitability(query = {}) {
     .filter((id) => id && id !== "undefined" && id !== "null")
     .map((id) => {
       const sale = sales.find((s) => String(s._id) === id);
+      const claimRow = claimsPeriod.byProduct?.[id];
       const prod = prodMap[id];
-      const revenue = sale?.revenue || 0;
-      const unitsSold = sale?.unitsSold || 0;
+      const revenue = roundMoney((sale?.revenue || 0) - (claimRow?.refund || 0));
+      const unitsSold = (sale?.unitsSold || 0) - (claimRow?.units || 0);
       const goodUnits = prod?.goodUnits || 0;
       const operatingCost = costMap[id] || 0;
       const materialShare =
@@ -1151,6 +1179,22 @@ async function getProductionMargin(query = {}) {
         allBuiltyIds.add(String(id));
       }
     }
+    const claimService = require("../claims/claim.service");
+    const claimsPeriod = await claimService.summarizePeriod(from, to);
+    for (const [pid, claimRow] of Object.entries(claimsPeriod.byProduct || {})) {
+      const current = byProduct[pid] || { revenue: 0, units: 0, avgSellPerPiece: 0 };
+      const units = (current.units || 0) - (claimRow.units || 0);
+      const revenue = roundMoney((current.revenue || 0) - (claimRow.refund || 0));
+      byProduct[pid] = {
+        revenue,
+        units,
+        avgSellPerPiece: units > 0 ? revenue / units : 0,
+      };
+      const fam = claimRow.family === "drum" ? "drum" : "hub";
+      byFamily[fam].revenue = roundMoney(byFamily[fam].revenue - (claimRow.refund || 0));
+      byFamily[fam].units = byFamily[fam].units - (claimRow.units || 0);
+    }
+
     return {
       byProduct,
       hubSales: roundMoney(byFamily.hub.revenue),
@@ -1160,6 +1204,7 @@ async function getProductionMargin(query = {}) {
       totalSales: roundMoney(byFamily.hub.revenue + byFamily.drum.revenue),
       totalUnits: byFamily.hub.units + byFamily.drum.units,
       builtyCount: allBuiltyIds.size,
+      salesReturns: roundMoney(claimsPeriod.totalRefund || 0),
     };
   }
 

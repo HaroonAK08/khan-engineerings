@@ -109,6 +109,12 @@ async function getWithBalance(id) {
   const previousPending = roundMoney(previousPendingAgg[0]?.total || 0);
   const totalPaid = roundMoney(paidAgg[0]?.total || 0);
   const totalSales = roundMoney(builtyStats[0]?.totalSales || 0);
+  const Claim = require("../claims/claim.model");
+  const claimCreditAgg = await Claim.aggregate([
+    { $match: { customer: customer._id, status: { $ne: "cancelled" } } },
+    { $group: { _id: null, total: { $sum: "$refundAmount" } } },
+  ]);
+  const claimCredit = roundMoney(claimCreditAgg[0]?.total || 0);
   return {
     customer,
     balance,
@@ -117,6 +123,8 @@ async function getWithBalance(id) {
       orderCount: builtyStats[0]?.orderCount || 0,
       totalSales,
       totalPaid,
+      claimCredit,
+      creditHeld: roundMoney(Math.max(0, -balance)),
       totalDue: roundMoney(previousPending + totalSales),
     },
   };

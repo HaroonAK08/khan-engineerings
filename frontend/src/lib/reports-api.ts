@@ -331,6 +331,66 @@ export async function getPayablesReport(params?: { dateFrom?: string; dateTo?: s
   return data.report;
 }
 
+export type PositionMoneyBlock = { total: number; partyCount?: number; supplierCount?: number };
+
+export type PositionStockBlock = {
+  units?: number;
+  kg?: number;
+  rate?: number;
+  value?: number;
+  mfgValue?: number;
+  saleValue?: number;
+};
+
+export type PositionReport = {
+  period: { from: string; to: string; asOf: string };
+  totals: {
+    totalReceivable: number;
+    totalPayable: number;
+    creditHeld: number;
+    rawValue: number;
+    finishedMfg: number;
+    finishedSale: number;
+    assetsTotal: number;
+    assetsIncreased: number;
+  };
+  receivable: { total: number; partyCount: number };
+  payable: { total: number; supplierCount: number };
+  creditHeld: {
+    total: number;
+    partyCount: number;
+    parties: Array<{ partyId: string; name: string; amount: number }>;
+  };
+  inventory: {
+    scrap: { kg: number; rate: number; value: number };
+    daig: { kg: number; rate: number; value: number };
+    rawValue: number;
+    hub: { units: number; mfgValue: number; saleValue: number };
+    drum: { units: number; mfgValue: number; saleValue: number };
+    finished: { units: number; mfgValue: number; saleValue: number };
+  };
+  assets: {
+    total: number;
+    itemCount: number;
+    increased: number;
+    newItemCount: number;
+    added: Array<{
+      id: string;
+      name: string;
+      category: string;
+      quantity: number;
+      price: number;
+      value: number;
+      date: string;
+    }>;
+  };
+};
+
+export async function getPositionReport(params?: { dateFrom?: string; dateTo?: string }) {
+  const { data } = await api.get<{ report: PositionReport }>("/reports/position", { params });
+  return data.report;
+}
+
 export type ExportKind =
   | "sales"
   | "purchases"
@@ -342,9 +402,11 @@ export type ExportKind =
   | "monthly-receivables"
   | "received"
   | "paid"
-  | "payables";
+  | "payables"
+  | "position";
 
 export const COMBINED_REPORT_MODULES: Array<{ id: ExportKind; label: string }> = [
+  { id: "position", label: "Company position" },
   { id: "sales", label: "Sales" },
   { id: "purchases", label: "Purchases" },
   { id: "production", label: "Production" },

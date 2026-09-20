@@ -361,6 +361,56 @@ async function removeWarehouse(id) {
   return { ok: true };
 }
 
+async function avgSoldPrices() {
+  const Builty = require("../builty/builty.model");
+  const { withNetLineTotal } = require("../../utils/builty-discount");
+  const rows = await Builty.aggregate([
+    ...withNetLineTotal(),
+    { $match: { "items.quantity": { $gt: 0 } } },
+    {
+      $lookup: {
+        from: "products",
+        localField: "items.product",
+        foreignField: "_id",
+        as: "productDoc",
+      },
+    },
+    { $unwind: { path: "$productDoc", preserveNullAndEmptyArrays: true } },
+    {
+      $group: {
+        _id: {
+          productId: "$items.product",
+          family: { $ifNull: ["$productDoc.family", "hub"] },
+        },
+        revenue: { $sum: "$items.netLineTotal" },
+        units: { $sum: "$items.quantity" },
+      },
+    },
+  ]);
+
+  const byProduct = new Map();
+  const byFamily = { hub: { revenue: 0, units: 0 }, drum: { revenue: 0, units: 0 } };
+  for (const row of rows) {
+    const pid = row._id?.productId ? String(row._id.productId) : "";
+    const family = row._id?.family === "drum" ? "drum" : "hub";
+    const units = Number(row.units) || 0;
+    const revenue = Number(row.revenue) || 0;
+    if (pid && units > 0) {
+      byProduct.set(pid, revenue / units);
+    }
+    byFamily[family].revenue += revenue;
+    byFamily[family].units += units;
+  }
+
+  return {
+    byProduct,
+    familyAvg: {
+      hub: byFamily.hub.units > 0 ? byFamily.hub.revenue / byFamily.hub.units : 0,
+      drum: byFamily.drum.units > 0 ? byFamily.drum.revenue / byFamily.drum.units : 0,
+    },
+  };
+}
+
 async function getFinishedStock({ warehouse, category, q, asOf } = {}) {
   const mongoose = require("mongoose");
   const match = { itemType: "finished_good" };
@@ -433,24 +483,52 @@ async function getFinishedStock({ warehouse, category, q, asOf } = {}) {
     { $unwind: { path: "$sizeDoc", preserveNullAndEmptyArrays: true } },
   ]);
 
-  let rows = balances.map((row) => ({
-    productId: row.product,
-    name: row.productDoc?.name || "Unknown",
-    sku: row.productDoc?.sku || "",
-    family: row.productDoc?.family || null,
-    unitLabel: row.productDoc?.unitLabel || "pcs",
-    lowStockThreshold: row.productDoc?.lowStockThreshold || 0,
-    category: row.categoryDoc ? { id: row.categoryDoc._id, name: row.categoryDoc.name } : null,
-    size: row.sizeDoc
-      ? { id: row.sizeDoc._id, name: row.sizeDoc.name, code: row.sizeDoc.code }
-      : null,
-    warehouseId: row.warehouse,
-    warehouseName: row.warehouseDoc?.name || "—",
-    quantity: roundQty(row.quantity),
-    isLow:
-      (row.productDoc?.lowStockThreshold || 0) > 0 &&
-      row.quantity <= (row.productDoc?.lowStockThreshold || 0),
-  }));
+  const sold = await avgSoldPrices();
+  const roundMoney = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+  let rows = balances.map((row) => {
+    const qty = roundQty(row.quantity);
+    const standardCost = Number(row.productDoc?.standardCost) || 0;
+    const catalogSelling = Number(row.productDoc?.sellingPrice) || 0;
+    const pricePerKg = Number(row.productDoc?.pricePerKg) || 0;
+    const weightKg = Number(row.productDoc?.weightKg) || 0;
+    const catalogPrice =
+      catalogSelling > 0
+        ? catalogSelling
+        : weightKg > 0 && pricePerKg > 0
+          ? roundMoney(weightKg * pricePerKg)
+          : 0;
+    const pid = row.product ? String(row.product) : "";
+    const family = row.productDoc?.family === "drum" ? "drum" : "hub";
+    const productSold = pid ? sold.byProduct.get(pid) : 0;
+    const familySold = sold.familyAvg[family] || 0;
+    const salePrice = roundMoney(
+      productSold > 0 ? productSold : familySold > 0 ? familySold : catalogPrice
+    );
+    return {
+      productId: row.product,
+      name: row.productDoc?.name || "Unknown",
+      sku: row.productDoc?.sku || "",
+      family: row.productDoc?.family || null,
+      unitLabel: row.productDoc?.unitLabel || "pcs",
+      lowStockThreshold: row.productDoc?.lowStockThreshold || 0,
+      standardCost,
+      sellingPrice: salePrice,
+      weightKg,
+      mfgValue: roundMoney(qty * standardCost),
+      saleValue: roundMoney(qty * salePrice),
+      category: row.categoryDoc ? { id: row.categoryDoc._id, name: row.categoryDoc.name } : null,
+      size: row.sizeDoc
+        ? { id: row.sizeDoc._id, name: row.sizeDoc.name, code: row.sizeDoc.code }
+        : null,
+      warehouseId: row.warehouse,
+      warehouseName: row.warehouseDoc?.name || "—",
+      quantity: qty,
+      isLow:
+        (row.productDoc?.lowStockThreshold || 0) > 0 &&
+        row.quantity <= (row.productDoc?.lowStockThreshold || 0),
+    };
+  });
 
   if (category) {
     rows = rows.filter((r) => String(r.category?.id) === String(category));
@@ -465,12 +543,12 @@ async function getFinishedStock({ warehouse, category, q, asOf } = {}) {
   rows.sort((a, b) => a.name.localeCompare(b.name));
 
   const totalUnits = rows.reduce((s, r) => s + r.quantity, 0);
-  const hubUnits = rows
-    .filter((r) => r.family === "hub")
-    .reduce((s, r) => s + r.quantity, 0);
-  const drumUnits = rows
-    .filter((r) => r.family === "drum")
-    .reduce((s, r) => s + r.quantity, 0);
+  const hubRows = rows.filter((r) => r.family === "hub");
+  const drumRows = rows.filter((r) => r.family === "drum");
+  const hubUnits = hubRows.reduce((s, r) => s + r.quantity, 0);
+  const drumUnits = drumRows.reduce((s, r) => s + r.quantity, 0);
+  const sumField = (list, key) =>
+    Math.round(list.reduce((s, r) => s + (Number(r[key]) || 0), 0) * 100) / 100;
 
   return {
     items: rows,
@@ -478,6 +556,14 @@ async function getFinishedStock({ warehouse, category, q, asOf } = {}) {
     hubUnits: roundQty(hubUnits),
     drumUnits: roundQty(drumUnits),
     skuCount: rows.length,
+    values: {
+      hubMfg: sumField(hubRows, "mfgValue"),
+      hubSale: sumField(hubRows, "saleValue"),
+      drumMfg: sumField(drumRows, "mfgValue"),
+      drumSale: sumField(drumRows, "saleValue"),
+      finishedMfg: sumField(rows, "mfgValue"),
+      finishedSale: sumField(rows, "saleValue"),
+    },
   };
 }
 
@@ -717,6 +803,14 @@ async function getInventoryReport({ asOf, dateFrom, dateTo } = {}) {
       drumUnits: finished.drumUnits ?? 0,
       skuCount: finished.skuCount,
       items: finished.items,
+      values: finished.values || {
+        hubMfg: 0,
+        hubSale: 0,
+        drumMfg: 0,
+        drumSale: 0,
+        finishedMfg: 0,
+        finishedSale: 0,
+      },
     },
     producedThisPeriod: {
       totals: {

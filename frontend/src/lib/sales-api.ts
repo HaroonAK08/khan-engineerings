@@ -325,7 +325,14 @@ export async function getCustomer(id: string) {
     customer: Customer;
     balance: number;
     previousPending: number;
-    stats: { orderCount: number; totalSales: number; totalPaid: number; totalDue?: number };
+    stats: {
+      orderCount: number;
+      totalSales: number;
+      totalPaid: number;
+      totalDue?: number;
+      claimCredit?: number;
+      creditHeld?: number;
+    };
   }>(`/customers/${id}`);
   return data;
 }
@@ -487,7 +494,14 @@ export async function recordCustomerPayment(
     payment: CustomerPayment;
     balance: number;
     previousPending: number;
-    stats: { orderCount: number; totalSales: number; totalPaid: number; totalDue?: number };
+    stats: {
+      orderCount: number;
+      totalSales: number;
+      totalPaid: number;
+      totalDue?: number;
+      claimCredit?: number;
+      creditHeld?: number;
+    };
     discountApplied?: number;
   }>(`/customers/${id}/payments`, body);
   return data;

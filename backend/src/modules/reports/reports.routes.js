@@ -13,6 +13,7 @@ router.get("/monthly-receivables", controller.monthlyReceivables);
 router.get("/received", controller.received);
 router.get("/paid", controller.paid);
 router.get("/payables", controller.payables);
+router.get("/position", controller.position);
 router.get("/yearly", controller.yearly);
 
 router.get("/statements/customers/:id", controller.customerStatement);
@@ -31,6 +32,7 @@ router.get("/export/monthly-receivables", controller.exportMonthlyReceivables);
 router.get("/export/received", controller.exportReceived);
 router.get("/export/paid", controller.exportPaid);
 router.get("/export/payables", controller.exportPayables);
+router.get("/export/position", controller.exportPosition);
 router.get("/export/yearly", controller.exportYearlyBill);
 router.get("/export/statements/customers/:id", controller.exportCustomerStatement);
 router.get("/export/statements/suppliers/:id", controller.exportSupplierStatement);
