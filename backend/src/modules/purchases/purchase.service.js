@@ -7,6 +7,7 @@ const {
   wantsConfirmDuplicate,
   sameDayDuplicateError,
 } = require("../../utils/sameDay");
+const { allocateThisMonthFirst } = require("../../utils/allocate-payments");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -34,6 +35,10 @@ function assertNonNegative(value, label) {
 
 function roundMoney(n) {
   return Math.round(n * 100) / 100;
+}
+
+function roundKg(n) {
+  return Math.round((Number(n) || 0) * 1000) / 1000;
 }
 
 /** Auto invoice when supplier bill number not provided: PUR-YYYYMMDD-001 */
@@ -512,6 +517,7 @@ async function getReport({ dateFrom, dateTo, supplier, materialType } = {}) {
       totalKg: Math.round((totals.totalKg || 0) * 1000) / 1000,
       totalSpend: roundMoney(totals.totalSpend || 0),
       totalPaid: paid.total,
+      paidKg: paid.totalKg,
       purchaseCount: totals.purchaseCount || 0,
       avgRate: roundMoney(totals.avgRate || 0),
       supplierCount: byParty.length,
@@ -526,6 +532,7 @@ async function getReport({ dateFrom, dateTo, supplier, materialType } = {}) {
         totalKg: Math.round((row?.totalKg || 0) * 1000) / 1000,
         totalSpend: roundMoney(row?.totalSpend || 0),
         totalPaid: materialType === "daig" ? paid.daig : paid.scrap,
+        paidKg: materialType === "daig" ? paid.daigKg : paid.scrapKg,
         purchaseCount: row?.purchaseCount || 0,
         avgRate: roundMoney(row?.avgRate || 0),
       };
@@ -551,60 +558,128 @@ async function paidInPeriodByMaterial({ dateFrom, dateTo, supplier } = {}) {
     }
   }
 
-  const payments = await LedgerEntry.find(match)
-    .populate("purchase", "materialType supplier")
+  const periodPayments = await LedgerEntry.find(match)
+    .select("supplier amount")
     .lean();
+  const empty = {
+    scrap: 0,
+    daig: 0,
+    other: 0,
+    total: 0,
+    scrapKg: 0,
+    daigKg: 0,
+    totalKg: 0,
+  };
+  if (!periodPayments.length) return empty;
 
-  const paid = { scrap: 0, daig: 0, other: 0 };
-  const unlinkedIds = [
-    ...new Set(
-      payments
-        .filter((p) => !p.purchase)
-        .map((p) => String(p.supplier || ""))
-        .filter(Boolean)
-    ),
+  const periodIds = new Set(periodPayments.map((p) => String(p._id)));
+  const supplierIds = [
+    ...new Set(periodPayments.map((p) => String(p.supplier || "")).filter(Boolean)),
   ];
-  const mixBySupplier = new Map();
-  if (unlinkedIds.length) {
-    const mixes = await Purchase.aggregate([
-      {
-        $match: {
-          supplier: { $in: unlinkedIds.map((id) => new mongoose.Types.ObjectId(id)) },
-        },
-      },
-      {
-        $group: {
-          _id: { supplier: "$supplier", materialType: "$materialType" },
-          spend: { $sum: { $add: ["$totalAmount", { $ifNull: ["$freightAmount", 0] }] } },
-        },
-      },
-    ]);
-    for (const row of mixes) {
-      const sid = String(row._id.supplier);
-      const cur = mixBySupplier.get(sid) || { scrap: 0, daig: 0 };
-      const mt = row._id.materialType === "daig" ? "daig" : "scrap";
-      cur[mt] += row.spend || 0;
-      mixBySupplier.set(sid, cur);
-    }
+  const supplierOids = supplierIds.map((id) => new mongoose.Types.ObjectId(id));
+
+  const [purchases, ledger] = await Promise.all([
+    Purchase.find({ supplier: { $in: supplierOids } })
+      .select("supplier materialType quantityKg totalAmount freightAmount purchaseDate")
+      .lean(),
+    LedgerEntry.find({
+      supplier: { $in: supplierOids },
+      type: { $in: ["payment", "adjustment"] },
+    })
+      .select("supplier type amount signedAmount entryDate")
+      .lean(),
+  ]);
+
+  const purchasesBySupplier = new Map();
+  for (const purchase of purchases) {
+    const sid = String(purchase.supplier);
+    const list = purchasesBySupplier.get(sid) || [];
+    list.push(purchase);
+    purchasesBySupplier.set(sid, list);
+  }
+  const ledgerBySupplier = new Map();
+  for (const entry of ledger) {
+    const sid = String(entry.supplier);
+    const list = ledgerBySupplier.get(sid) || [];
+    list.push(entry);
+    ledgerBySupplier.set(sid, list);
   }
 
-  for (const p of payments) {
-    const amount = roundMoney(p.amount || 0);
-    const mt = p.purchase?.materialType;
-    if (mt === "daig" || mt === "scrap") {
-      paid[mt] += amount;
-      continue;
+  const paid = { scrap: 0, daig: 0, other: 0 };
+  const paidKg = { scrap: 0, daig: 0 };
+
+  for (const sid of supplierIds) {
+    const supplierPurchases = purchasesBySupplier.get(sid) || [];
+    const entries = ledgerBySupplier.get(sid) || [];
+    const credits = [];
+    const adjustments = [];
+    for (const entry of entries) {
+      if (entry.type === "payment") {
+        credits.push({
+          id: String(entry._id),
+          date: entry.entryDate,
+          amount: entry.amount || 0,
+        });
+      } else if ((entry.signedAmount || 0) < 0) {
+        credits.push({
+          id: String(entry._id),
+          date: entry.entryDate,
+          amount: Math.abs(entry.signedAmount || 0),
+        });
+      } else if ((entry.signedAmount || 0) > 0) {
+        adjustments.push(entry);
+      }
     }
-    const mix = mixBySupplier.get(String(p.supplier || ""));
-    const scrap = mix?.scrap || 0;
-    const daig = mix?.daig || 0;
-    const mixTotal = scrap + daig;
-    if (mixTotal <= 0) {
-      paid.other += amount;
-      continue;
+
+    const purchaseById = new Map(
+      supplierPurchases.map((purchase) => [String(purchase._id), purchase])
+    );
+    const allocated = allocateThisMonthFirst(
+      [
+        ...supplierPurchases.map((purchase) => ({
+          id: String(purchase._id),
+          date: purchase.purchaseDate,
+          amount: (purchase.totalAmount || 0) + (purchase.freightAmount || 0),
+          kind: "invoice",
+        })),
+        ...adjustments.map((entry) => ({
+          id: String(entry._id),
+          date: entry.entryDate,
+          amount: entry.signedAmount || entry.amount || 0,
+          kind: "adjustment",
+        })),
+      ],
+      credits
+    );
+
+    const appliedByPayment = new Map();
+    for (const app of allocated.applications || []) {
+      if (!periodIds.has(app.paymentId)) continue;
+      appliedByPayment.set(
+        app.paymentId,
+        roundMoney((appliedByPayment.get(app.paymentId) || 0) + app.amount)
+      );
+      const purchase = purchaseById.get(app.chargeId);
+      if (!purchase) {
+        paid.other += app.amount;
+        continue;
+      }
+      const mt = purchase.materialType === "daig" ? "daig" : "scrap";
+      paid[mt] += app.amount;
+      const qty = Number(purchase.quantityKg) || 0;
+      const payable = (purchase.totalAmount || 0) + (purchase.freightAmount || 0);
+      if (qty > 0 && payable > 0) {
+        paidKg[mt] += qty * (app.amount / payable);
+      }
     }
-    paid.scrap += amount * (scrap / mixTotal);
-    paid.daig += amount * (daig / mixTotal);
+
+    for (const payment of periodPayments) {
+      if (String(payment.supplier || "") !== sid) continue;
+      const leftover = roundMoney(
+        (payment.amount || 0) - (appliedByPayment.get(String(payment._id)) || 0)
+      );
+      if (leftover > 0.009) paid.other += leftover;
+    }
   }
 
   return {
@@ -612,6 +687,9 @@ async function paidInPeriodByMaterial({ dateFrom, dateTo, supplier } = {}) {
     daig: roundMoney(paid.daig),
     other: roundMoney(paid.other),
     total: roundMoney(paid.scrap + paid.daig + paid.other),
+    scrapKg: roundKg(paidKg.scrap),
+    daigKg: roundKg(paidKg.daig),
+    totalKg: roundKg(paidKg.scrap + paidKg.daig),
   };
 }
 

@@ -105,7 +105,7 @@ export type Builty = {
   billNo?: string;
   builtyDate: string;
   customer: Customer | string;
-  warehouse?: string | null;
+  warehouse?: string | { _id: string; name: string; code?: string } | null;
   items: BuiltyItem[];
   discountAmount?: number;
   totalAmount: number;
@@ -589,6 +589,7 @@ export async function createBuilty(body: {
   billNo?: string;
   customer: string;
   builtyDate: string;
+  warehouse?: string;
   items: BuiltyLineInput[];
   discountAmount?: number;
   amountPaid?: number;
@@ -607,6 +608,7 @@ export async function updateBuilty(
     billNo: string;
     customer: string;
     builtyDate: string;
+    warehouse: string;
     notes: string;
     items: BuiltyLineInput[];
     discountAmount: number;

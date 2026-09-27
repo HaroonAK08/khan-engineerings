@@ -3,7 +3,8 @@ import { clearAuthToken, getAuthToken } from "@/lib/auth-token";
 import { useAuthStore } from "@/stores/auth-store";
 
 export const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000/api",
+  // Same-origin /api is proxied to the backend by Next.js (avoids port clashes like XpertPPC on :5000).
+  baseURL: "/api",
   withCredentials: true,
   timeout: 30_000,
 });

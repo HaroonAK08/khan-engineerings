@@ -23,6 +23,7 @@ import {
   Landmark,
   Mic,
   History,
+  Archive,
 } from "lucide-react";
 import type { MessageKey } from "@/lib/i18n/messages";
 
@@ -51,6 +52,30 @@ export const EXPENSES_CHILDREN: NavChild[] = [
 export const PARTY_CHILDREN: NavChild[] = [
   { labelKey: "nav.party.parties", href: "/dashboard/party", icon: Users, exact: true },
   { labelKey: "nav.party.groups", href: "/dashboard/party/groups", icon: FolderKanban },
+];
+
+export const INVENTORY_CHILDREN: NavChild[] = [
+  {
+    labelKey: "inventory.purchases",
+    href: "/dashboard/inventory",
+    icon: Boxes,
+    exact: true,
+  },
+  {
+    labelKey: "inventory.finished",
+    href: "/dashboard/inventory/finished",
+    icon: Package,
+  },
+  {
+    labelKey: "nav.oldInventory",
+    href: "/dashboard/old-inventory",
+    icon: Archive,
+  },
+  {
+    labelKey: "inventory.reports",
+    href: "/dashboard/inventory/reports",
+    icon: BarChart3,
+  },
 ];
 
 export const FINANCE_CHILDREN: NavChild[] = [
@@ -91,7 +116,13 @@ export const NAV_ITEMS: NavItem[] = [
     children: FINANCE_CHILDREN,
   },
   { labelKey: "nav.voice", href: "/dashboard/today", icon: Mic, ready: true },
-  { labelKey: "nav.inventory", href: "/dashboard/inventory", icon: Boxes, ready: true },
+  {
+    labelKey: "nav.inventory",
+    href: "/dashboard/inventory",
+    icon: Boxes,
+    ready: true,
+    children: INVENTORY_CHILDREN,
+  },
   { labelKey: "nav.products", href: "/dashboard/products", icon: Package, ready: true },
   { labelKey: "nav.production", href: "/dashboard/production", icon: Factory, ready: true },
   {

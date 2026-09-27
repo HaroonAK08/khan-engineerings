@@ -201,6 +201,28 @@ export async function listWarehouses() {
   return data.warehouses;
 }
 
+export function pickNewWarehouse(warehouses: CatalogItem[]) {
+  return (
+    warehouses.find((w) => w.isDefault && w.code !== "OLD") ||
+    warehouses.find((w) => w.code === "MAIN") ||
+    warehouses.find((w) => w.code !== "OLD") ||
+    null
+  );
+}
+
+export function pickOldWarehouse(warehouses: CatalogItem[]) {
+  return warehouses.find((w) => w.code === "OLD") || null;
+}
+
+export async function resolveStockWarehouses() {
+  const warehouses = await listWarehouses();
+  return {
+    warehouses,
+    newWarehouse: pickNewWarehouse(warehouses),
+    oldWarehouse: pickOldWarehouse(warehouses),
+  };
+}
+
 export async function createWarehouse(body: Partial<CatalogItem>) {
   const { data } = await api.post<{ warehouse: CatalogItem }>("/inventory/warehouses", body);
   return data.warehouse;

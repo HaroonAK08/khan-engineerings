@@ -424,7 +424,7 @@ export default function SettingsPage() {
             <div className="border border-border/60 p-3">
               <dt className="text-muted-foreground">{t("settings.api")}</dt>
               <dd className="mt-1 break-all text-foreground">
-                {process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000/api"}
+                {process.env.NEXT_PUBLIC_API_URL || "/api"}
               </dd>
             </div>
             <div className="border border-border/60 p-3">

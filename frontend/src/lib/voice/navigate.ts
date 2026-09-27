@@ -16,6 +16,11 @@ export const VOICE_ROUTES: VoiceRoute[] = [
     label: "Inventory",
     words: ["inventory", "stock", "stocks"],
   },
+  {
+    href: "/dashboard/old-inventory",
+    label: "Old Inventory",
+    words: ["old inventory", "old stock", "legacy stock"],
+  },
   { href: "/dashboard/products", label: "Products", words: ["products", "product list"] },
   {
     href: "/dashboard/production",

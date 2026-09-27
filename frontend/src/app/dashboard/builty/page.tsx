@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { History, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
+import { useTallyChecks } from "@/hooks/use-tally-checks";
 import { thisMonthRange } from "@/lib/date-range";
 import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
 import {
@@ -15,6 +16,7 @@ import {
   paymentStatusLabel,
   type BuiltyRow,
 } from "@/lib/sales-api";
+import { TallyCell, TallyHead } from "@/components/tally-check";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -33,6 +35,7 @@ export default function BuiltyPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const month = useMemo(() => thisMonthRange(), []);
+  const { isChecked, setCheckedState } = useTallyChecks("builty-list");
   const [rows, setRows] = useState<BuiltyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState(() => searchParams.get("q") || "");
@@ -142,6 +145,7 @@ export default function BuiltyPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TallyHead label={t("common.tally")} />
                   <TableHead>{t("builty.col.date")}</TableHead>
                   <TableHead>{t("builty.col.no")}</TableHead>
                   <TableHead>{t("builty.col.billNo")}</TableHead>
@@ -170,6 +174,11 @@ export default function BuiltyPage() {
                       }
                     }}
                   >
+                    <TallyCell
+                      checked={isChecked(row._id)}
+                      onChange={(next) => setCheckedState(row._id, next)}
+                      label={t("common.tally")}
+                    />
                     <TableCell className="font-data text-xs whitespace-nowrap">
                       {formatDate(row.builtyDate)}
                     </TableCell>

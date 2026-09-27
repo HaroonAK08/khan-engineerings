@@ -49,6 +49,7 @@ function allocateThisMonthFirst(chargesInput, paymentsInput) {
     .sort(byDateThenId);
 
   charges.sort(byDateThenId);
+  const applications = [];
 
   for (const payment of payments) {
     let left = payment.amount;
@@ -67,9 +68,15 @@ function allocateThisMonthFirst(chargesInput, paymentsInput) {
       c.paid = roundMoney(c.paid + take);
       c.remaining = roundMoney(c.remaining - take);
       left = roundMoney(left - take);
+      applications.push({
+        paymentId: payment.id,
+        chargeId: c.id,
+        amount: roundMoney(take),
+      });
     }
   }
 
+  charges.applications = applications;
   return charges;
 }
 

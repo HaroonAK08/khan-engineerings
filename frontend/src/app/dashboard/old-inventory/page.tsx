@@ -1,19 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
-import Link from "next/link";
 import { toast } from "sonner";
-import { History, Loader2, Pencil, Plus } from "lucide-react";
-import { InventorySubnav } from "@/components/layout/inventory-subnav";
+import { Loader2, Pencil, Plus } from "lucide-react";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { ProductSearchSelect } from "@/components/products/product-search-select";
-import { apiError, formatMoney } from "@/lib/materials-api";
+import { apiError } from "@/lib/materials-api";
 import { todayInput } from "@/lib/date-range";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 import {
   createAdjustment,
   getFinishedStock,
-  pickNewWarehouse,
+  pickOldWarehouse,
   resolveStockWarehouses,
   type FinishedStockItem,
 } from "@/lib/inventory-api";
@@ -21,7 +19,7 @@ import { listProducts } from "@/lib/production-api";
 import type { Product } from "@/types/production";
 import { useI18n } from "@/hooks/use-i18n";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
   Dialog,
@@ -48,8 +46,8 @@ type FamilyFilter = "all" | "hub" | "drum";
 type StockDialogMode = "add" | "edit" | null;
 type DateMode = "range" | "asOf";
 
-const AS_OF_STORAGE_KEY = "ke-finished-as-of";
-const MODE_STORAGE_KEY = "ke-finished-date-mode";
+const AS_OF_STORAGE_KEY = "ke-old-inv-as-of";
+const MODE_STORAGE_KEY = "ke-old-inv-date-mode";
 
 function readStoredAsOf() {
   if (typeof window === "undefined") return todayInput();
@@ -73,7 +71,7 @@ function readStoredMode(): DateMode {
   return "range";
 }
 
-export default function FinishedGoodsPage() {
+export default function OldInventoryPage() {
   const { t } = useI18n();
   const asOfId = useId();
   const { dateTo, hydrated: rangeHydrated } = usePersistedDateRange();
@@ -82,7 +80,7 @@ export default function FinishedGoodsPage() {
   const [hubUnits, setHubUnits] = useState(0);
   const [drumUnits, setDrumUnits] = useState(0);
   const [products, setProducts] = useState<Product[]>([]);
-  const [newWarehouseId, setNewWarehouseId] = useState("");
+  const [oldWarehouseId, setOldWarehouseId] = useState("");
   const [q, setQ] = useState("");
   const [familyFilter, setFamilyFilter] = useState<FamilyFilter>("all");
   const [mode, setModeState] = useState<DateMode>("range");
@@ -127,12 +125,22 @@ export default function FinishedGoodsPage() {
     if (!hydrated) return;
     setLoading(true);
     try {
-      const { warehouses, newWarehouse } = await resolveStockWarehouses();
-      const mainId = pickNewWarehouse(warehouses)?._id || newWarehouse?._id || "";
-      setNewWarehouseId(mainId);
-      const params: { q?: string; asOf?: string; warehouse?: string } = { asOf: stockAsOf };
+      const { warehouses, oldWarehouse } = await resolveStockWarehouses();
+      const oldId = pickOldWarehouse(warehouses)?._id || oldWarehouse?._id || "";
+      setOldWarehouseId(oldId);
+      if (!oldId) {
+        setItems([]);
+        setTotalUnits(0);
+        setHubUnits(0);
+        setDrumUnits(0);
+        setProducts(await listProducts({ active: "true" }));
+        return;
+      }
+      const params: { q?: string; asOf?: string; warehouse?: string } = {
+        asOf: stockAsOf,
+        warehouse: oldId,
+      };
       if (q.trim()) params.q = q.trim();
-      if (mainId) params.warehouse = mainId;
       const [stock, productList] = await Promise.all([
         getFinishedStock(params),
         listProducts({ active: "true" }),
@@ -143,7 +151,7 @@ export default function FinishedGoodsPage() {
       setDrumUnits(stock.drumUnits ?? 0);
       setProducts(productList);
     } catch (err) {
-      toast.error(apiError(err, t("finished.loadFailed")));
+      toast.error(apiError(err, t("oldInv.loadFailed")));
     } finally {
       setLoading(false);
     }
@@ -204,18 +212,6 @@ export default function FinishedGoodsPage() {
     return "—";
   }
 
-  const selectedProduct = useMemo(
-    () => products.find((p) => p._id === productId) || null,
-    [products, productId]
-  );
-
-  const stockProduct = useMemo(() => {
-    if (dialogMode === "edit" && editing) {
-      return products.find((p) => p._id === editing.productId) || null;
-    }
-    return selectedProduct;
-  }, [dialogMode, editing, products, selectedProduct]);
-
   function openAdd() {
     setEditing(null);
     setProductId("");
@@ -240,6 +236,10 @@ export default function FinishedGoodsPage() {
   }
 
   async function saveStock() {
+    if (!oldWarehouseId) {
+      toast.error(t("oldInv.loadFailed"));
+      return;
+    }
     if (dialogMode === "add" && !productId) {
       toast.error(t("finished.productRequired"));
       return;
@@ -259,11 +259,11 @@ export default function FinishedGoodsPage() {
           direction: "in",
           quantity: qty,
           product: productId,
-          warehouse: newWarehouseId || undefined,
+          warehouse: oldWarehouseId,
           movementDate: todayInput(),
-          notes: notes.trim() || "Finished goods stock add (no material deduction)",
+          notes: notes.trim() || "Old inventory stock add",
         });
-        toast.success(t("finished.added"));
+        toast.success(t("oldInv.added"));
       } else if (editing) {
         const current = editing.quantity;
         const delta = qty - current;
@@ -277,17 +277,17 @@ export default function FinishedGoodsPage() {
           direction: delta > 0 ? "in" : "out",
           quantity: Math.abs(delta),
           product: editing.productId,
-          warehouse: editing.warehouseId || newWarehouseId || undefined,
+          warehouse: editing.warehouseId || oldWarehouseId,
           movementDate: todayInput(),
-          notes: notes.trim() || "Finished goods stock edit (no material deduction)",
+          notes: notes.trim() || "Old inventory stock edit",
         });
-        toast.success(t("finished.updated"));
+        toast.success(t("oldInv.updated"));
       }
       setDialogMode(null);
       setEditing(null);
       await load();
     } catch (err) {
-      toast.error(apiError(err, t("finished.saveFailed")));
+      toast.error(apiError(err, t("oldInv.saveFailed")));
     } finally {
       setSaving(false);
     }
@@ -295,33 +295,20 @@ export default function FinishedGoodsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <InventorySubnav />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
-            {t("finished.eyebrow")}
+            {t("oldInv.eyebrow")}
           </p>
-          <h1 className="text-nameplate text-xl">{t("finished.title")}</h1>
+          <h1 className="text-nameplate text-xl">{t("oldInv.title")}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {t("finished.summary", { units: visibleUnits, lines: filteredItems.length })}
+            {t("oldInv.summary", { units: visibleUnits, lines: filteredItems.length })}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href="/dashboard/inventory/movements"
-            className={buttonVariants({
-              variant: "outline",
-              className: "gap-2",
-            })}
-          >
-            <History className="size-4" />
-            Finished Goods History
-          </Link>
-          <Button type="button" className="gap-2" onClick={openAdd}>
-            <Plus className="size-4" />
-            {t("finished.addStock")}
-          </Button>
-        </div>
+        <Button type="button" className="gap-2" onClick={openAdd}>
+          <Plus className="size-4" />
+          {t("oldInv.addStock")}
+        </Button>
       </div>
 
       <div className="flex flex-col gap-3">
@@ -425,7 +412,7 @@ export default function FinishedGoodsPage() {
             </div>
           ) : filteredItems.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">
-              {t("finished.empty")}
+              {t("oldInv.empty")}
             </p>
           ) : (
             <Table>
@@ -501,10 +488,10 @@ export default function FinishedGoodsPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-nameplate text-base">
-              {dialogMode === "edit" ? t("finished.editTitle") : t("finished.addTitle")}
+              {dialogMode === "edit" ? t("oldInv.editTitle") : t("oldInv.addTitle")}
             </DialogTitle>
             <DialogDescription>
-              {dialogMode === "edit" ? t("finished.editDesc") : t("finished.addDesc")}
+              {dialogMode === "edit" ? t("oldInv.editDesc") : t("oldInv.addDesc")}
             </DialogDescription>
           </DialogHeader>
 
@@ -533,11 +520,11 @@ export default function FinishedGoodsPage() {
             )}
 
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="finished-qty">
+              <Label htmlFor="old-inv-qty">
                 {dialogMode === "edit" ? t("finished.newQty") : t("finished.qtyToAdd")}
               </Label>
               <Input
-                id="finished-qty"
+                id="old-inv-qty"
                 type="number"
                 min={dialogMode === "edit" ? 0 : 1}
                 step={1}
@@ -546,20 +533,10 @@ export default function FinishedGoodsPage() {
               />
             </div>
 
-            {stockProduct ? (
-              <p className="text-[11px] text-muted-foreground">
-                {Number(stockProduct.standardCost) > 0
-                  ? t("finished.currentMakeCost", {
-                      cost: formatMoney(Number(stockProduct.standardCost) || 0),
-                    })
-                  : t("finished.currentMakeCostAuto")}
-              </p>
-            ) : null}
-
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="finished-notes">{t("finished.notes")}</Label>
+              <Label htmlFor="old-inv-notes">{t("finished.notes")}</Label>
               <Input
-                id="finished-notes"
+                id="old-inv-notes"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
               />

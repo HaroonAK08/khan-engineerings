@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/table";
 import { useI18n, type MessageKey } from "@/hooks/use-i18n";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
+import { useTallyChecks } from "@/hooks/use-tally-checks";
 import {
   isAlwaysCommonExpenseCategory,
   matchesExpenseScope,
@@ -46,6 +47,7 @@ import {
   ExpenseScopeChips,
   scopeChipClass,
 } from "@/components/expenses/expense-scope-chips";
+import { TallyCell, TallyHead } from "@/components/tally-check";
 import type { ExpenseScope } from "@/lib/workers-api";
 import { cn } from "@/lib/utils";
 
@@ -88,6 +90,10 @@ export function ExpenseCalendar({
     if (isOptionList(categories)) return categories.map((c) => c.id);
     return categories as string[];
   }, [categories]);
+
+  const { isChecked, setCheckedState } = useTallyChecks(
+    `expense-history:${categoryIds.slice().sort().join(",") || "all"}`
+  );
 
   const categorySet = useMemo(() => new Set(categoryIds), [categoryIds]);
   const multiCategory = categoryIds.length > 1;
@@ -428,6 +434,7 @@ export function ExpenseCalendar({
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TallyHead label={t("common.tally")} />
                   <TableHead>{t("common.date")}</TableHead>
                   <TableHead>{t("exp.colDetail")}</TableHead>
                   {trackUnits ? (
@@ -451,6 +458,11 @@ export function ExpenseCalendar({
                       }
                     }}
                   >
+                    <TallyCell
+                      checked={isChecked(e._id)}
+                      onChange={(next) => setCheckedState(e._id, next)}
+                      label={t("common.tally")}
+                    />
                     <TableCell className="font-data whitespace-nowrap">
                       {formatDate(e.expenseDate)}
                     </TableCell>
@@ -515,7 +527,7 @@ export function ExpenseCalendar({
               </TableBody>
               <TableFooter>
                 <TableRow>
-                  <TableCell colSpan={trackUnits ? 3 : 2} className="font-semibold">
+                  <TableCell colSpan={trackUnits ? 4 : 3} className="font-semibold">
                     {t("exp.totalSpent")}
                   </TableCell>
                   <TableCell className="font-data text-end text-base font-semibold whitespace-nowrap">

@@ -6,12 +6,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { History, Loader2, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
+import { useTallyChecks } from "@/hooks/use-tally-checks";
 import { todayInput, calendarDay } from "@/lib/date-range";
 import { api } from "@/lib/api";
 import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
 import { listProducts } from "@/lib/production-api";
 import { listCustomers, getBuilty, type Customer, type Builty } from "@/lib/sales-api";
 import type { Product } from "@/types/production";
+import { TallyCheck } from "@/components/tally-check";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -120,6 +122,7 @@ function lineSuggestedTotal(line: Line) {
 
 export default function ClaimsPage() {
   const { t } = useI18n();
+  const { isChecked, setCheckedState } = useTallyChecks("claims-history");
   const router = useRouter();
   const searchParams = useSearchParams();
   const [claims, setClaims] = useState<Claim[]>([]);
@@ -957,6 +960,13 @@ export default function ClaimsPage() {
             <div className="divide-y divide-border">
               {claims.map((c) => (
                 <div key={c._id} className="flex items-start gap-2 py-3">
+                  <div className="pt-1">
+                    <TallyCheck
+                      checked={isChecked(c._id)}
+                      onChange={(next) => setCheckedState(c._id, next)}
+                      label={t("common.tally")}
+                    />
+                  </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                       <span className="font-data text-xs">{c.claimNo}</span>

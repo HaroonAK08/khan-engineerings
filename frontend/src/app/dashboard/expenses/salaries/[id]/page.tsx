@@ -43,6 +43,8 @@ import {
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
+import { useTallyChecks } from "@/hooks/use-tally-checks";
+import { TallyCell, TallyHead } from "@/components/tally-check";
 
 function displayWorkerName(
   w: { name: string; nameUr?: string } | null | undefined,
@@ -68,6 +70,7 @@ export default function WorkerSalaryLedgerPage() {
   const params = useParams();
   const id = String(params.id);
   const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
+  const { isChecked, setCheckedState } = useTallyChecks(`salaries-worker:${id}`);
 
   const scopeLabels = {
     hub: t("exp.scopeHub"),
@@ -317,6 +320,7 @@ export default function WorkerSalaryLedgerPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TallyHead label={t("common.tally")} />
                   <TableHead>{t("sal.colTarikh")}</TableHead>
                   <TableHead>{t("sal.colWorkerName")}</TableHead>
                   <TableHead className="text-end">{t("sal.colAmountPaid")}</TableHead>
@@ -326,6 +330,11 @@ export default function WorkerSalaryLedgerPage() {
               <TableBody>
                 {sortedPayments.map((p) => (
                   <TableRow key={p._id}>
+                    <TallyCell
+                      checked={isChecked(p._id)}
+                      onChange={(next) => setCheckedState(p._id, next)}
+                      label={t("common.tally")}
+                    />
                     <TableCell className="font-data whitespace-nowrap">
                       {formatDate(p.expenseDate)}
                     </TableCell>
@@ -387,7 +396,7 @@ export default function WorkerSalaryLedgerPage() {
               </TableBody>
               <TableFooter>
                 <TableRow>
-                  <TableCell colSpan={2} className="font-semibold">
+                  <TableCell colSpan={3} className="font-semibold">
                     {t("sal.ledgerTotal")}
                   </TableCell>
                   <TableCell className="font-data text-end text-base font-semibold whitespace-nowrap">

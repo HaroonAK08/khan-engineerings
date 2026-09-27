@@ -62,6 +62,7 @@ function materialTotals(report: PurchaseReport | null, type: "scrap" | "daig") {
     totalKg: row?.totalKg ?? 0,
     totalSpend: row?.totalSpend ?? 0,
     totalPaid: row?.totalPaid ?? 0,
+    paidKg: row?.paidKg ?? 0,
     purchaseCount: row?.purchaseCount ?? 0,
   };
 }
@@ -413,27 +414,27 @@ export default function InventoryPage() {
             {[
               {
                 label: t("purchases.scrapSpend"),
-                value: purchaseReport ? formatMoney(scrapPurchased.totalPaid) : "—",
-                detail: purchaseReport ? `${formatKg(scrapPurchased.totalKg)} kg` : "—",
-                hint: t("purchases.scrapHubLabel"),
+                value: purchaseReport ? `${formatKg(scrapPurchased.paidKg)} kg` : "—",
+                detail: purchaseReport ? formatMoney(scrapPurchased.totalPaid) : "—",
+                hint: t("purchases.paidKgHint"),
                 accent: "bg-chart-1",
               },
               {
                 label: t("purchases.daigSpend"),
-                value: purchaseReport ? formatMoney(daigPurchased.totalPaid) : "—",
-                detail: purchaseReport ? `${formatKg(daigPurchased.totalKg)} kg` : "—",
-                hint: t("purchases.daigDrumLabel"),
+                value: purchaseReport ? `${formatKg(daigPurchased.paidKg)} kg` : "—",
+                detail: purchaseReport ? formatMoney(daigPurchased.totalPaid) : "—",
+                hint: t("purchases.paidKgHint"),
                 accent: "bg-chart-2",
               },
               {
                 label: t("purchases.totalSpend"),
                 value: purchaseReport
-                  ? formatMoney(purchaseReport.totals.totalPaid || 0)
+                  ? `${formatKg(purchaseReport.totals.paidKg || 0)} kg`
                   : "—",
                 detail: purchaseReport
-                  ? `${formatKg(purchaseReport.totals.totalKg)} kg`
+                  ? formatMoney(purchaseReport.totals.totalPaid || 0)
                   : "—",
-                hint: t("purchases.actuallyPaid"),
+                hint: t("purchases.paidKgHint"),
                 accent: "bg-chart-3",
               },
             ].map((stat) => (

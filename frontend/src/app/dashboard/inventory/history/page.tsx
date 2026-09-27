@@ -17,6 +17,8 @@ import {
 } from "@/lib/materials-api";
 import type { Purchase, Supplier } from "@/types/materials";
 import { toDateInput } from "@/lib/date-range";
+import { useI18n } from "@/hooks/use-i18n";
+import { useTallyChecks } from "@/hooks/use-tally-checks";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -28,6 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { TallyCell, TallyHead } from "@/components/tally-check";
 import {
   Table,
   TableBody,
@@ -37,7 +40,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useI18n } from "@/hooks/use-i18n";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 
 function roundMoney(n: number) {
@@ -56,6 +58,7 @@ function dayKey(d: Date) {
 
 export default function InventoryHistoryPage() {
   const { t } = useI18n();
+  const { isChecked, setCheckedState } = useTallyChecks("inventory-history");
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [loading, setLoading] = useState(true);
@@ -301,6 +304,7 @@ export default function InventoryHistoryPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TallyHead label={t("common.tally")} />
                   <TableHead>{t("purchases.col.date")}</TableHead>
                   <TableHead>{t("purchases.col.name")}</TableHead>
                   <TableHead className="text-right">{t("purchases.col.qty")}</TableHead>
@@ -312,6 +316,11 @@ export default function InventoryHistoryPage() {
               <TableBody>
                 {filtered.map((p) => (
                   <TableRow key={p._id}>
+                    <TallyCell
+                      checked={isChecked(p._id)}
+                      onChange={(next) => setCheckedState(p._id, next)}
+                      label={t("common.tally")}
+                    />
                     <TableCell className="font-data">{formatDate(p.purchaseDate)}</TableCell>
                     <TableCell className="font-medium">{supplierName(p.supplier)}</TableCell>
                     <TableCell className="font-data text-right">
@@ -350,7 +359,7 @@ export default function InventoryHistoryPage() {
               </TableBody>
               <TableFooter>
                 <TableRow>
-                  <TableCell colSpan={5} className="font-medium">
+                  <TableCell colSpan={6} className="font-medium">
                     {t("purchases.recordsTotalLabel")}
                   </TableCell>
                   <TableCell className="text-end font-data font-semibold">

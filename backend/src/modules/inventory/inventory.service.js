@@ -52,7 +52,8 @@ function roundQty(n) {
 
 async function getDefaultWarehouse() {
   let wh = await Warehouse.findOne({ isDefault: true, isActive: true });
-  if (!wh) wh = await Warehouse.findOne({ isActive: true }).sort({ createdAt: 1 });
+  if (!wh) wh = await Warehouse.findOne({ code: "MAIN", isActive: true });
+  if (!wh) wh = await Warehouse.findOne({ isActive: true, code: { $ne: "OLD" } }).sort({ createdAt: 1 });
   if (!wh) {
     wh = await Warehouse.create({
       name: "Main Warehouse",
@@ -61,8 +62,38 @@ async function getDefaultWarehouse() {
       isDefault: true,
       isActive: true,
     });
+  } else if (!wh.isDefault) {
+    await Warehouse.updateMany({}, { $set: { isDefault: false } });
+    wh.isDefault = true;
+    if (!wh.code) wh.code = "MAIN";
+    await wh.save();
   }
   return wh;
+}
+
+async function getOldWarehouse() {
+  let wh = await Warehouse.findOne({ code: "OLD", isActive: true });
+  if (!wh) {
+    wh = await Warehouse.findOne({ name: /^old inventory$/i, isActive: true });
+  }
+  if (!wh) {
+    wh = await Warehouse.create({
+      name: "Old Inventory",
+      code: "OLD",
+      location: "Legacy / previous stock",
+      isDefault: false,
+      isActive: true,
+    });
+  } else if (wh.code !== "OLD") {
+    wh.code = "OLD";
+    await wh.save();
+  }
+  return wh;
+}
+
+async function ensureStockWarehouses() {
+  const [newWh, oldWh] = await Promise.all([getDefaultWarehouse(), getOldWarehouse()]);
+  return { newWarehouse: newWh, oldWarehouse: oldWh };
 }
 
 async function recordMovement(data) {
@@ -982,6 +1013,8 @@ async function syncHistoryFromExisting() {
 
 module.exports = {
   getDefaultWarehouse,
+  getOldWarehouse,
+  ensureStockWarehouses,
   recordMovement,
   deleteMovementsByRef,
   onPurchaseCreated,

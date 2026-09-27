@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { ArrowLeft, Loader2, Search } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
+import { useTallyChecks } from "@/hooks/use-tally-checks";
 import { calendarDay, todayInput } from "@/lib/date-range";
 import { apiError, formatDate, formatKg, getStock } from "@/lib/materials-api";
 import {
@@ -21,6 +22,7 @@ import {
 import type { StockSummary } from "@/types/materials";
 import type { Product, ProductionBatch } from "@/types/production";
 import { DateRangeFilter } from "@/components/date-range-filter";
+import { TallyCell, TallyHead } from "@/components/tally-check";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -192,6 +194,7 @@ export default function ProductionHistoryPage() {
   const { t } = useI18n();
   const searchParams = useSearchParams();
   const { dateFrom, dateTo, hydrated, isAll } = usePersistedDateRange();
+  const { isChecked, setCheckedState } = useTallyChecks("production-history");
   const [stock, setStock] = useState<StockSummary | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [batches, setBatches] = useState<ProductionBatch[]>([]);
@@ -515,6 +518,7 @@ export default function ProductionHistoryPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TallyHead label={t("common.tally")} />
                   <TableHead>{t("prod.col.product")}</TableHead>
                   <TableHead className="text-right">{t("prod.col.qty")}</TableHead>
                   <TableHead className="text-right">{t("prod.col.usedKg")}</TableHead>
@@ -533,6 +537,8 @@ export default function ProductionHistoryPage() {
                     deletingId={deletingId}
                     onEdit={openEdit}
                     onDelete={onDelete}
+                    isChecked={isChecked}
+                    setCheckedState={setCheckedState}
                     t={t}
                   />
                 ))}
@@ -753,17 +759,22 @@ function DayGroupRows({
   deletingId,
   onEdit,
   onDelete,
+  isChecked,
+  setCheckedState,
   t,
 }: {
   group: DayTotals;
   deletingId: string | null;
   onEdit: (batch: ProductionBatch) => void;
   onDelete: (batch: ProductionBatch) => void;
+  isChecked: (id: string) => boolean;
+  setCheckedState: (id: string, value: boolean) => void;
   t: (key: MessageKey) => string;
 }) {
   return (
     <>
       <TableRow className="bg-muted/40 hover:bg-muted/40">
+        <TableCell />
         <TableCell colSpan={3} className="font-medium">
           {group.day === "—" ? "—" : formatDate(group.day)}
           <span className="ml-2 text-xs font-normal text-muted-foreground">
@@ -781,42 +792,52 @@ function DayGroupRows({
         <TableCell />
         <TableCell />
       </TableRow>
-      {group.batches.map((b) => (
-        <TableRow key={b._id} className={familyRowClass(batchFamily(b))}>
-          <TableCell className="text-sm">{batchProductName(b)}</TableCell>
-          <TableCell className="font-data text-right text-xs">{batchQty(b)}</TableCell>
-          <TableCell className="font-data text-right text-xs">{formatKg(batchUsedKg(b))}</TableCell>
-          <TableCell className="font-data text-right text-xs text-sky-700/80 dark:text-sky-300/80">
-            {group.hubQty}
-          </TableCell>
-          <TableCell className="font-data text-right text-xs text-yellow-800/80 dark:text-yellow-300/80">
-            {group.drumQty}
-          </TableCell>
-          <TableCell className="font-data text-right text-xs">{group.totalQty}</TableCell>
-          <TableCell className="font-data text-xs">{formatDate(b.productionDate)}</TableCell>
-          <TableCell className="text-right">
-            <div className="flex justify-end gap-1">
-              <Button type="button" variant="ghost" size="sm" onClick={() => onEdit(b)}>
-                {t("prod.edit")}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="text-destructive hover:text-destructive"
-                disabled={deletingId === b._id}
-                onClick={() => void onDelete(b)}
-              >
-                {deletingId === b._id ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  t("prod.delete")
-                )}
-              </Button>
-            </div>
-          </TableCell>
-        </TableRow>
-      ))}
+      {group.batches.map((b) => {
+        const family = batchFamily(b);
+        const isHub = family === "hub";
+        const isDrum = family === "drum";
+        return (
+          <TableRow key={b._id} className={familyRowClass(family)}>
+            <TallyCell
+              checked={isChecked(b._id)}
+              onChange={(next) => setCheckedState(b._id, next)}
+              label={t("common.tally")}
+            />
+            <TableCell className="text-sm">{batchProductName(b)}</TableCell>
+            <TableCell className="font-data text-right text-xs">{batchQty(b)}</TableCell>
+            <TableCell className="font-data text-right text-xs">{formatKg(batchUsedKg(b))}</TableCell>
+            <TableCell className="font-data text-right text-xs text-sky-700/80 dark:text-sky-300/80">
+              {isHub ? group.hubQty : ""}
+            </TableCell>
+            <TableCell className="font-data text-right text-xs text-yellow-800/80 dark:text-yellow-300/80">
+              {isDrum ? group.drumQty : ""}
+            </TableCell>
+            <TableCell />
+            <TableCell className="font-data text-xs">{formatDate(b.productionDate)}</TableCell>
+            <TableCell className="text-right">
+              <div className="flex justify-end gap-1">
+                <Button type="button" variant="ghost" size="sm" onClick={() => onEdit(b)}>
+                  {t("prod.edit")}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  disabled={deletingId === b._id}
+                  onClick={() => void onDelete(b)}
+                >
+                  {deletingId === b._id ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    t("prod.delete")
+                  )}
+                </Button>
+              </div>
+            </TableCell>
+          </TableRow>
+        );
+      })}
     </>
   );
 }

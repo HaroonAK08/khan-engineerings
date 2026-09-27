@@ -132,6 +132,7 @@ async function removeSize(req, res, next) {
 
 async function listWarehouses(req, res, next) {
   try {
+    await inventoryService.ensureStockWarehouses();
     const warehouses = await inventoryService.crudList(inventoryService.Warehouse, req.query);
     res.json({ warehouses });
   } catch (err) {

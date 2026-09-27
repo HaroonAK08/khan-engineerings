@@ -297,11 +297,13 @@ async function listBuilties({ q, customer, paymentStatus, dateFrom, dateTo } = {
 async function getBuilty(id) {
   const builty = await Builty.findById(id)
     .populate("customer", "name phone address")
+    .populate("warehouse", "name code")
     .populate({ path: "items.product", select: "name sku unitLabel weightKg standardCost" });
   if (!builty) throw httpError("Builty not found", 404);
   await syncCustomerBuiltyPaymentStatuses(builty.customer?._id || builty.customer);
   const fresh = await Builty.findById(id)
     .populate("customer", "name phone address")
+    .populate("warehouse", "name code")
     .populate({ path: "items.product", select: "name sku unitLabel weightKg standardCost" });
   const payments = await CustomerPayment.find({ builty: fresh._id }).sort({
     paymentDate: -1,
@@ -439,6 +441,16 @@ async function updateBuilty(id, data) {
   }
   if (data.notes !== undefined) builty.notes = String(data.notes || "").trim();
 
+  let warehouseChanged = false;
+  if (data.warehouse !== undefined && data.warehouse) {
+    const nextWarehouse = String(data.warehouse);
+    const currentWarehouse = String(builty.warehouse?._id || builty.warehouse || "");
+    if (nextWarehouse !== currentWarehouse) {
+      builty.warehouse = nextWarehouse;
+      warehouseChanged = true;
+    }
+  }
+
   let itemsChanged = false;
   if (data.items !== undefined) {
     const claimedByProduct = new Map();
@@ -474,6 +486,8 @@ async function updateBuilty(id, data) {
 
     const partyPriceService = require("../party-prices/party-product-price.service");
     await partyPriceService.rememberFromItems(builty.customer, items);
+  } else if (warehouseChanged) {
+    await inventoryService.writeFinishedSale(builty);
   }
 
   if (data.discountAmount !== undefined || itemsChanged) {

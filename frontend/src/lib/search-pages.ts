@@ -24,6 +24,7 @@ import {
   MoreHorizontal,
   FolderKanban,
   History,
+  Archive,
 } from "lucide-react";
 import type { MessageKey } from "@/lib/i18n/messages";
 
@@ -67,6 +68,13 @@ export const SEARCH_PAGES: SearchPage[] = [
     labelKey: "inventory.finished",
     keywords: ["finished", "finished goods", "finished stock"],
     icon: Package,
+    group: "pages",
+  },
+  {
+    href: "/dashboard/old-inventory",
+    labelKey: "nav.oldInventory",
+    keywords: ["old inventory", "old stock", "legacy", "پرانی انوینٹری", "پرانا اسٹاک"],
+    icon: Archive,
     group: "pages",
   },
   {

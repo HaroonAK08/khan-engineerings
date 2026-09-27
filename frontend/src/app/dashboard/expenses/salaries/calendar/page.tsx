@@ -38,11 +38,13 @@ import {
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
+import { useTallyChecks } from "@/hooks/use-tally-checks";
 import {
   matchesExpenseScope,
   usePersistedExpenseScope,
 } from "@/hooks/use-persisted-expense-scope";
 import { scopeChipClass } from "@/components/expenses/expense-scope-chips";
+import { TallyCell, TallyHead } from "@/components/tally-check";
 import type { ExpenseScope } from "@/lib/workers-api";
 import { cn } from "@/lib/utils";
 import { WorkerSearchSelect } from "@/components/workers/worker-search-select";
@@ -65,6 +67,7 @@ function workerIdOf(p: BatchExpense) {
 
 export default function AllSalariesLedgerPage() {
   const { t, isUrdu } = useI18n();
+  const { isChecked, setCheckedState } = useTallyChecks("salaries-history");
 
   const scopeLabels = {
     hub: t("exp.scopeHub"),
@@ -368,6 +371,7 @@ export default function AllSalariesLedgerPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TallyHead label={t("common.tally")} />
                   <TableHead>{t("sal.colTarikh")}</TableHead>
                   <TableHead>{t("sal.colWorkerName")}</TableHead>
                   <TableHead className="text-end">{t("sal.colAmountGiven")}</TableHead>
@@ -384,6 +388,11 @@ export default function AllSalariesLedgerPage() {
                     !!p.worker?.nameUr?.trim();
                   return (
                     <TableRow key={p._id}>
+                      <TallyCell
+                        checked={isChecked(p._id)}
+                        onChange={(next) => setCheckedState(p._id, next)}
+                        label={t("common.tally")}
+                      />
                       <TableCell className="font-data whitespace-nowrap">
                         {formatDate(p.expenseDate)}
                       </TableCell>
@@ -446,7 +455,7 @@ export default function AllSalariesLedgerPage() {
               </TableBody>
               <TableFooter>
                 <TableRow>
-                  <TableCell colSpan={2} className="font-semibold">
+                  <TableCell colSpan={3} className="font-semibold">
                     {t("sal.ledgerTotal")}
                   </TableCell>
                   <TableCell className="font-data text-end text-base font-semibold whitespace-nowrap">

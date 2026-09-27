@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { ArrowLeft, Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { apiError, formatKg, formatMoney, withSameDayConfirm } from "@/lib/materials-api";
 import { listProducts } from "@/lib/production-api";
-import { getFinishedStock } from "@/lib/inventory-api";
+import { getFinishedStock, resolveStockWarehouses } from "@/lib/inventory-api";
 import {
   createBuilty,
   createCustomer,
@@ -133,6 +133,9 @@ function BuiltyForm() {
   const [productFamilyFilter, setProductFamilyFilter] = useState<"all" | "hub" | "drum">("all");
   const [partyPriceHint, setPartyPriceHint] = useState<Record<number, boolean>>({});
   const [castingRates, setCastingRates] = useState<CastingRatesReport | null>(null);
+  const [stockSource, setStockSource] = useState<"new" | "old">("new");
+  const [newWarehouseId, setNewWarehouseId] = useState("");
+  const [oldWarehouseId, setOldWarehouseId] = useState("");
 
   const [newCustomerOpen, setNewCustomerOpen] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState("");
@@ -144,12 +147,17 @@ function BuiltyForm() {
     setLoading(true);
     try {
       const month = thisMonthRange();
-      const [c, p, stock, rates] = await Promise.all([
+      const [c, p, warehouses, rates] = await Promise.all([
         listCustomers({ active: "true" }),
         listProducts({ active: "true" }),
-        getFinishedStock(),
+        resolveStockWarehouses(),
         getCastingRates({ dateFrom: month.from, dateTo: month.to }).catch(() => null),
       ]);
+      const mainId = warehouses.newWarehouse?._id || "";
+      const oldId = warehouses.oldWarehouse?._id || "";
+      setNewWarehouseId(mainId);
+      setOldWarehouseId(oldId);
+      const stock = await getFinishedStock(mainId ? { warehouse: mainId } : undefined);
       setCustomers(c);
       setProducts(p);
       setCastingRates(rates);
@@ -168,6 +176,26 @@ function BuiltyForm() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const reloadStock = useCallback(async (source: "new" | "old") => {
+    const warehouseId = source === "old" ? oldWarehouseId : newWarehouseId;
+    if (!warehouseId) return;
+    try {
+      const stock = await getFinishedStock({ warehouse: warehouseId });
+      const map: Record<string, number> = {};
+      for (const item of stock.items) {
+        map[item.productId] = (map[item.productId] || 0) + item.quantity;
+      }
+      setStockByProduct(map);
+    } catch (err) {
+      toast.error(apiError(err, t("builtyNew.createFailed")));
+    }
+  }, [newWarehouseId, oldWarehouseId, t]);
+
+  function chooseStockSource(next: "new" | "old") {
+    setStockSource(next);
+    void reloadStock(next);
+  }
 
   const applyVoiceBuilty = useCallback((payload: VoiceBuiltyFormPayload) => {
     if (payload.customerId) {
@@ -546,6 +574,10 @@ function BuiltyForm() {
         billNo: billNo.trim() || undefined,
         customer,
         builtyDate,
+        warehouse:
+          stockSource === "old"
+            ? oldWarehouseId || undefined
+            : newWarehouseId || undefined,
         items,
       };
       const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
@@ -687,6 +719,29 @@ function BuiltyForm() {
                 onChange={(e) => setBuiltyDate(e.target.value)}
                 className="h-11"
               />
+            </div>
+            <div className="flex flex-col gap-1.5 sm:col-span-2">
+              <Label>{t("builtyNew.stockSource")}</Label>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={stockSource === "new" ? "default" : "outline"}
+                  onClick={() => chooseStockSource("new")}
+                >
+                  {t("builtyNew.stockSourceNew")}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={stockSource === "old" ? "default" : "outline"}
+                  onClick={() => chooseStockSource("old")}
+                  disabled={!oldWarehouseId}
+                >
+                  {t("builtyNew.stockSourceOld")}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">{t("builtyNew.stockSourceHint")}</p>
             </div>
           </CardContent>
         </Card>

@@ -6,8 +6,10 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, Pencil, Trash2 } from "lucide-react";
 import { DateRangeFilter } from "@/components/date-range-filter";
+import { TallyCell, TallyHead } from "@/components/tally-check";
 import { useI18n } from "@/hooks/use-i18n";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
+import { useTallyChecks } from "@/hooks/use-tally-checks";
 import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
 import {
   customerName,
@@ -33,6 +35,7 @@ export default function BuiltyHistoryPage() {
   const { t } = useI18n();
   const router = useRouter();
   const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
+  const { isChecked, setCheckedState } = useTallyChecks("builty-history");
   const [rows, setRows] = useState<BuiltyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -134,6 +137,7 @@ export default function BuiltyHistoryPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TallyHead label={t("common.tally")} />
                   <TableHead>{t("builty.col.date")}</TableHead>
                   <TableHead>{t("builty.col.no")}</TableHead>
                   <TableHead>{t("builty.col.billNo")}</TableHead>
@@ -162,6 +166,11 @@ export default function BuiltyHistoryPage() {
                       }
                     }}
                   >
+                    <TallyCell
+                      checked={isChecked(row._id)}
+                      onChange={(next) => setCheckedState(row._id, next)}
+                      label={t("common.tally")}
+                    />
                     <TableCell className="font-data text-xs whitespace-nowrap">
                       {formatDate(row.builtyDate)}
                     </TableCell>

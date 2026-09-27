@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Loader2, Pencil, Trash2 } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
+import { useTallyChecks } from "@/hooks/use-tally-checks";
 import { api } from "@/lib/api";
 import {
   apiError,
@@ -27,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { TallyCell, TallyHead } from "@/components/tally-check";
 import {
   Table,
   TableBody,
@@ -120,6 +122,7 @@ function expenseHref(category: string) {
 export default function HistoryPage() {
   const { t } = useI18n();
   const router = useRouter();
+  const { isChecked, setCheckedState } = useTallyChecks("history-hub");
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const month = useMemo(() => thisMonthRange(), []);
@@ -377,6 +380,7 @@ export default function HistoryPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TallyHead label={t("common.tally")} />
                     <TableHead>{t("common.date")}</TableHead>
                     <TableHead>{t("common.type")}</TableHead>
                     <TableHead>{t("common.notes")}</TableHead>
@@ -386,6 +390,11 @@ export default function HistoryPage() {
                 <TableBody>
                   {visible.map((row) => (
                     <TableRow key={row.id}>
+                      <TallyCell
+                        checked={isChecked(row.id)}
+                        onChange={(next) => setCheckedState(row.id, next)}
+                        label={t("common.tally")}
+                      />
                       <TableCell className="font-data whitespace-nowrap text-sm">
                         {formatDate(row.date)}
                       </TableCell>

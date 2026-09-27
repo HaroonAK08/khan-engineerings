@@ -362,17 +362,41 @@ export default function ProductionPage() {
                   const onHand = stockByProduct.get(p._id) || 0;
                   const hasWeight = Number(p.weightKg) > 0;
                   return (
-                    <TableRow key={p._id} className={familyRowClass(p.family)}>
-                      <TableCell className="font-medium">{p.name}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={familyBadgeClass(p.family)}>
-                          {p.family}
-                        </Badge>
+                    <TableRow key={p._id} className={cn(familyRowClass(p.family), "cursor-pointer")}>
+                      <TableCell className="p-0 font-medium">
+                        <Link
+                          href={`/dashboard/production/product/${encodeURIComponent(p._id)}`}
+                          className="block px-4 py-3"
+                        >
+                          {p.name}
+                        </Link>
                       </TableCell>
-                      <TableCell className="font-data text-right text-xs">
-                        {hasWeight ? `${formatKg(Number(p.weightKg))} kg` : "—"}
+                      <TableCell className="p-0">
+                        <Link
+                          href={`/dashboard/production/product/${encodeURIComponent(p._id)}`}
+                          className="block px-4 py-3"
+                        >
+                          <Badge variant="outline" className={familyBadgeClass(p.family)}>
+                            {p.family}
+                          </Badge>
+                        </Link>
                       </TableCell>
-                      <TableCell className="font-data text-right text-xs">{onHand}</TableCell>
+                      <TableCell className="p-0 font-data text-right text-xs">
+                        <Link
+                          href={`/dashboard/production/product/${encodeURIComponent(p._id)}`}
+                          className="block px-4 py-3"
+                        >
+                          {hasWeight ? `${formatKg(Number(p.weightKg))} kg` : "—"}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="p-0 font-data text-right text-xs">
+                        <Link
+                          href={`/dashboard/production/product/${encodeURIComponent(p._id)}`}
+                          className="block px-4 py-3"
+                        >
+                          {onHand}
+                        </Link>
+                      </TableCell>
                       <TableCell className="text-right">
                         <Link
                           href={`/dashboard/production/new?product=${encodeURIComponent(p._id)}`}

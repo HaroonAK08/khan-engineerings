@@ -87,6 +87,7 @@ export type PurchaseReport = {
     totalKg: number;
     totalSpend: number;
     totalPaid?: number;
+    paidKg?: number;
     purchaseCount: number;
     avgRate: number;
     supplierCount?: number;
@@ -131,6 +132,7 @@ export type PurchaseReport = {
     totalKg: number;
     totalSpend: number;
     totalPaid?: number;
+    paidKg?: number;
     purchaseCount: number;
     avgRate: number;
   }>;

@@ -17,7 +17,14 @@ type SidebarNavProps = {
 function isItemActive(item: NavItem, pathname: string | null) {
   if (!pathname || item.ready === false) return false;
   if (item.children?.length) {
-    return item.children.some((child) => isChildActive(child.href, pathname, child.exact));
+    if (item.children.some((child) => isChildActive(child.href, pathname, child.exact))) {
+      return true;
+    }
+    // Nested inventory pages (history, movements, etc.) still highlight Inventory
+    if (item.href !== "/dashboard") {
+      return pathname === item.href || pathname.startsWith(`${item.href}/`);
+    }
+    return false;
   }
   if (item.href === "/dashboard") return pathname === item.href;
   return pathname.startsWith(item.href);

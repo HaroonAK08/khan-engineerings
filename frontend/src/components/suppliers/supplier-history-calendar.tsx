@@ -38,6 +38,8 @@ import {
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
+import { useTallyChecks } from "@/hooks/use-tally-checks";
+import { TallyCell, TallyHead } from "@/components/tally-check";
 
 type Props = {
   supplierId?: string;
@@ -151,6 +153,9 @@ export function SupplierHistoryCalendar({
   showSupplierNames = false,
 }: Props) {
   const { t, isUrdu } = useI18n();
+  const { isChecked, setCheckedState } = useTallyChecks(
+    `supplier-history:${supplierId || "all"}`
+  );
   const {
     dateFrom,
     dateTo,
@@ -528,6 +533,7 @@ export function SupplierHistoryCalendar({
             <Table className="table-fixed" containerClassName="overflow-x-hidden">
               <TableHeader>
                 <TableRow>
+                  <TallyHead label={t("common.tally")} />
                   <TableHead className="w-[7.5rem]">{t("common.date")}</TableHead>
                   {showSupplierNames ? (
                     <TableHead className="w-[8rem]">{t("purchases.col.supplier")}</TableHead>
@@ -548,6 +554,7 @@ export function SupplierHistoryCalendar({
               <TableBody>
                 {showOpeningRow ? (
                   <TableRow className="bg-muted/40 hover:bg-muted/50">
+                    <TableCell />
                     <TableCell className="font-data whitespace-nowrap text-muted-foreground">
                       —
                     </TableCell>
@@ -584,6 +591,11 @@ export function SupplierHistoryCalendar({
                             : undefined
                       }
                     >
+                      <TallyCell
+                        checked={isChecked(e._id)}
+                        onChange={(next) => setCheckedState(e._id, next)}
+                        label={t("common.tally")}
+                      />
                       <TableCell className="font-data whitespace-nowrap">
                         {formatDate(e.entryDate)}
                       </TableCell>
@@ -647,7 +659,7 @@ export function SupplierHistoryCalendar({
               <TableFooter>
                 <TableRow>
                   <TableCell
-                    colSpan={showSupplierNames ? 3 : 2}
+                    colSpan={showSupplierNames ? 4 : 3}
                     className="font-semibold"
                   >
                     {t("supplierDetail.totals")}

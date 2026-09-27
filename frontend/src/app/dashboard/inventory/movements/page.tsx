@@ -7,7 +7,9 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { InventorySubnav } from "@/components/layout/inventory-subnav";
+import { TallyCell, TallyHead } from "@/components/tally-check";
 import { useI18n } from "@/hooks/use-i18n";
+import { useTallyChecks } from "@/hooks/use-tally-checks";
 import { todayInput } from "@/lib/date-range";
 import { apiError, formatDate } from "@/lib/materials-api";
 import { listProducts } from "@/lib/production-api";
@@ -48,6 +50,7 @@ type AdjustForm = z.infer<typeof adjustSchema>;
 
 export default function MovementsPage() {
   const { t } = useI18n();
+  const { isChecked, setCheckedState } = useTallyChecks("inventory-movements");
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [warehouses, setWarehouses] = useState<CatalogItem[]>([]);
@@ -241,6 +244,7 @@ export default function MovementsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TallyHead label={t("common.tally")} />
                   <TableHead>Date</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Reason</TableHead>
@@ -252,6 +256,11 @@ export default function MovementsPage() {
               <TableBody>
                 {movements.map((m) => (
                   <TableRow key={m._id}>
+                    <TallyCell
+                      checked={isChecked(m._id)}
+                      onChange={(next) => setCheckedState(m._id, next)}
+                      label={t("common.tally")}
+                    />
                     <TableCell className="font-data text-xs">
                       {formatDate(m.movementDate)}
                     </TableCell>
