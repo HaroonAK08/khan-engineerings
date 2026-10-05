@@ -464,7 +464,9 @@ export default function PartySalesMarginPage() {
                   hint:
                     report.electricity.source === "estimated"
                       ? t("prodMargin.electricityEstimatedHint")
-                      : undefined,
+                      : report.electricity.source === "mixed"
+                        ? t("prodMargin.electricityMixedHint")
+                        : undefined,
                   fill: "hub" as const,
                 },
                 {
@@ -473,7 +475,9 @@ export default function PartySalesMarginPage() {
                   hint:
                     report.electricity.source === "estimated"
                       ? t("prodMargin.electricityEstimatedHint")
-                      : undefined,
+                      : report.electricity.source === "mixed"
+                        ? t("prodMargin.electricityMixedHint")
+                        : undefined,
                   fill: "drum" as const,
                 },
                 {

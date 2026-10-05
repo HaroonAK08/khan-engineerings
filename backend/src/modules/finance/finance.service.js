@@ -981,6 +981,20 @@ async function getProductionMargin(query = {}) {
   const avgScrapRate = rates.scrap;
   const avgDaigRate = rates.daig;
 
+  // Cost each batch with that calendar month's purchase rate so multi-month
+  // ranges stay additive (Sep material + Oct material = Sep–Oct material).
+  const materialRatesByMonth = new Map();
+  for (const b of batches) {
+    const d = b.productionDate ? new Date(b.productionDate) : from;
+    const key = `${d.getFullYear()}-${d.getMonth()}`;
+    if (materialRatesByMonth.has(key)) continue;
+    const segFrom = new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
+    const segTo = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+    const a = segFrom < from ? from : segFrom;
+    const bnd = segTo > to ? to : segTo;
+    materialRatesByMonth.set(key, await getAvgMaterialRates(a, bnd));
+  }
+
   const purchaseRows = await Purchase.aggregate([
     { $match: dateMatch("purchaseDate", from, to) },
     {
@@ -1018,6 +1032,8 @@ async function getProductionMargin(query = {}) {
         scrapKg: 0,
         daigKg: 0,
         wasteKg: 0,
+        scrapCost: 0,
+        daigCost: 0,
         sellPricePerPiece: Number(sellPrice) || 0,
       };
       byProductMap.set(pid, row);
@@ -1088,14 +1104,21 @@ async function getProductionMargin(query = {}) {
     }
 
     const batchFinished = pieceLines.reduce((s, l) => s + l.quantity, 0);
+    const batchDate = b.productionDate ? new Date(b.productionDate) : from;
+    const monthKey = `${batchDate.getFullYear()}-${batchDate.getMonth()}`;
+    const monthRates = materialRatesByMonth.get(monthKey) || rates;
     for (const line of pieceLines) {
       const row = ensureRow(line.productId, line.name, line.family, line.sellPrice);
       row.pieces += line.quantity;
       if (batchFinished > 0) {
         const share = line.quantity / batchFinished;
-        row.scrapKg = roundKg(row.scrapKg + batchScrapKg * share);
-        row.daigKg = roundKg(row.daigKg + batchDaigKg * share);
+        const scrapShare = batchScrapKg * share;
+        const daigShare = batchDaigKg * share;
+        row.scrapKg = roundKg(row.scrapKg + scrapShare);
+        row.daigKg = roundKg(row.daigKg + daigShare);
         row.wasteKg = roundKg(row.wasteKg + batchWasteKg * share);
+        row.scrapCost = (row.scrapCost || 0) + scrapShare * (monthRates.scrap || 0);
+        row.daigCost = (row.daigCost || 0) + daigShare * (monthRates.daig || 0);
       }
     }
   }
@@ -1124,6 +1147,8 @@ async function getProductionMargin(query = {}) {
       row.weightKg = Number(prod?.weightKg || row.weightKg) || 0;
       row.finishedKg = roundKg((row.weightKg || 0) * (row.pieces || 0));
     }
+    row.scrapCost = roundMoney(row.scrapCost || 0);
+    row.daigCost = roundMoney(row.daigCost || 0);
   }
 
   // Actual builty sales this period (by product + by family).
@@ -1444,14 +1469,14 @@ async function getProductionMargin(query = {}) {
     return s + kg * intensity;
   }, 0);
 
-  // Accrue electricity from prior-month rate × this period's intensity-weighted kg when no bill yet.
-  const electricityAccrual = await resolveElectricityAccrual({
-    actualAmount: electricityCommon,
-    currentWeight: electricityWeightTotal,
+  // Accrue electricity per calendar month: use that month's bill if present,
+  // otherwise prior-month rate × that month's kg. Prevents a Sep bill from
+  // wiping Oct's estimate when the selected range spans both months.
+  const electricityAccrual = await resolveElectricityAccrualForRange({
+    from,
+    to,
     hubIntensity: ELECTRICITY_HUB_INTENSITY,
     drumIntensity: ELECTRICITY_DRUM_INTENSITY,
-    periodFrom: from,
-    dateFromStr: query.dateFrom,
   });
   electricityCommon = electricityAccrual.amount;
 
@@ -1462,8 +1487,10 @@ async function getProductionMargin(query = {}) {
   const totalPieces = producedRows.reduce((s, r) => s + r.pieces, 0);
 
   function buildProductCostRow(row) {
-    const scrapCost = (row.scrapKg || 0) * avgScrapRate;
-    const daigCost = (row.daigKg || 0) * avgDaigRate;
+    const scrapCost =
+      row.scrapCost != null ? row.scrapCost : (row.scrapKg || 0) * avgScrapRate;
+    const daigCost =
+      row.daigCost != null ? row.daigCost : (row.daigKg || 0) * avgDaigRate;
     const materialCost = scrapCost + daigCost;
     const fam = row.family === "drum" ? "drum" : "hub";
     const finishedKg = row.finishedKg || 0;
@@ -2149,8 +2176,315 @@ async function getSalesmanSoldKg(from, to) {
  * Does not change production-margin behaviour.
  * Factory mfg/kg = production cost/kg with commission+tour removed from common.
  * Salesman groups add commission+tour / salesman-sold-kg on top.
+ *
+ * Multi-month ranges are computed per calendar month then summed so
+ * Sep profit + Oct profit equals the Sep–Oct combined view.
  */
 async function getPartySalesMargin(query = {}) {
+  const { from, to } = periodBounds(query);
+  const segments = calendarMonthSegments(from, to);
+  if (segments.length <= 1) {
+    return computePartySalesMarginForPeriod(query);
+  }
+
+  const parts = [];
+  for (const seg of segments) {
+    parts.push(
+      await computePartySalesMarginForPeriod({
+        ...query,
+        dateFrom: toDateInput(seg.from),
+        dateTo: toDateInput(seg.to),
+      })
+    );
+  }
+  return mergePartySalesMarginReports(parts, { from, to });
+}
+
+function emptyPartyMarginBucket() {
+  return {
+    hubQty: 0,
+    drumQty: 0,
+    totalQty: 0,
+    hubKg: 0,
+    drumKg: 0,
+    totalKg: 0,
+    hubSale: 0,
+    drumSale: 0,
+    totalSale: 0,
+    hubMfg: 0,
+    drumMfg: 0,
+    totalMfg: 0,
+    hubProfit: 0,
+    drumProfit: 0,
+    profit: 0,
+  };
+}
+
+function addPartyMarginBucket(target, source) {
+  for (const key of [
+    "hubQty",
+    "drumQty",
+    "totalQty",
+    "hubKg",
+    "drumKg",
+    "totalKg",
+    "hubSale",
+    "drumSale",
+    "totalSale",
+    "hubMfg",
+    "drumMfg",
+    "totalMfg",
+    "hubProfit",
+    "drumProfit",
+    "profit",
+  ]) {
+    target[key] = (target[key] || 0) + (Number(source?.[key]) || 0);
+  }
+  return target;
+}
+
+function finalizePartyMarginBucket(t) {
+  t.hubQty = Math.round(t.hubQty || 0);
+  t.drumQty = Math.round(t.drumQty || 0);
+  t.totalQty = Math.round(t.totalQty || 0);
+  t.hubKg = roundKg(t.hubKg);
+  t.drumKg = roundKg(t.drumKg);
+  t.totalKg = roundKg(t.totalKg);
+  for (const key of [
+    "hubSale",
+    "drumSale",
+    "totalSale",
+    "hubMfg",
+    "drumMfg",
+    "totalMfg",
+    "hubProfit",
+    "drumProfit",
+    "profit",
+  ]) {
+    t[key] = roundMoney(t[key] || 0);
+  }
+  t.hubSalePerKg = t.hubKg > 0 ? roundMoney(t.hubSale / t.hubKg) : null;
+  t.drumSalePerKg = t.drumKg > 0 ? roundMoney(t.drumSale / t.drumKg) : null;
+  t.avgSalePerKg = t.totalKg > 0 ? roundMoney(t.totalSale / t.totalKg) : null;
+  t.hubMfgPerKg = t.hubKg > 0 ? roundMoney(t.hubMfg / t.hubKg) : null;
+  t.drumMfgPerKg = t.drumKg > 0 ? roundMoney(t.drumMfg / t.drumKg) : null;
+  t.avgMfgPerKg = t.totalKg > 0 ? roundMoney(t.totalMfg / t.totalKg) : null;
+  t.hubProfitPerKg = t.hubKg > 0 ? roundMoney(t.hubProfit / t.hubKg) : null;
+  t.drumProfitPerKg = t.drumKg > 0 ? roundMoney(t.drumProfit / t.drumKg) : null;
+  t.profitPerKg = t.totalKg > 0 ? roundMoney(t.profit / t.totalKg) : null;
+  return t;
+}
+
+function mergePartySalesMarginReports(parts, { from, to }) {
+  const partyMap = new Map();
+  const groupMap = new Map();
+  const totals = {
+    ...emptyPartyMarginBucket(),
+    salesman: emptyPartyMarginBucket(),
+    direct: emptyPartyMarginBucket(),
+  };
+  const channelExpenseItems = [];
+  let tourTotal = 0;
+  let salesmanPayTotal = 0;
+  let salesmanLoad = 0;
+  let salesmanSoldKg = 0;
+  let elecBill = 0;
+  let elecHubShare = 0;
+  let elecDrumShare = 0;
+  let anyEstimated = false;
+  let anyActual = false;
+  let hubFactoryNum = 0;
+  let hubFactoryDen = 0;
+  let drumFactoryNum = 0;
+  let drumFactoryDen = 0;
+  let hubSalesmanNum = 0;
+  let hubSalesmanDen = 0;
+  let drumSalesmanNum = 0;
+  let drumSalesmanDen = 0;
+  let salesmanPerNum = 0;
+  let salesmanPerDen = 0;
+  const powerMemberGroups = new Set();
+  const ikMemberGroups = new Set();
+  let mainChannels = parts[0]?.mainChannels || null;
+  let noSalesmanGroups = parts[0]?.rates?.noSalesmanGroups || [];
+
+  for (const part of parts) {
+    salesmanLoad = roundMoney(salesmanLoad + (part.rates?.salesmanLoad || 0));
+    salesmanSoldKg = roundKg(salesmanSoldKg + (part.rates?.salesmanSoldKg || 0));
+    elecBill = roundMoney(elecBill + (part.electricity?.bill || 0));
+    elecHubShare = roundMoney(elecHubShare + (part.electricity?.hubShare || 0));
+    elecDrumShare = roundMoney(elecDrumShare + (part.electricity?.drumShare || 0));
+    const src = part.electricity?.source;
+    if (src === "estimated" || src === "mixed") anyEstimated = true;
+    if (src === "actual" || src === "mixed") anyActual = true;
+
+    // Weight factory rates by sold kg in the matching channel for a stable blended display.
+    if (part.rates?.hubFactoryCostPerKg != null) {
+      const w = (part.totals?.direct?.hubKg || 0) + (part.totals?.salesman?.hubKg || 0) || 1;
+      hubFactoryNum += part.rates.hubFactoryCostPerKg * w;
+      hubFactoryDen += w;
+    }
+    if (part.rates?.drumFactoryCostPerKg != null) {
+      const w = (part.totals?.direct?.drumKg || 0) + (part.totals?.salesman?.drumKg || 0) || 1;
+      drumFactoryNum += part.rates.drumFactoryCostPerKg * w;
+      drumFactoryDen += w;
+    }
+    if (part.rates?.hubMfgSalesman != null) {
+      const w = part.totals?.salesman?.hubKg || 1;
+      hubSalesmanNum += part.rates.hubMfgSalesman * w;
+      hubSalesmanDen += w;
+    }
+    if (part.rates?.drumMfgSalesman != null) {
+      const w = part.totals?.salesman?.drumKg || 1;
+      drumSalesmanNum += part.rates.drumMfgSalesman * w;
+      drumSalesmanDen += w;
+    }
+    if (part.rates?.salesmanPerSoldKg != null && (part.rates?.salesmanSoldKg || 0) > 0) {
+      salesmanPerNum += part.rates.salesmanPerSoldKg * part.rates.salesmanSoldKg;
+      salesmanPerDen += part.rates.salesmanSoldKg;
+    }
+
+    tourTotal = roundMoney(tourTotal + (part.channelExpenses?.tourTotal || 0));
+    salesmanPayTotal = roundMoney(
+      salesmanPayTotal + (part.channelExpenses?.salesmanPayTotal || 0)
+    );
+    for (const item of part.channelExpenses?.items || []) {
+      channelExpenseItems.push(item);
+    }
+
+    for (const name of part.mainChannels?.powerEngineering?.memberGroups || []) {
+      powerMemberGroups.add(name);
+    }
+    for (const name of part.mainChannels?.ikEngineering?.memberGroups || []) {
+      ikMemberGroups.add(name);
+    }
+
+    addPartyMarginBucket(totals, part.totals || emptyPartyMarginBucket());
+    addPartyMarginBucket(totals.salesman, part.totals?.salesman || emptyPartyMarginBucket());
+    addPartyMarginBucket(totals.direct, part.totals?.direct || emptyPartyMarginBucket());
+
+    for (const p of part.parties || []) {
+      const key = p.partyId || p.partyName;
+      if (!partyMap.has(key)) {
+        partyMap.set(key, {
+          ...emptyPartyMarginBucket(),
+          partyId: p.partyId,
+          partyName: p.partyName,
+          groupId: p.groupId,
+          groupName: p.groupName,
+          salesmanChannel: p.salesmanChannel,
+        });
+      }
+      addPartyMarginBucket(partyMap.get(key), p);
+    }
+
+    for (const g of part.groups || []) {
+      const key = g.groupId || g.groupName;
+      if (!groupMap.has(key)) {
+        groupMap.set(key, {
+          ...emptyPartyMarginBucket(),
+          groupId: g.groupId,
+          groupName: g.groupName,
+          salesmanChannel: g.salesmanChannel,
+          partyCount: 0,
+        });
+      }
+      const row = groupMap.get(key);
+      addPartyMarginBucket(row, g);
+      row.partyCount += g.partyCount || 0;
+    }
+  }
+
+  finalizePartyMarginBucket(totals);
+  finalizePartyMarginBucket(totals.salesman);
+  finalizePartyMarginBucket(totals.direct);
+
+  const parties = [...partyMap.values()]
+    .map((p) => finalizePartyMarginBucket(p))
+    .filter((p) => p.totalKg > 0 || p.totalSale > 0)
+    .sort((a, b) => a.profit - b.profit);
+
+  const groups = [...groupMap.values()]
+    .map((g) => finalizePartyMarginBucket(g))
+    .sort((a, b) => a.profit - b.profit);
+
+  const hubFactoryCostPerKg =
+    hubFactoryDen > 0 ? roundMoney(hubFactoryNum / hubFactoryDen) : null;
+  const drumFactoryCostPerKg =
+    drumFactoryDen > 0 ? roundMoney(drumFactoryNum / drumFactoryDen) : null;
+  const hubMfgSalesman =
+    hubSalesmanDen > 0 ? roundMoney(hubSalesmanNum / hubSalesmanDen) : null;
+  const drumMfgSalesman =
+    drumSalesmanDen > 0 ? roundMoney(drumSalesmanNum / drumSalesmanDen) : null;
+  const salesmanPerSoldKg =
+    salesmanPerDen > 0 ? roundMoney(salesmanPerNum / salesmanPerDen) : 0;
+
+  const elecSource =
+    anyActual && anyEstimated
+      ? "mixed"
+      : anyActual
+        ? "actual"
+        : anyEstimated
+          ? "estimated"
+          : "none";
+
+  channelExpenseItems.sort((a, b) => {
+    const da = a.expenseDate ? new Date(a.expenseDate).getTime() : 0;
+    const db = b.expenseDate ? new Date(b.expenseDate).getTime() : 0;
+    return db - da;
+  });
+
+  if (mainChannels) {
+    mainChannels = {
+      powerEngineering: {
+        ...mainChannels.powerEngineering,
+        memberGroups: [...powerMemberGroups],
+      },
+      ikEngineering: {
+        ...mainChannels.ikEngineering,
+        memberGroups: ikMemberGroups.size
+          ? [...ikMemberGroups]
+          : mainChannels.ikEngineering?.memberGroups || [],
+      },
+    };
+  }
+
+  return {
+    period: { from, to },
+    rates: {
+      hubFactoryCostPerKg,
+      drumFactoryCostPerKg,
+      hubMfgSalesman,
+      drumMfgSalesman,
+      salesmanPerSoldKg,
+      salesmanLoad,
+      salesmanSoldKg,
+      noSalesmanGroups,
+    },
+    mainChannels,
+    channelExpenses: {
+      items: channelExpenseItems,
+      tourTotal,
+      salesmanPayTotal,
+      total: roundMoney(tourTotal + salesmanPayTotal),
+    },
+    electricity: {
+      bill: elecBill,
+      source: elecSource,
+      hubShare: elecHubShare,
+      drumShare: elecDrumShare,
+      hubPerKg:
+        totals.hubKg > 0 ? roundMoney(elecHubShare / totals.hubKg) : null,
+      drumPerKg:
+        totals.drumKg > 0 ? roundMoney(elecDrumShare / totals.drumKg) : null,
+    },
+    totals,
+    groups,
+    parties,
+  };
+}
+
+async function computePartySalesMarginForPeriod(query = {}) {
   const { from, to } = periodBounds(query);
   const margin = await getProductionMargin(query);
 
@@ -2699,6 +3033,24 @@ function toDateInput(d) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+/** Split [from, to] into calendar-month segments clamped to the range. */
+function calendarMonthSegments(from, to) {
+  const segments = [];
+  let cursor = new Date(from.getFullYear(), from.getMonth(), 1, 0, 0, 0, 0);
+  const end = to;
+  while (cursor <= end) {
+    const monthStart = new Date(cursor.getFullYear(), cursor.getMonth(), 1, 0, 0, 0, 0);
+    const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0, 23, 59, 59, 999);
+    const segFrom = monthStart < from ? new Date(from) : monthStart;
+    const segTo = monthEnd > to ? new Date(to) : monthEnd;
+    if (segFrom <= segTo) {
+      segments.push({ from: segFrom, to: segTo });
+    }
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1, 0, 0, 0, 0);
+  }
+  return segments;
+}
+
 function previousMonthWindow(from, dateFromStr) {
   // Prefer YYYY-MM-DD from the query so "previous month" is calendar-stable across timezones.
   const raw =
@@ -2952,6 +3304,68 @@ async function resolveElectricityAccrual({
   }
 
   return { amount: 0, source: "none", actualBill: 0, estimate: null };
+}
+
+/**
+ * Resolve electricity month-by-month inside [from, to].
+ * A bill in September must not suppress October's accrual estimate.
+ */
+async function resolveElectricityAccrualForRange({
+  from,
+  to,
+  hubIntensity,
+  drumIntensity,
+}) {
+  const segments = calendarMonthSegments(from, to);
+  let amount = 0;
+  let actualBill = 0;
+  let anyActual = false;
+  let anyEstimated = false;
+  let lastEstimate = null;
+
+  for (const seg of segments) {
+    const [bill, kg] = await Promise.all([
+      sumElectricityInRange(seg.from, seg.to),
+      getFamilyFinishedKg(seg.from, seg.to),
+    ]);
+    const weight = electricityIntensityWeight(
+      kg.hubFinishedKg,
+      kg.drumFinishedKg,
+      hubIntensity,
+      drumIntensity
+    );
+    const resolved = await resolveElectricityAccrual({
+      actualAmount: bill.amount,
+      currentWeight: weight,
+      hubIntensity,
+      drumIntensity,
+      periodFrom: seg.from,
+      dateFromStr: toDateInput(seg.from),
+    });
+    amount = roundMoney(amount + (resolved.amount || 0));
+    actualBill = roundMoney(actualBill + (resolved.actualBill || 0));
+    if (resolved.source === "actual") anyActual = true;
+    if (resolved.source === "estimated") {
+      anyEstimated = true;
+      lastEstimate = resolved.estimate;
+    }
+  }
+
+  const source =
+    anyActual && anyEstimated
+      ? "mixed"
+      : anyActual
+        ? "actual"
+        : anyEstimated
+          ? "estimated"
+          : "none";
+
+  return {
+    amount: roundMoney(amount),
+    source,
+    actualBill: roundMoney(actualBill),
+    estimate: lastEstimate,
+  };
 }
 
 async function collectEditableChargeLines(from, to) {

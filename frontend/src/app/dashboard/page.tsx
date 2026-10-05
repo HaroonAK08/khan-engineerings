@@ -787,7 +787,9 @@ export default function ProductionMarginPage() {
                 hint:
                   summary.electricityAccrual?.source === "estimated"
                     ? t("prodMargin.electricityEstimatedHint")
-                    : t("prodMargin.electricityPeriodHint"),
+                    : summary.electricityAccrual?.source === "mixed"
+                      ? t("prodMargin.electricityMixedHint")
+                      : t("prodMargin.electricityPeriodHint"),
                 accent: "bg-chart-2",
               },
               {

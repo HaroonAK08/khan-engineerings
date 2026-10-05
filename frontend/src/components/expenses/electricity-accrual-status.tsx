@@ -98,7 +98,7 @@ export function ElectricityAccrualStatus({ refreshKey = 0, className }: Props) {
   const sourceTone =
     accrual?.source === "actual"
       ? "border-chart-3/40 bg-chart-3/10"
-      : accrual?.source === "estimated"
+      : accrual?.source === "estimated" || accrual?.source === "mixed"
         ? "border-amber-500/40 bg-amber-500/10"
         : "border-border bg-muted/40";
 
@@ -107,7 +107,9 @@ export function ElectricityAccrualStatus({ refreshKey = 0, className }: Props) {
       ? t("elec.accrual.actual")
       : accrual?.source === "estimated"
         ? t("elec.accrual.estimated")
-        : t("elec.accrual.none");
+        : accrual?.source === "mixed"
+          ? t("elec.accrual.mixed")
+          : t("elec.accrual.none");
 
   return (
     <Card className={cn("py-0", className)}>
@@ -155,7 +157,7 @@ export function ElectricityAccrualStatus({ refreshKey = 0, className }: Props) {
               </p>
             </div>
 
-            {accrual.source === "estimated" && estimate ? (
+            {((accrual.source === "estimated" || accrual.source === "mixed") && estimate) ? (
               <div className="grid gap-2 text-sm sm:grid-cols-2">
                 <p>
                   <span className="text-muted-foreground">

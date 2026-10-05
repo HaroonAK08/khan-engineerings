@@ -255,7 +255,7 @@ export type ProductionMarginReport = {
       electricity?: number;
     };
     electricityAccrual?: {
-      source: "actual" | "estimated" | "none";
+      source: "actual" | "estimated" | "mixed" | "none";
       amount: number;
       actualBill: number;
       estimate?: {
@@ -492,7 +492,7 @@ export type PartySalesMarginReport = {
   };
   electricity: {
     bill: number;
-    source?: "actual" | "estimated" | "none";
+    source?: "actual" | "estimated" | "mixed" | "none";
     hubShare: number;
     drumShare: number;
     hubPerKg: number | null;

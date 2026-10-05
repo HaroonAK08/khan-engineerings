@@ -798,6 +798,8 @@ const en = {
   "prodMargin.electricityPeriodHint": "Total bills in selected period",
   "prodMargin.electricityEstimatedHint":
     "Estimated from prior month rate × this period’s kg (replaced when you enter the real bill)",
+  "prodMargin.electricityMixedHint":
+    "Includes actual bills plus estimates for months without a bill yet",
   "prodMargin.ikHubSaleKg": "Sale price IK hub / kg",
   "prodMargin.ikDrumSaleKg": "Sale price IK drum / kg",
   "prodMargin.peHubSaleKg": "Sale price Power Eng. hub / kg",
@@ -981,6 +983,7 @@ const en = {
     "What electricity amount margins use for the selected dates — actual bill or prior-month estimate.",
   "elec.accrual.actual": "Actual bill",
   "elec.accrual.estimated": "Estimated (prior month)",
+  "elec.accrual.mixed": "Bills + estimates",
   "elec.accrual.none": "No electricity in costs",
   "elec.accrual.forPeriod": "For {from} – {to}",
   "elec.accrual.priorBill": "Prior bill used",
@@ -3219,6 +3222,8 @@ const ur: Record<MessageKey, string> = {
   "prodMargin.electricityPeriodHint": "منتخب مدت کے کل بل",
   "prodMargin.electricityEstimatedHint":
     "گذشتہ مہینے کی ریٹ × اس مدت کے کلو سے تخمینہ (اصل بل درج کرنے پر بدل جائے گا)",
+  "prodMargin.electricityMixedHint":
+    "اصل بلز کے ساتھ ان مہینوں کا تخمینہ بھی شامل ہے جن کا بل ابھی درج نہیں",
   "prodMargin.ikHubSaleKg": "فروخت قیمت آئی کے ہب / کلو",
   "prodMargin.ikDrumSaleKg": "فروخت قیمت آئی کے ڈرم / کلو",
   "prodMargin.peHubSaleKg": "فروخت قیمت پاور انجینئرنگ ہب / کلو",
@@ -3401,6 +3406,7 @@ const ur: Record<MessageKey, string> = {
     "منتخب تاریخوں کے لیے مارجن بجلی کی کون سی رقم استعمال کر رہے ہیں — اصل بل یا گذشتہ مہینے کا تخمینہ۔",
   "elec.accrual.actual": "اصل بل",
   "elec.accrual.estimated": "تخمینہ (گذشتہ مہینہ)",
+  "elec.accrual.mixed": "بلز + تخمینہ",
   "elec.accrual.none": "لاگت میں بجلی نہیں",
   "elec.accrual.forPeriod": "{from} – {to} کے لیے",
   "elec.accrual.priorBill": "استعمال شدہ گذشتہ بل",
