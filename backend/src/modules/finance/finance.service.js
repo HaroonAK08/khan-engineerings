@@ -941,7 +941,497 @@ function emptyFamilyTotals() {
   };
 }
 
+/**
+ * Production cost & profit for a date range.
+ * Multi-month ranges are computed per calendar month then merged so totals and
+ * product/net profit stay additive (Sep + Oct = Sep–Oct).
+ */
 async function getProductionMargin(query = {}) {
+  const { from, to } = periodBounds(query);
+  const segments = calendarMonthSegments(from, to);
+  if (segments.length <= 1) {
+    return computeProductionMarginForPeriod(query);
+  }
+
+  const parts = [];
+  for (const seg of segments) {
+    parts.push(
+      await computeProductionMarginForPeriod({
+        ...query,
+        dateFrom: toDateInput(seg.from),
+        dateTo: toDateInput(seg.to),
+      })
+    );
+  }
+  return mergeProductionMarginReports(parts, { from, to });
+}
+
+function addNumberFields(target, source, keys) {
+  for (const key of keys) {
+    target[key] = (Number(target[key]) || 0) + (Number(source?.[key]) || 0);
+  }
+  return target;
+}
+
+function finalizeFamilyTotals(t) {
+  t.pieces = Math.round(t.pieces || 0);
+  t.finishedKg = roundKg(t.finishedKg);
+  t.scrapKg = roundKg(t.scrapKg);
+  t.daigKg = roundKg(t.daigKg);
+  t.wasteKg = roundKg(t.wasteKg);
+  t.materialCost = roundMoney(t.materialCost);
+  t.overhead = roundMoney(t.overhead);
+  t.totalCost = roundMoney(t.totalCost);
+  t.sellValue = roundMoney(t.sellValue);
+  t.unitsSold = Math.round(t.unitsSold || 0);
+  t.profit = roundMoney(t.profit);
+  t.costPerKg =
+    t.finishedKg > 0 ? roundMoney(t.totalCost / t.finishedKg) : null;
+  t.overheadPerKg =
+    t.finishedKg > 0 ? roundMoney(t.overhead / t.finishedKg) : null;
+  t.marginPct =
+    t.sellValue > 0 ? roundMoney((t.profit / t.sellValue) * 100) : null;
+  return t;
+}
+
+function mergeChannelFamilyLine(parts, channelKey, fam, finishedKgKey) {
+  const lines = parts
+    .map((p) => p.channelManufacture?.[channelKey]?.[fam])
+    .filter(Boolean);
+  if (!lines.length) return null;
+
+  let matNum = 0;
+  let salNum = 0;
+  let mfgNum = 0;
+  let addNum = 0;
+  let den = 0;
+  for (let i = 0; i < parts.length; i += 1) {
+    const line = parts[i].channelManufacture?.[channelKey]?.[fam];
+    if (!line) continue;
+    const kg =
+      Number(parts[i].summary?.[finishedKgKey]) ||
+      Number(parts[i].byFamily?.[fam]?.finishedKg) ||
+      0;
+    const w = kg > 0 ? kg : 1;
+    matNum += (Number(line.materialPerKg) || 0) * w;
+    salNum += (Number(line.salariesPerKg) || 0) * w;
+    mfgNum += (Number(line.mfgExpensesPerKg) || 0) * w;
+    addNum += (Number(line.salesmanAddOnPerKg) || 0) * w;
+    den += w;
+  }
+  const material = den > 0 ? roundMoney(matNum / den) : null;
+  const salaries = den > 0 ? roundMoney(salNum / den) : null;
+  const mfgExpenses = den > 0 ? roundMoney(mfgNum / den) : null;
+  const salesmanAddOnPerKg = den > 0 ? roundMoney(addNum / den) : 0;
+  const base = roundMoney(
+    (material || 0) + (salaries || 0) + (mfgExpenses || 0) + (salesmanAddOnPerKg || 0)
+  );
+  const template = lines[lines.length - 1];
+  return {
+    materialPerKg: material,
+    salariesPerKg: salaries,
+    mfgExpensesPerKg: mfgExpenses,
+    salesmanAddOnPerKg,
+    salaryLines: template.salaryLines || [],
+    expenseLines: template.expenseLines || [],
+    totalPerKg: base > 0 ? base : null,
+  };
+}
+
+function mergeProductionMarginReports(parts, { from, to }) {
+  const productMap = new Map();
+  const byFamily = { hub: emptyFamilyTotals(), drum: emptyFamilyTotals() };
+  const expenseMap = new Map();
+  const purchased = {
+    scrapKg: 0,
+    daigKg: 0,
+    totalKg: 0,
+    scrapAmount: 0,
+    daigAmount: 0,
+    totalAmount: 0,
+    scrapCount: 0,
+    daigCount: 0,
+    purchaseCount: 0,
+  };
+  const used = {
+    scrapKg: 0,
+    daigKg: 0,
+    totalKg: 0,
+    scrapAmount: 0,
+    daigAmount: 0,
+    totalAmount: 0,
+  };
+  const summary = {
+    pieces: 0,
+    scrapKg: 0,
+    daigKg: 0,
+    wasteKg: 0,
+    scrapCost: 0,
+    daigCost: 0,
+    materialCost: 0,
+    overhead: 0,
+    totalCost: 0,
+    sellValue: 0,
+    unitsSold: 0,
+    hubSales: 0,
+    drumSales: 0,
+    hubUnits: 0,
+    drumUnits: 0,
+    builtyCount: 0,
+    profit: 0,
+    hubFinishedKg: 0,
+    drumFinishedKg: 0,
+    overheadPools: { hub: 0, drum: 0, common: 0, electricity: 0 },
+  };
+
+  let scrapRateNum = 0;
+  let scrapRateDen = 0;
+  let daigRateNum = 0;
+  let daigRateDen = 0;
+  let anyElecActual = false;
+  let anyElecEstimated = false;
+  let elecActualBill = 0;
+  let lastElecEstimate = null;
+  let electricityIntensity = parts[0]?.summary?.electricityIntensity || null;
+  let taxSplit = parts[0]?.summary?.taxSplit || null;
+  let salaryPeriod = {
+    from,
+    to,
+    custom: false,
+    month: null,
+    paymentFrom: null,
+    paymentTo: null,
+  };
+  let salesmanLoad = 0;
+  let salesmanSoldKg = 0;
+  let salesmanAddOnNum = 0;
+  let salesmanAddOnDen = 0;
+
+  const productKeys = [
+    "pieces",
+    "finishedKg",
+    "scrapKg",
+    "daigKg",
+    "wasteKg",
+    "scrapCost",
+    "daigCost",
+    "materialCost",
+    "overhead",
+    "totalCost",
+    "unitsSoldPeriod",
+    "sellValue",
+    "profit",
+    "soldCogs",
+  ];
+
+  for (const part of parts) {
+    const s = part.summary || {};
+    addNumberFields(summary, s, [
+      "pieces",
+      "scrapKg",
+      "daigKg",
+      "wasteKg",
+      "scrapCost",
+      "daigCost",
+      "materialCost",
+      "overhead",
+      "totalCost",
+      "sellValue",
+      "unitsSold",
+      "hubSales",
+      "drumSales",
+      "hubUnits",
+      "drumUnits",
+      "builtyCount",
+      "profit",
+      "hubFinishedKg",
+      "drumFinishedKg",
+    ]);
+    addNumberFields(summary.overheadPools, s.overheadPools || {}, [
+      "hub",
+      "drum",
+      "common",
+      "electricity",
+    ]);
+
+    const scrapKg = Number(s.scrapKg) || 0;
+    const daigKg = Number(s.daigKg) || 0;
+    if (part.rates?.avgScrapRate != null && scrapKg > 0) {
+      scrapRateNum += part.rates.avgScrapRate * scrapKg;
+      scrapRateDen += scrapKg;
+    }
+    if (part.rates?.avgDaigRate != null && daigKg > 0) {
+      daigRateNum += part.rates.avgDaigRate * daigKg;
+      daigRateDen += daigKg;
+    }
+
+    const acc = s.electricityAccrual;
+    if (acc) {
+      elecActualBill = roundMoney(elecActualBill + (acc.actualBill || 0));
+      if (acc.source === "actual" || acc.source === "mixed") anyElecActual = true;
+      if (acc.source === "estimated" || acc.source === "mixed") {
+        anyElecEstimated = true;
+        if (acc.estimate) lastElecEstimate = acc.estimate;
+      }
+    }
+
+    if (part.salaryPeriod?.custom) salaryPeriod = part.salaryPeriod;
+
+    const pe = part.channelManufacture?.powerEngineering;
+    if (pe) {
+      salesmanLoad = roundMoney(salesmanLoad + (pe.salesmanLoad || 0));
+      salesmanSoldKg = roundKg(salesmanSoldKg + (pe.salesmanSoldKg || 0));
+      if (pe.salesmanAddOnPerKg != null && (pe.salesmanSoldKg || 0) > 0) {
+        salesmanAddOnNum += pe.salesmanAddOnPerKg * pe.salesmanSoldKg;
+        salesmanAddOnDen += pe.salesmanSoldKg;
+      }
+    }
+
+    for (const fam of ["hub", "drum"]) {
+      addNumberFields(byFamily[fam], part.byFamily?.[fam] || {}, [
+        "pieces",
+        "finishedKg",
+        "scrapKg",
+        "daigKg",
+        "wasteKg",
+        "materialCost",
+        "overhead",
+        "totalCost",
+        "sellValue",
+        "unitsSold",
+        "profit",
+      ]);
+    }
+
+    for (const row of part.products || []) {
+      const key = row.productId || row.name;
+      if (!productMap.has(key)) {
+        productMap.set(key, {
+          productId: row.productId,
+          name: row.name,
+          family: row.family || "hub",
+          pieces: 0,
+          weightKg: Number(row.weightKg) || 0,
+          finishedKg: 0,
+          scrapKg: 0,
+          daigKg: 0,
+          wasteKg: 0,
+          scrapCost: 0,
+          daigCost: 0,
+          materialCost: 0,
+          overhead: 0,
+          totalCost: 0,
+          unitsSoldPeriod: 0,
+          sellValue: 0,
+          profit: 0,
+          soldCogs: 0,
+          standardCost: Number(row.standardCost) || 0,
+          sellPriceSource: row.sellPriceSource || "none",
+          costSource: row.costSource || null,
+          saleOnly: true,
+        });
+      }
+      const dest = productMap.get(key);
+      addNumberFields(dest, row, productKeys);
+      if (row.pieces > 0) dest.saleOnly = false;
+      if (row.weightKg > 0) dest.weightKg = Number(row.weightKg) || dest.weightKg;
+      if (row.standardCost > 0) dest.standardCost = Number(row.standardCost) || dest.standardCost;
+      if (row.family) dest.family = row.family;
+      if (row.name) dest.name = row.name;
+    }
+
+    for (const e of part.expenseBreakdown || []) {
+      if (!expenseMap.has(e.id)) {
+        expenseMap.set(e.id, {
+          id: e.id,
+          label: e.label,
+          amount: 0,
+          kind: e.kind || "overhead",
+        });
+      }
+      expenseMap.get(e.id).amount = roundMoney(
+        expenseMap.get(e.id).amount + (e.amount || 0)
+      );
+    }
+
+    const pur = part.purchasedVsUsed?.purchased || {};
+    const use = part.purchasedVsUsed?.used || {};
+    addNumberFields(purchased, pur, Object.keys(purchased));
+    addNumberFields(used, use, Object.keys(used));
+  }
+
+  finalizeFamilyTotals(byFamily.hub);
+  finalizeFamilyTotals(byFamily.drum);
+
+  summary.pieces = Math.round(summary.pieces || 0);
+  summary.scrapKg = roundKg(summary.scrapKg);
+  summary.daigKg = roundKg(summary.daigKg);
+  summary.wasteKg = roundKg(summary.wasteKg);
+  summary.scrapCost = roundMoney(summary.scrapCost);
+  summary.daigCost = roundMoney(summary.daigCost);
+  summary.materialCost = roundMoney(summary.materialCost);
+  summary.overhead = roundMoney(summary.overhead);
+  summary.totalCost = roundMoney(summary.totalCost);
+  summary.sellValue = roundMoney(summary.sellValue);
+  summary.unitsSold = Math.round(summary.unitsSold || 0);
+  summary.hubSales = roundMoney(summary.hubSales);
+  summary.drumSales = roundMoney(summary.drumSales);
+  summary.hubUnits = Math.round(summary.hubUnits || 0);
+  summary.drumUnits = Math.round(summary.drumUnits || 0);
+  summary.builtyCount = Math.round(summary.builtyCount || 0);
+  summary.profit = roundMoney(summary.profit);
+  summary.hubFinishedKg = roundKg(summary.hubFinishedKg);
+  summary.drumFinishedKg = roundKg(summary.drumFinishedKg);
+  summary.marginPct =
+    summary.sellValue > 0
+      ? roundMoney((summary.profit / summary.sellValue) * 100)
+      : null;
+  summary.hubCostPerKg = byFamily.hub.costPerKg;
+  summary.drumCostPerKg = byFamily.drum.costPerKg;
+  summary.hubOverheadPerKg = byFamily.hub.overheadPerKg;
+  summary.drumOverheadPerKg = byFamily.drum.overheadPerKg;
+  for (const key of ["hub", "drum", "common", "electricity"]) {
+    summary.overheadPools[key] = roundMoney(summary.overheadPools[key] || 0);
+  }
+
+  const elecSource =
+    anyElecActual && anyElecEstimated
+      ? "mixed"
+      : anyElecActual
+        ? "actual"
+        : anyElecEstimated
+          ? "estimated"
+          : "none";
+  summary.electricityAccrual = {
+    source: elecSource,
+    amount: summary.overheadPools.electricity,
+    actualBill: roundMoney(elecActualBill),
+    estimate: lastElecEstimate,
+  };
+  summary.electricityIntensity = electricityIntensity;
+  summary.taxSplit = taxSplit;
+
+  const allFinishedKg = roundKg(summary.hubFinishedKg + summary.drumFinishedKg);
+  const products = [...productMap.values()]
+    .map((row) => {
+      const pieces = Math.round(row.pieces || 0);
+      const finishedKg = roundKg(row.finishedKg);
+      const unitsSoldPeriod = Math.round(row.unitsSoldPeriod || 0);
+      const sellValue = roundMoney(row.sellValue);
+      const totalCost = roundMoney(row.totalCost);
+      const overhead = roundMoney(row.overhead);
+      const profit = roundMoney(row.profit);
+      const soldCogs = roundMoney(row.soldCogs);
+      const costPerPiece = pieces > 0 ? roundMoney(totalCost / pieces) : 0;
+      const sellPricePerPiece =
+        unitsSoldPeriod > 0 ? roundMoney(sellValue / unitsSoldPeriod) : 0;
+      const unitMfg =
+        unitsSoldPeriod > 0 ? roundMoney(soldCogs / unitsSoldPeriod) : costPerPiece;
+      return {
+        ...row,
+        pieces,
+        finishedKg,
+        scrapKg: roundKg(row.scrapKg),
+        daigKg: roundKg(row.daigKg),
+        wasteKg: roundKg(row.wasteKg),
+        scrapCost: roundMoney(row.scrapCost),
+        daigCost: roundMoney(row.daigCost),
+        materialCost: roundMoney(row.materialCost),
+        overhead,
+        totalCost,
+        costPerPiece,
+        costPerKg: finishedKg > 0 ? roundMoney(totalCost / finishedKg) : null,
+        overheadPerKg: finishedKg > 0 ? roundMoney(overhead / finishedKg) : null,
+        avgScrapRate:
+          scrapRateDen > 0 ? roundMoney(scrapRateNum / scrapRateDen) : 0,
+        avgDaigRate: daigRateDen > 0 ? roundMoney(daigRateNum / daigRateDen) : 0,
+        standardCost: roundMoney(row.standardCost || 0),
+        unitsSoldPeriod,
+        sellValue,
+        sellPricePerPiece,
+        profit,
+        soldCogs,
+        profitPerPiece: roundMoney(sellPricePerPiece - unitMfg),
+        marginPct:
+          sellValue > 0 ? roundMoney((profit / sellValue) * 100) : null,
+      };
+    })
+    .sort((a, b) => {
+      if (!!a.saleOnly !== !!b.saleOnly) return a.saleOnly ? 1 : -1;
+      return b.profit - a.profit;
+    });
+
+  purchased.scrapKg = roundKg(purchased.scrapKg);
+  purchased.daigKg = roundKg(purchased.daigKg);
+  purchased.totalKg = roundKg(purchased.scrapKg + purchased.daigKg);
+  purchased.scrapAmount = roundMoney(purchased.scrapAmount);
+  purchased.daigAmount = roundMoney(purchased.daigAmount);
+  purchased.totalAmount = roundMoney(purchased.scrapAmount + purchased.daigAmount);
+  purchased.scrapCount = Math.round(purchased.scrapCount || 0);
+  purchased.daigCount = Math.round(purchased.daigCount || 0);
+  purchased.purchaseCount = Math.round(purchased.purchaseCount || 0);
+
+  used.scrapKg = roundKg(used.scrapKg);
+  used.daigKg = roundKg(used.daigKg);
+  used.totalKg = roundKg(used.scrapKg + used.daigKg);
+  used.scrapAmount = roundMoney(used.scrapAmount);
+  used.daigAmount = roundMoney(used.daigAmount);
+  used.totalAmount = roundMoney(used.scrapAmount + used.daigAmount);
+
+  const expenseBreakdown = [...expenseMap.values()]
+    .filter((e) => e.amount > 0)
+    .map((e) => {
+      let divisorKg = allFinishedKg;
+      if (e.id === "scrap_cost") divisorKg = summary.scrapKg;
+      else if (e.id === "daig_cost") divisorKg = summary.daigKg;
+      return {
+        ...e,
+        amount: roundMoney(e.amount),
+        amountPerKg:
+          divisorKg > 0 ? roundMoney(e.amount / divisorKg) : null,
+      };
+    });
+
+  const salesmanAddOnPerKg =
+    salesmanAddOnDen > 0 ? roundMoney(salesmanAddOnNum / salesmanAddOnDen) : 0;
+  const channelManufacture = {
+    ikEngineering: {
+      id: "ik_engineering",
+      name: "IK Engineering",
+      hub: mergeChannelFamilyLine(parts, "ikEngineering", "hub", "hubFinishedKg"),
+      drum: mergeChannelFamilyLine(parts, "ikEngineering", "drum", "drumFinishedKg"),
+    },
+    powerEngineering: {
+      id: "power_engineering",
+      name: "Power Engineering",
+      hub: mergeChannelFamilyLine(parts, "powerEngineering", "hub", "hubFinishedKg"),
+      drum: mergeChannelFamilyLine(parts, "powerEngineering", "drum", "drumFinishedKg"),
+      salesmanLoad,
+      salesmanAddOnPerKg,
+      salesmanSoldKg,
+    },
+  };
+
+  return {
+    period: { from, to },
+    salaryPeriod,
+    rates: {
+      avgScrapRate:
+        scrapRateDen > 0 ? roundMoney(scrapRateNum / scrapRateDen) : 0,
+      avgDaigRate: daigRateDen > 0 ? roundMoney(daigRateNum / daigRateDen) : 0,
+      scrapSource: "period",
+      daigSource: "period",
+    },
+    summary,
+    purchasedVsUsed: { purchased, used },
+    byFamily,
+    products,
+    expenseBreakdown,
+    channelManufacture,
+  };
+}
+
+async function computeProductionMarginForPeriod(query = {}) {
   const { from, to } = periodBounds(query);
   const settingsService = require("../settings/settings.service");
   const salaryBounds = await settingsService.resolveSalaryBounds(from, to);
@@ -2486,7 +2976,7 @@ function mergePartySalesMarginReports(parts, { from, to }) {
 
 async function computePartySalesMarginForPeriod(query = {}) {
   const { from, to } = periodBounds(query);
-  const margin = await getProductionMargin(query);
+  const margin = await computeProductionMarginForPeriod(query);
 
   const salesmanLoad = roundMoney(
     (margin.expenseBreakdown || [])
