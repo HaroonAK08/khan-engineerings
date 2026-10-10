@@ -85,7 +85,7 @@ export default function CustomerDetailPage() {
   const [loading, setLoading] = useState(true);
   const loadSeq = useRef(0);
 
-  const [showPendingForm, setShowPendingForm] = useState(true);
+  const [showPendingForm, setShowPendingForm] = useState(false);
   const [pendingAmount, setPendingAmount] = useState("");
   const [pendingDate, setPendingDate] = useState(todayInput());
   const [pendingNotes, setPendingNotes] = useState("");
@@ -327,6 +327,35 @@ export default function CustomerDetailPage() {
     }
   }
 
+  function actionButtonClass(active: boolean) {
+    return active
+      ? "h-auto min-h-11 whitespace-normal border-2 border-primary bg-card px-3 py-2 text-center font-semibold text-primary shadow-sm hover:bg-primary/10"
+      : "h-auto min-h-11 whitespace-normal border border-transparent bg-primary px-3 py-2 text-center font-semibold text-primary-foreground shadow-sm hover:bg-primary/80";
+  }
+
+  function openPartyAction(next: "pending" | "payment" | "cheque") {
+    if (next === "pending") {
+      setShowPaidForm(false);
+      setShowInstrumentForm(false);
+      setShowPendingForm((open) => !open);
+      return;
+    }
+    if (next === "payment") {
+      setShowPendingForm(false);
+      setShowInstrumentForm(false);
+      if (!showPaidForm) {
+        setPaidKind("payment");
+        setPaidAmount(balance > 0 ? String(balance) : "");
+        setPaidDiscount("");
+      }
+      setShowPaidForm((open) => !open);
+      return;
+    }
+    setShowPendingForm(false);
+    setShowPaidForm(false);
+    setShowInstrumentForm((open) => !open);
+  }
+
   if (loading) {
     return (
       <div className="flex justify-center py-20">
@@ -394,116 +423,83 @@ export default function CustomerDetailPage() {
         ))}
       </div>
 
-      <PartyChequePromiseSummary instruments={instruments} />
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <Button
+          type="button"
+          className={actionButtonClass(showPendingForm)}
+          onClick={() => openPartyAction("pending")}
+        >
+          {t("customerDetail.addPreviousPending")}
+        </Button>
+        <Button
+          type="button"
+          className={actionButtonClass(showPaidForm)}
+          onClick={() => openPartyAction("payment")}
+        >
+          {t("customerDetail.addPayment")}
+        </Button>
+        <Button
+          type="button"
+          className={actionButtonClass(showInstrumentForm)}
+          onClick={() => openPartyAction("cheque")}
+        >
+          {t("customerDetail.addChequePromise")}
+        </Button>
+      </div>
 
-      <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
+      {showPendingForm ? (
+        <Card>
+          <CardHeader>
             <CardTitle className="text-nameplate text-sm">
-              {t("customerDetail.previousPending")}
+              {t("customerDetail.addPreviousPending")}
             </CardTitle>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {t("customerDetail.previousPendingDateDesc")}
-            </p>
-          </div>
-          <Button
-            type="button"
-            variant={showPendingForm ? "outline" : "default"}
-            onClick={() => {
-              setShowPendingForm((v) => !v);
-              setShowPaidForm(false);
-            }}
-          >
-            {showPendingForm ? t("common.cancel") : t("customerDetail.addPreviousPending")}
-          </Button>
-        </CardHeader>
-        <CardContent className={showPendingForm ? "pt-0" : undefined}>
-          {showPendingForm ? (
-            <div className="mb-4 rounded-lg border bg-muted/20 p-3">
-              <p className="mb-3 text-sm font-medium">{t("customerDetail.addPreviousPending")}</p>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div className="flex flex-col gap-1.5">
-                  <Label>{t("common.amount")}</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    value={pendingAmount}
-                    onChange={(e) => setPendingAmount(e.target.value)}
-                    placeholder="0"
-                    autoFocus
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label>{t("common.date")}</Label>
-                  <Input
-                    type="date"
-                    value={pendingDate}
-                    onChange={(e) => setPendingDate(e.target.value)}
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label>{t("common.notes")}</Label>
-                  <Input
-                    value={pendingNotes}
-                    onChange={(e) => setPendingNotes(e.target.value)}
-                  />
-                </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("common.amount")}</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  value={pendingAmount}
+                  onChange={(e) => setPendingAmount(e.target.value)}
+                  placeholder="0"
+                  autoFocus
+                />
               </div>
-              <Button
-                type="button"
-                className="mt-3 gap-2"
-                disabled={savingPending}
-                onClick={() => void onAddPreviousPending()}
-              >
-                {savingPending ? <Loader2 className="size-4 animate-spin" /> : null}
-                {t("common.save")}
-              </Button>
-            </div>
-          ) : null}
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="grid gap-1.5">
-              <Label>{t("common.from")}</Label>
-              <Input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                onInput={(e) => setDateFrom((e.target as HTMLInputElement).value)}
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label>{t("common.to")}</Label>
-              <Input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                onInput={(e) => setDateTo((e.target as HTMLInputElement).value)}
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label>{t("customerDetail.previousPending")}</Label>
-              <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3">
-                <span
-                  className={`font-data text-base font-semibold ${baqayaClass(previousPendingShown) || ""}`}
-                >
-                  {formatBaqaya(previousPendingShown)}
-                </span>
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("common.date")}</Label>
+                <Input
+                  type="date"
+                  value={pendingDate}
+                  onChange={(e) => setPendingDate(e.target.value)}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("common.notes")}</Label>
+                <Input
+                  value={pendingNotes}
+                  onChange={(e) => setPendingNotes(e.target.value)}
+                />
               </div>
             </div>
-          </div>
-          <div className="mt-4 border-t pt-4">
-            <PartyPendingByMonth
-              key={`${dateFrom}|${dateTo}`}
-              snapshot={periodPending}
-              dateFrom={dateFrom}
-              dateTo={dateTo}
-            />
-          </div>
-        </CardContent>
-      </Card>
+            <Button
+              type="button"
+              className="mt-3 gap-2"
+              disabled={savingPending}
+              onClick={() => void onAddPreviousPending()}
+            >
+              {savingPending ? <Loader2 className="size-4 animate-spin" /> : null}
+              {t("common.save")}
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
 
+      {showPaidForm ? (
       <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <CardHeader>
           <div>
             <CardTitle className="text-nameplate text-sm">
               {t("customerDetail.recordPayment")}
@@ -512,26 +508,7 @@ export default function CustomerDetailPage() {
               {t("customerDetail.recordPaymentDesc")}
             </p>
           </div>
-          <Button
-            type="button"
-            variant={showPaidForm ? "outline" : "default"}
-            className={showPaidForm ? undefined : "bg-primary px-5 text-primary-foreground shadow-sm"}
-            onClick={() => {
-              setShowPaidForm((v) => {
-                const next = !v;
-                if (next) {
-                  setPaidKind("payment");
-                  setPaidAmount(balance > 0 ? String(balance) : "");
-                  setPaidDiscount("");
-                }
-                return next;
-              });
-            }}
-          >
-            {showPaidForm ? t("common.cancel") : t("customerDetail.addPayment")}
-          </Button>
         </CardHeader>
-        {showPaidForm ? (
           <CardContent className="pt-0">
             <div className="mb-3 flex flex-col gap-1.5">
               <Label>{t("customerDetail.entryKind")}</Label>
@@ -649,11 +626,12 @@ export default function CustomerDetailPage() {
               {t("common.save")}
             </Button>
           </CardContent>
-        ) : null}
       </Card>
+      ) : null}
 
+      {showInstrumentForm ? (
       <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <CardHeader>
           <div>
             <CardTitle className="text-nameplate text-sm">
               {t("customerDetail.chequePromise")}
@@ -662,15 +640,7 @@ export default function CustomerDetailPage() {
               {t("customerDetail.chequePromiseDesc")}
             </p>
           </div>
-          <Button
-            type="button"
-            variant={showInstrumentForm ? "outline" : "default"}
-            onClick={() => setShowInstrumentForm((v) => !v)}
-          >
-            {showInstrumentForm ? t("common.cancel") : t("customerDetail.addChequePromise")}
-          </Button>
         </CardHeader>
-        {showInstrumentForm ? (
           <CardContent className="pt-0">
             <div className="mb-3 flex h-9 overflow-hidden rounded-lg border border-input">
               <button
@@ -734,7 +704,62 @@ export default function CustomerDetailPage() {
               {t("common.save")}
             </Button>
           </CardContent>
-        ) : null}
+      </Card>
+      ) : null}
+
+      <PartyChequePromiseSummary instruments={instruments} />
+
+      <Card>
+        <CardHeader>
+          <div>
+            <CardTitle className="text-nameplate text-sm">
+              {t("customerDetail.previousPending")}
+            </CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t("customerDetail.previousPendingDateDesc")}
+            </p>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-1.5">
+              <Label>{t("common.from")}</Label>
+              <Input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                onInput={(e) => setDateFrom((e.target as HTMLInputElement).value)}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>{t("common.to")}</Label>
+              <Input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                onInput={(e) => setDateTo((e.target as HTMLInputElement).value)}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>{t("customerDetail.previousPending")}</Label>
+              <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3">
+                <span
+                  className={`font-data text-base font-semibold ${baqayaClass(previousPendingShown) || ""}`}
+                >
+                  {formatBaqaya(previousPendingShown)}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 border-t pt-4">
+            <PartyPendingByMonth
+              key={`${dateFrom}|${dateTo}`}
+              snapshot={periodPending}
+              dateFrom={dateFrom}
+              dateTo={dateTo}
+            />
+          </div>
+        </CardContent>
       </Card>
 
       <div className="flex flex-col gap-2">

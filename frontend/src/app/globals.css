@@ -363,6 +363,39 @@ html.locale-ur .gap-1\.5 {
   gap: 0.5rem !important;
 }
 
+@layer components {
+  [data-slot="table-body"] > [data-slot="table-row"],
+  [data-slot="table-header"] > [data-slot="table-row"] {
+    background-color: var(--card);
+  }
+
+  [data-slot="table-footer"] > [data-slot="table-row"] {
+    background-color: color-mix(in oklch, var(--muted) 50%, var(--card));
+  }
+
+  [data-slot="table-container"] [data-slot="table-head"]:first-child,
+  [data-slot="table-container"] [data-slot="table-cell"]:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 10;
+    background-color: inherit;
+    box-shadow: 4px 0 8px -6px rgba(0, 0, 0, 0.35);
+  }
+
+  [data-slot="table-container"] [data-slot="table-head"]:first-child::before,
+  [data-slot="table-container"] [data-slot="table-cell"]:first-child::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background-color: var(--card);
+  }
+
+  [data-slot="table-container"] [data-slot="table-head"]:first-child {
+    z-index: 20;
+  }
+}
+
 @keyframes status-pulse {
   0%,
   100% {

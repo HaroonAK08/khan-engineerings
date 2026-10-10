@@ -40,6 +40,8 @@ router.get("/export/statements/groups/:id", controller.exportGroupStatement);
 router.get("/export/statements/customers-overview", controller.exportCustomersOverviewStatement);
 router.get("/export/full", controller.exportFull);
 router.get("/export/custom", controller.exportCustom);
+router.get("/export/handout", controller.exportHandout);
+router.get("/handout", controller.handoutPreview);
 router.get("/preview", controller.combinedPreview);
 
 module.exports = router;

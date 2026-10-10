@@ -600,8 +600,12 @@ function NewProductionForm() {
                         type="number"
                         min={1}
                         step={1}
-                        value={line.quantity}
-                        onChange={(e) => updateLine(index, { quantity: Number(e.target.value) })}
+                        value={line.quantity > 0 ? line.quantity : ""}
+                        onChange={(e) =>
+                          updateLine(index, {
+                            quantity: e.target.value === "" ? 0 : Number(e.target.value),
+                          })
+                        }
                       />
                     </div>
                     <div className="flex flex-col gap-1.5">

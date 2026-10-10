@@ -35,6 +35,8 @@ export type PendingCharge = {
   kind: "invoice" | "adjustment";
   label: string;
   href?: string;
+  partyName?: string;
+  partyHref?: string;
 };
 
 export type MonthPending = {
@@ -302,8 +304,10 @@ export function prefixPendingParty(
   partyName: string,
   partyHref?: string
 ): PeriodPending {
-  const tag = (line: PendingCharge) => ({
+  const tag = (line: PendingCharge): PendingCharge => ({
     ...line,
+    partyName,
+    partyHref,
     label: `${partyName} · ${line.label}`,
   });
   const tagDetail = (line: PendingDetailLine): PendingDetailLine => ({

@@ -65,7 +65,7 @@ async function position(req, res, next) {
 
 async function yearly(req, res, next) {
   try {
-    const report = await reportsService.getYearlyBillReport(req.query);
+    const report = await reportsService.getYearlyCalendarReport(req.query);
     res.json({ report });
   } catch (err) {
     next(err);
@@ -209,7 +209,7 @@ async function exportCustomersOverviewStatement(req, res, next) {
 async function exportYearlyBill(req, res, next) {
   try {
     const format = String(req.query.format || "pdf").toLowerCase() === "xlsx" ? "xlsx" : "pdf";
-    await reportsService.exportYearlyBill(req.query, format, res);
+    await reportsService.exportYearlyCalendar(req.query, format, res);
   } catch (err) {
     next(err);
   }
@@ -228,6 +228,24 @@ async function exportCustom(req, res, next) {
   try {
     const format = String(req.query.format || "pdf").toLowerCase() === "xlsx" ? "xlsx" : "pdf";
     await reportsService.exportCustom(req.query, format, res);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function handoutPreview(req, res, next) {
+  try {
+    const report = await reportsService.getHandoutPreview(req.query);
+    res.json({ report });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function exportHandout(req, res, next) {
+  try {
+    const format = String(req.query.format || "pdf").toLowerCase() === "xlsx" ? "xlsx" : "pdf";
+    await reportsService.exportHandout(req.query, format, res);
   } catch (err) {
     next(err);
   }
@@ -275,4 +293,6 @@ module.exports = {
   exportFull,
   exportCustom,
   combinedPreview,
+  handoutPreview,
+  exportHandout,
 };

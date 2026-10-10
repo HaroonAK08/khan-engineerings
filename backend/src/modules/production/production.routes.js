@@ -12,6 +12,9 @@ router.get("/cost-reports", expenseController.costReport);
 router.get("/reports", controller.report);
 router.get("/reports/products/:productId", controller.productReport);
 
+router.post("/shift-date", controller.shiftDate);
+router.post("/remove-many", controller.removeMany);
+
 router.get("/", controller.list);
 router.post("/produce", controller.produce);
 router.post("/", controller.create);

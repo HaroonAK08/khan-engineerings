@@ -127,6 +127,11 @@ export const VOICE_ROUTES: VoiceRoute[] = [
   },
   { href: "/dashboard/reports", label: "Reports", words: ["reports", "report"] },
   {
+    href: "/dashboard/reports/ranking",
+    label: "Ranking",
+    words: ["ranking", "rank", "party ranking", "product ranking"],
+  },
+  {
     href: "/dashboard/finance/party-margin",
     label: "Party margin",
     words: ["party margin"],

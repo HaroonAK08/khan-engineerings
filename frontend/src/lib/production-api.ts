@@ -131,6 +131,19 @@ export async function deleteBatch(id: string) {
   await api.delete(`/production/${id}`);
 }
 
+export async function shiftProductionDates(ids: string[], productionDate: string) {
+  const { data } = await api.post<{ updated: number; productionDate: string }>(
+    "/production/shift-date",
+    { ids, productionDate }
+  );
+  return data;
+}
+
+export async function deleteBatches(ids: string[]) {
+  const { data } = await api.post<{ removed: number }>("/production/remove-many", { ids });
+  return data;
+}
+
 export async function getProductionReport(params?: {
   dateFrom?: string;
   dateTo?: string;

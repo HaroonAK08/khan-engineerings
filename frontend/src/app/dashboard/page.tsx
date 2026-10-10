@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { FinanceSubnav } from "@/components/layout/finance-subnav";
-import { apiError, formatKg, formatMoney } from "@/lib/materials-api";
+import { apiError, formatKg, formatMoney, getPurchaseReport } from "@/lib/materials-api";
+import type { PurchaseReport } from "@/types/materials";
 import {
   getPartySalesMargin,
   getProductionMargin,
@@ -32,6 +33,16 @@ import {
 } from "@/components/ui/table";
 import { useI18n } from "@/hooks/use-i18n";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
+
+function materialTotals(report: PurchaseReport | null, type: "scrap" | "daig") {
+  const row = report?.byMaterialType?.find((m) => m.materialType === type);
+  return {
+    totalKg: row?.totalKg ?? 0,
+    totalSpend: row?.totalSpend ?? 0,
+    totalPaid: row?.totalPaid ?? 0,
+    paidKg: row?.paidKg ?? 0,
+  };
+}
 
 function FamilyCard({
   title,
@@ -497,18 +508,21 @@ export default function ProductionMarginPage() {
   const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
   const [report, setReport] = useState<ProductionMarginReport | null>(null);
   const [partyMargin, setPartyMargin] = useState<PartySalesMarginReport | null>(null);
+  const [purchaseReport, setPurchaseReport] = useState<PurchaseReport | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     if (!hydrated) return;
     setLoading(true);
     try {
-      const [data, party] = await Promise.all([
+      const [data, party, purchases] = await Promise.all([
         getProductionMargin({ dateFrom, dateTo, taxSplit: taxMode }),
         getPartySalesMargin({ dateFrom, dateTo, taxSplit: taxMode }),
+        getPurchaseReport({ dateFrom, dateTo }),
       ]);
       setReport(data);
       setPartyMargin(party);
+      setPurchaseReport(purchases);
     } catch (err) {
       toast.error(apiError(err, t("prodMargin.loadFailed")));
     } finally {
@@ -983,8 +997,90 @@ export default function ProductionMarginPage() {
               },
             ];
 
+            const scrapPurchased = materialTotals(purchaseReport, "scrap");
+            const daigPurchased = materialTotals(purchaseReport, "daig");
+            const purchaseCards = [
+              [
+                {
+                  label: t("purchases.scrapPurchased"),
+                  value: purchaseReport ? `${formatKg(scrapPurchased.totalKg)} kg` : "—",
+                  detail: purchaseReport ? formatMoney(scrapPurchased.totalSpend) : "—",
+                  hint: t("purchases.scrapHubLabel"),
+                  accent: "bg-chart-1",
+                },
+                {
+                  label: t("purchases.daigPurchased"),
+                  value: purchaseReport ? `${formatKg(daigPurchased.totalKg)} kg` : "—",
+                  detail: purchaseReport ? formatMoney(daigPurchased.totalSpend) : "—",
+                  hint: t("purchases.daigDrumLabel"),
+                  accent: "bg-chart-2",
+                },
+                {
+                  label: t("purchases.totalPurchased"),
+                  value: purchaseReport
+                    ? `${formatKg(purchaseReport.totals.totalKg)} kg`
+                    : "—",
+                  detail: purchaseReport ? formatMoney(purchaseReport.totals.totalSpend) : "—",
+                  hint: t("purchases.purchasedKgHint"),
+                  accent: "bg-chart-3",
+                },
+              ],
+              [
+                {
+                  label: t("purchases.scrapSpend"),
+                  value: purchaseReport ? `${formatKg(scrapPurchased.paidKg)} kg` : "—",
+                  detail: purchaseReport ? formatMoney(scrapPurchased.totalPaid) : "—",
+                  hint: t("purchases.paidKgHint"),
+                  accent: "bg-chart-1",
+                },
+                {
+                  label: t("purchases.daigSpend"),
+                  value: purchaseReport ? `${formatKg(daigPurchased.paidKg)} kg` : "—",
+                  detail: purchaseReport ? formatMoney(daigPurchased.totalPaid) : "—",
+                  hint: t("purchases.paidKgHint"),
+                  accent: "bg-chart-2",
+                },
+                {
+                  label: t("purchases.totalSpend"),
+                  value: purchaseReport
+                    ? `${formatKg(purchaseReport.totals.paidKg || 0)} kg`
+                    : "—",
+                  detail: purchaseReport
+                    ? formatMoney(purchaseReport.totals.totalPaid || 0)
+                    : "—",
+                  hint: t("purchases.paidKgHint"),
+                  accent: "bg-chart-3",
+                },
+              ],
+            ];
+
             return (
               <div className="flex flex-col gap-6">
+                <div className="flex flex-col gap-4">
+                  {purchaseCards.map((row) => (
+                    <div
+                      key={row[0].label}
+                      className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3"
+                    >
+                      {row.map((stat) => (
+                        <Card key={stat.label} className="relative overflow-hidden py-0">
+                          <span
+                            className={`absolute inset-x-0 top-0 h-1 ${stat.accent}`}
+                            aria-hidden
+                          />
+                          <CardContent className="p-5">
+                            <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
+                              {stat.label}
+                            </p>
+                            <p className="font-data mt-2 text-2xl font-medium">{stat.value}</p>
+                            <p className="font-data mt-1 text-lg">{stat.detail}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">{stat.hint}</p>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  ))}
+                </div>
                 {renderStatCards(overviewStats)}
 
                 <div className="flex flex-col gap-3">

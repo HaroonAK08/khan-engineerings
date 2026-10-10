@@ -688,6 +688,41 @@ async function cancelBatch(id) {
   return populateBatch(batch._id);
 }
 
+async function shiftDates(ids, productionDate) {
+  if (!Array.isArray(ids) || ids.length === 0) {
+    throw httpError("Select a production to update", 400);
+  }
+  const date = parseDate(productionDate, "Production date");
+  const mongoose = require("mongoose");
+  const StockMovement = require("../inventory/movement.model");
+  let updated = 0;
+  for (const rawId of ids) {
+    if (!mongoose.isValidObjectId(rawId)) throw httpError("Invalid production id", 400);
+    const batch = await ProductionBatch.findById(rawId);
+    if (!batch) throw httpError("Production batch not found", 404);
+    batch.productionDate = date;
+    await batch.save();
+    await StockMovement.updateMany(
+      { refType: "production", refId: batch._id },
+      { $set: { movementDate: date } }
+    );
+    updated += 1;
+  }
+  return { updated, productionDate: date };
+}
+
+async function removeMany(ids) {
+  if (!Array.isArray(ids) || ids.length === 0) {
+    throw httpError("Select a production to delete", 400);
+  }
+  let removed = 0;
+  for (const id of ids) {
+    await remove(id);
+    removed += 1;
+  }
+  return { removed };
+}
+
 async function remove(id) {
   const batch = await ProductionBatch.findById(id);
   if (!batch) throw httpError("Production batch not found", 404);
@@ -1293,7 +1328,9 @@ module.exports = {
   getById,
   update,
   updateProduce,
+  shiftDates,
   remove,
+  removeMany,
   recordFurnace,
   recordTurning,
   advanceStage,

@@ -453,6 +453,51 @@ export async function downloadFullReport(params: {
   triggerDownload(data as Blob, `${base}.${ext}`);
 }
 
+export type HandoutAudience = "party" | "group" | "supplier" | "builty";
+
+export async function getHandoutPreview(params: {
+  audience: HandoutAudience;
+  id: string;
+  dateFrom?: string;
+  dateTo?: string;
+}) {
+  const query: Record<string, string> = {
+    audience: params.audience,
+    id: params.id,
+  };
+  if (params.dateFrom) query.dateFrom = params.dateFrom;
+  if (params.dateTo) query.dateTo = params.dateTo;
+  const { data } = await api.get<{ report: CombinedReportPreview }>("/reports/handout", {
+    params: query,
+    timeout: 90_000,
+  });
+  return data.report;
+}
+
+export async function downloadHandout(params: {
+  audience: HandoutAudience;
+  id: string;
+  format: "pdf" | "xlsx";
+  dateFrom?: string;
+  dateTo?: string;
+  filename?: string;
+}) {
+  const query: Record<string, string> = {
+    audience: params.audience,
+    id: params.id,
+    format: params.format,
+  };
+  if (params.dateFrom) query.dateFrom = params.dateFrom;
+  if (params.dateTo) query.dateTo = params.dateTo;
+  const { data } = await api.get("/reports/export/handout", {
+    params: query,
+    responseType: "blob",
+    timeout: 90_000,
+  });
+  const ext = params.format === "xlsx" ? "xlsx" : "pdf";
+  triggerDownload(data as Blob, `${params.filename || "statement"}.${ext}`);
+}
+
 export async function downloadCustomReport(params: {
   format: "pdf" | "xlsx";
   modules: ExportKind[];
@@ -561,120 +606,55 @@ export async function downloadCustomersOverviewExport(params: {
   triggerDownload(data as Blob, "customers-overview-statement.pdf");
 }
 
-export type YearlyBuiltyRow = {
+export type YearlyCalendarMode = "party" | "group" | "supplier";
+export type YearlyDateMode = "single" | "range";
+
+export type YearlyCalendarRow = {
   id: string;
-  builtyNo: string;
-  billNo?: string;
-  date: string;
-  items?: Array<{
-    name: string;
-    quantity: number;
-    weightKg?: number;
-    unitPrice?: number;
-    ratePerKg?: number;
-    pricingMode?: string;
-    lineTotal: number;
-    label?: string;
-  }>;
-  itemsLabel?: string;
-  total: number;
-  paid: number;
-  left: number;
-  paymentStatus: string;
-  href: string;
-};
-
-export type YearlyMonthBlock = {
-  key: string;
-  label: string;
-  builties: YearlyBuiltyRow[];
-  totals: {
-    billed: number;
-    paid: number;
-    leftover: number;
-    builtyCount: number;
-  };
-};
-
-export type YearlyPartyDetail = {
-  partyId: string;
   name: string;
-  phone?: string;
-  groupId: string;
-  groupName: string;
-  summary: {
-    billed: number;
-    paid: number;
-    leftover: number;
-    builtyCount: number;
-  };
-  months: YearlyMonthBlock[];
-  openBeforeYear: YearlyBuiltyRow[];
+  href?: string;
+  months: Record<string, number>;
+  total: number;
 };
 
-export type YearlyBillReport = {
+export type YearlyCalendarReport = {
   year: number;
-  period?: {
-    from: string | null;
-    to: string | null;
-    label: string;
-  };
-  group?: { id: string; name: string } | null;
-  party?: { id: string; name: string } | null;
+  mode: YearlyCalendarMode;
+  dateMode: YearlyDateMode;
+  asOf: string;
+  dayOfMonth?: number | null;
+  period: { from: string; to: string };
+  amountKind: "receivable" | "payable";
+  months: Array<{ key: string; label: string }>;
+  rows: YearlyCalendarRow[];
   totals: {
-    billed: number;
-    paid: number;
-    leftover: number;
-    builtyCount: number;
-    partyCount: number;
-    groupCount: number;
+    months: Record<string, number>;
+    total: number;
+    rowCount: number;
   };
-  byParty: Array<{
-    partyId: string;
-    name: string;
-    phone?: string;
-    groupId: string;
-    groupName: string;
-    billed: number;
-    paid: number;
-    leftover: number;
-    builtyCount: number;
-  }>;
-  byGroup: Array<{
-    groupId: string;
-    name: string;
-    billed: number;
-    paid: number;
-    leftover: number;
-    builtyCount: number;
-    partyCount: number;
-  }>;
-  parties: YearlyPartyDetail[];
 };
 
-export async function getYearlyBillReport(params?: {
+export async function getYearlyCalendarReport(params?: {
   year?: number | string;
-  groupId?: string;
-  customerId?: string;
+  mode?: YearlyCalendarMode;
+  dateMode?: YearlyDateMode;
+  date?: string;
   dateFrom?: string;
   dateTo?: string;
 }) {
-  const { data } = await api.get<{ report: YearlyBillReport }>("/reports/yearly", {
+  const { data } = await api.get<{ report: YearlyCalendarReport }>("/reports/yearly", {
     params,
+    timeout: 60_000,
   });
   return data.report;
 }
 
-export async function downloadYearlyBillExport(params: {
+export async function downloadYearlyCalendarExport(params: {
   format?: "pdf" | "xlsx";
   year: number | string;
-  customerId?: string;
-  groupId?: string;
-  monthKey?: string;
-  previousIds?: string[];
-  monthIds?: string[];
-  includePrevious?: boolean;
-  mode?: "bill" | "year";
+  mode?: YearlyCalendarMode;
+  dateMode?: YearlyDateMode;
+  date?: string;
   dateFrom?: string;
   dateTo?: string;
 }) {
@@ -682,29 +662,17 @@ export async function downloadYearlyBillExport(params: {
     format: params.format || "pdf",
     year: String(params.year),
   };
-  if (params.customerId) query.customerId = params.customerId;
-  if (params.groupId) query.groupId = params.groupId;
   if (params.mode) query.mode = params.mode;
+  if (params.dateMode) query.dateMode = params.dateMode;
+  if (params.date) query.date = params.date;
   if (params.dateFrom) query.dateFrom = params.dateFrom;
   if (params.dateTo) query.dateTo = params.dateTo;
-  if (params.monthKey) {
-    query.monthKey = params.monthKey;
-    query.mode = params.mode || "bill";
-  }
-  if (params.includePrevious === false) {
-    query.includePrevious = "0";
-  } else if (params.previousIds) {
-    query.previousIds = params.previousIds.join(",");
-  }
-  if (params.monthIds && params.monthIds.length > 0) {
-    query.monthIds = params.monthIds.join(",");
-  }
   const { data } = await api.get("/reports/export/yearly", {
     params: query,
     responseType: "blob",
+    timeout: 60_000,
   });
-  const name = params.monthKey ? "yearly-bill.pdf" : "yearly-record.pdf";
-  triggerDownload(data as Blob, name);
+  triggerDownload(data as Blob, `yearly-${params.mode || "party"}.pdf`);
 }
 
 function triggerDownload(blob: Blob, filename: string) {

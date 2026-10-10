@@ -1085,48 +1085,7 @@ function inDateRange(date, dateFrom, dateTo) {
   return true;
 }
 
-/**
- * Money still to collect after payment allocation (this month's builties first,
- * then older, then previous pending). With no dates = full outstanding (khata).
- * With a date range = unpaid builties / pending in that period only.
- */
-async function getReceivablesReport({ dateFrom, dateTo, groupId, customerId, asOfDate } = {}) {
-  const PartyGroup = require("../party-groups/party-group.model");
-  let allowedCustomerIds = null;
-  let groupMeta = null;
-  let partyMeta = null;
-
-  if (groupId === "__ungrouped__" || groupId === "ungrouped") {
-    groupMeta = { id: "", name: "Ungrouped" };
-    const members = await Customer.find({
-      $or: [{ group: null }, { group: { $exists: false } }],
-    })
-      .select("_id")
-      .lean();
-    allowedCustomerIds = new Set(members.map((m) => String(m._id)));
-  } else if (groupId) {
-    const group = await PartyGroup.findById(groupId).lean();
-    if (!group) throw httpError("Party group not found", 404);
-    groupMeta = { id: String(group._id), name: group.name };
-    const members = await Customer.find({ group: group._id }).select("_id").lean();
-    allowedCustomerIds = new Set(members.map((m) => String(m._id)));
-  }
-
-  if (customerId) {
-    if (!mongoose.isValidObjectId(customerId)) throw httpError("Invalid party", 400);
-    const customer = await Customer.findById(customerId).select("name phone").lean();
-    if (!customer) throw httpError("Party not found", 404);
-    partyMeta = { id: String(customer._id), name: customer.name };
-    const id = String(customer._id);
-    if (allowedCustomerIds && !allowedCustomerIds.has(id)) {
-      allowedCustomerIds = new Set();
-    } else {
-      allowedCustomerIds = new Set([id]);
-    }
-  }
-
-  const asOf = asOfDate ? String(asOfDate).slice(0, 10) : null;
-
+async function loadReceivablesLedgerData() {
   const [builties, adjustments, payments, creditAdjustments, allGroups] = await Promise.all([
     Builty.find({})
       .populate("customer", "name phone group")
@@ -1143,8 +1102,21 @@ async function getReceivablesReport({ dateFrom, dateTo, groupId, customerId, asO
       .lean(),
     PartyGroup.find({}).select("name").lean(),
   ]);
+  return {
+    builties,
+    adjustments,
+    payments,
+    creditAdjustments,
+    groupNameMap: new Map(allGroups.map((g) => [String(g._id), g.name])),
+  };
+}
 
-  const groupNameMap = new Map(allGroups.map((g) => [String(g._id), g.name]));
+function buildReceivablesReportFromData(
+  data,
+  { dateFrom, dateTo, asOfDate, allowedCustomerIds = null, groupMeta = null, partyMeta = null } = {}
+) {
+  const asOf = asOfDate ? String(asOfDate).slice(0, 10) : null;
+  const { builties, adjustments, payments, creditAdjustments, groupNameMap } = data;
 
   const paymentsByCustomer = new Map();
   for (const p of payments) {
@@ -1345,6 +1317,72 @@ async function getReceivablesReport({ dateFrom, dateTo, groupId, customerId, asO
 }
 
 /**
+ * Money still to collect after payment allocation (this month's builties first,
+ * then older, then previous pending). With no dates = full outstanding (khata).
+ * With a date range = unpaid builties / pending in that period only.
+ */
+async function getReceivablesReport({ dateFrom, dateTo, groupId, customerId, asOfDate } = {}) {
+  let allowedCustomerIds = null;
+  let groupMeta = null;
+  let partyMeta = null;
+
+  if (groupId === "__ungrouped__" || groupId === "ungrouped") {
+    groupMeta = { id: "", name: "Ungrouped" };
+    const members = await Customer.find({
+      $or: [{ group: null }, { group: { $exists: false } }],
+    })
+      .select("_id")
+      .lean();
+    allowedCustomerIds = new Set(members.map((m) => String(m._id)));
+  } else if (groupId) {
+    const group = await PartyGroup.findById(groupId).lean();
+    if (!group) throw httpError("Party group not found", 404);
+    groupMeta = { id: String(group._id), name: group.name };
+    const members = await Customer.find({ group: group._id }).select("_id").lean();
+    allowedCustomerIds = new Set(members.map((m) => String(m._id)));
+  }
+
+  if (customerId) {
+    if (!mongoose.isValidObjectId(customerId)) throw httpError("Invalid party", 400);
+    const customer = await Customer.findById(customerId).select("name phone").lean();
+    if (!customer) throw httpError("Party not found", 404);
+    partyMeta = { id: String(customer._id), name: customer.name };
+    const id = String(customer._id);
+    if (allowedCustomerIds && !allowedCustomerIds.has(id)) {
+      allowedCustomerIds = new Set();
+    } else {
+      allowedCustomerIds = new Set([id]);
+    }
+  }
+
+  const data = await loadReceivablesLedgerData();
+  return buildReceivablesReportFromData(data, {
+    dateFrom,
+    dateTo,
+    asOfDate,
+    allowedCustomerIds,
+    groupMeta,
+    partyMeta,
+  });
+}
+
+function isoDateOnMonthDay(year, monthIndex0, dayOfMonth) {
+  const lastDay = new Date(year, monthIndex0 + 1, 0).getDate();
+  const day = Math.min(Math.max(Number(dayOfMonth) || 1, 1), lastDay);
+  return toIsoDateLocal(new Date(year, monthIndex0, day, 12, 0, 0, 0));
+}
+
+function dayOrdinalLabel(dayOfMonth) {
+  const n = Math.trunc(Number(dayOfMonth) || 0);
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  if (n % 10 === 1) return `${n}st`;
+  if (n % 10 === 2) return `${n}nd`;
+  if (n % 10 === 3) return `${n}rd`;
+  return `${n}th`;
+}
+
+/**
  * Jan–Dec matrix of receivables as of a selected date (payments after that date ignored).
  * Overall = rows are party groups; with groupId = rows are parties.
  */
@@ -1425,6 +1463,217 @@ async function getMonthlyReceivablesReport({ date, year, groupId } = {}) {
     period: { from: dateFrom, to: dateTo },
     group: report.group || null,
     mode,
+    months,
+    rows,
+    totals: {
+      months: monthTotals,
+      total: grandTotal,
+      rowCount: rows.length,
+    },
+  };
+}
+
+/**
+ * Yearly calendar: name on the left, Jan–Dec of the year across.
+ * Parties / groups = amount still to receive. Suppliers = amount still to pay.
+ * dateMode=single = same day-of-month cutoff in every month (e.g. 11th of Jan…Dec).
+ * dateMode=range = documents inside dateFrom/dateTo, bucketed by month.
+ */
+async function getYearlyCalendarReport({
+  year,
+  mode = "party",
+  dateMode = "range",
+  date,
+  dateFrom,
+  dateTo,
+} = {}) {
+  const view = ["party", "group", "supplier"].includes(String(mode)) ? String(mode) : "party";
+  const single = String(dateMode || "range") === "single";
+
+  let y = Number(year);
+  let fromStr;
+  let toStr;
+  let asOfIso;
+  let dayOfMonth = null;
+
+  if (single) {
+    const asOfRaw = date || toIsoDateLocal(new Date());
+    const asOf = parseDate(asOfRaw, "date");
+    if (!Number.isInteger(y) || y < 2000 || y > 2100) y = asOf.getFullYear();
+    dayOfMonth = asOf.getDate();
+    fromStr = isoDateOnMonthDay(y, 0, dayOfMonth);
+    toStr = isoDateOnMonthDay(y, 11, dayOfMonth);
+    asOfIso = toIsoDateLocal(asOf);
+  } else {
+    if (!Number.isInteger(y) || y < 2000 || y > 2100) {
+      if (dateFrom) {
+        y = parseDate(dateFrom, "dateFrom").getFullYear();
+      } else {
+        y = new Date().getFullYear();
+      }
+    }
+    const bounds = yearBounds(y);
+    const start = dateFrom ? parseDate(dateFrom, "dateFrom") : bounds.start;
+    start.setHours(0, 0, 0, 0);
+    const end = dateTo ? parseDate(dateTo, "dateTo") : bounds.end;
+    end.setHours(23, 59, 59, 999);
+    const clippedStart = start.getTime() < bounds.start.getTime() ? bounds.start : start;
+    const clippedEnd = end.getTime() > bounds.end.getTime() ? bounds.end : end;
+    if (clippedStart.getTime() > clippedEnd.getTime()) {
+      throw httpError("dateFrom must be before dateTo", 400);
+    }
+    fromStr = toIsoDateLocal(clippedStart);
+    toStr = toIsoDateLocal(clippedEnd);
+    asOfIso = toStr;
+  }
+
+  const months = MONTH_LABELS.map((label, i) => ({
+    key: `${y}-${String(i + 1).padStart(2, "0")}`,
+    label,
+  }));
+
+  function emptyMonthMap() {
+    return Object.fromEntries(months.map((m) => [m.key, 0]));
+  }
+
+  const rowsMap = new Map();
+  function addAmount(rowId, rowName, monthKey, amount, href) {
+    const value = roundMoney(amount || 0);
+    if (value <= 0) return;
+    if (!monthKey.startsWith(`${y}-`)) return;
+    if (!rowsMap.has(rowId)) {
+      rowsMap.set(rowId, {
+        id: rowId === "__ungrouped__" ? "" : rowId,
+        name: rowName,
+        href: href || "",
+        months: emptyMonthMap(),
+        total: 0,
+      });
+    }
+    const row = rowsMap.get(rowId);
+    row.months[monthKey] = roundMoney((row.months[monthKey] || 0) + value);
+    row.total = roundMoney(row.total + value);
+  }
+
+  if (single) {
+    if (view === "supplier") {
+      for (let i = 0; i < 12; i += 1) {
+        const monthKey = months[i].key;
+        const monthFrom = `${y}-${String(i + 1).padStart(2, "0")}-01`;
+        const monthTo = isoDateOnMonthDay(y, i, dayOfMonth);
+        const payables = await getPayablesReport({ dateFrom: monthFrom, dateTo: monthTo });
+        for (const r of payables.records || []) {
+          addAmount(
+            r.partyId || r.partyName || "unknown",
+            r.partyName || "—",
+            monthKey,
+            r.balance,
+            r.href
+          );
+        }
+      }
+    } else {
+      const data = await loadReceivablesLedgerData();
+      const groupNameById = data.groupNameMap;
+      for (let i = 0; i < 12; i += 1) {
+        const monthKey = months[i].key;
+        const monthFrom = `${y}-${String(i + 1).padStart(2, "0")}-01`;
+        const monthTo = isoDateOnMonthDay(y, i, dayOfMonth);
+        const receivables = buildReceivablesReportFromData(data, {
+          dateFrom: monthFrom,
+          dateTo: monthTo,
+          asOfDate: monthTo,
+        });
+        for (const r of receivables.records || []) {
+          const balance = roundMoney(r.balance || 0);
+          if (balance <= 0) continue;
+          if (view === "party") {
+            addAmount(
+              r.partyId || r.partyName || "unknown",
+              r.partyName || "—",
+              monthKey,
+              balance,
+              r.partyId ? `/dashboard/party/customers/${r.partyId}` : ""
+            );
+          } else {
+            const rowId = r.groupId || "__ungrouped__";
+            addAmount(
+              rowId,
+              groupNameById.get(r.groupId) || (r.groupId ? "—" : "Ungrouped"),
+              monthKey,
+              balance,
+              rowId && rowId !== "__ungrouped__" ? `/dashboard/party/groups/${rowId}` : ""
+            );
+          }
+        }
+      }
+    }
+  } else if (view === "supplier") {
+    const payables = await getPayablesReport({ dateFrom: fromStr, dateTo: toStr });
+    for (const r of payables.records || []) {
+      addAmount(
+        r.partyId || r.partyName || "unknown",
+        r.partyName || "—",
+        monthKeyFromDate(r.date),
+        r.balance,
+        r.href
+      );
+    }
+  } else {
+    const receivables = await getReceivablesReport({
+      dateFrom: fromStr,
+      dateTo: toStr,
+      asOfDate: asOfIso,
+    });
+    const groupNameById = new Map(
+      (receivables.byGroup || []).map((g) => [
+        g.groupId || "__ungrouped__",
+        g.name || "Ungrouped",
+      ])
+    );
+    for (const r of receivables.records || []) {
+      const balance = roundMoney(r.balance || 0);
+      if (balance <= 0) continue;
+      const mk = monthKeyFromDate(r.date);
+      if (view === "party") {
+        addAmount(
+          r.partyId || r.partyName || "unknown",
+          r.partyName || "—",
+          mk,
+          balance,
+          r.partyId ? `/dashboard/party/customers/${r.partyId}` : ""
+        );
+      } else {
+        const rowId = r.groupId || "__ungrouped__";
+        addAmount(
+          rowId,
+          groupNameById.get(rowId) || (r.groupId ? "—" : "Ungrouped"),
+          mk,
+          balance,
+          rowId && rowId !== "__ungrouped__" ? `/dashboard/party/groups/${rowId}` : ""
+        );
+      }
+    }
+  }
+
+  const rows = [...rowsMap.values()].sort((a, b) => b.total - a.total);
+  const monthTotals = emptyMonthMap();
+  let grandTotal = 0;
+  for (const row of rows) {
+    for (const m of months) {
+      monthTotals[m.key] = roundMoney((monthTotals[m.key] || 0) + (row.months[m.key] || 0));
+    }
+    grandTotal = roundMoney(grandTotal + row.total);
+  }
+
+  return {
+    year: y,
+    mode: view,
+    dateMode: single ? "single" : "range",
+    asOf: asOfIso,
+    dayOfMonth,
+    period: { from: fromStr, to: toStr },
+    amountKind: view === "supplier" ? "payable" : "receivable",
     months,
     rows,
     totals: {
@@ -1966,20 +2215,34 @@ function summarizeBuiltyRows(rows) {
   };
 }
 
-async function buildPartyYearlyRecord(customer, period, groupNameMap) {
-  const customerId = customer._id;
-  await builtyService.syncCustomerBuiltyPaymentStatuses(customerId);
+function partyMetaFromCustomer(customer, groupNameMap, summary) {
+  const groupId = customer.group ? String(customer.group._id || customer.group) : "";
+  return {
+    partyId: String(customer._id),
+    name: customer.name || "—",
+    phone: customer.phone || "",
+    groupId,
+    groupName: groupId ? groupNameMap.get(groupId) || "—" : "",
+    summary,
+    months: [],
+    openBeforeYear: [],
+  };
+}
 
-  const builties = await Builty.find({
-    customer: customerId,
-    $or: [
-      { builtyDate: { $gte: period.start, $lte: period.end } },
-      { builtyDate: { $lt: period.start }, balance: { $gt: 0 } },
-    ],
-  })
-    .populate({ path: "items.product", select: "name sku weightKg" })
-    .sort({ builtyDate: 1, createdAt: 1 })
-    .lean();
+function buildPartyYearlyRecord(customer, builties, period, groupNameMap, detail) {
+  if (!detail) {
+    const rows = [];
+    for (const b of builties) {
+      const t = new Date(b.builtyDate).getTime();
+      if (t < period.start.getTime() || t > period.end.getTime()) continue;
+      rows.push({
+        total: roundMoney(b.totalAmount || 0),
+        paid: roundMoney(b.amountPaid || 0),
+        left: roundMoney(b.balance || 0),
+      });
+    }
+    return partyMetaFromCustomer(customer, groupNameMap, summarizeBuiltyRows(rows));
+  }
 
   const yearBuilties = [];
   const openBeforeYear = [];
@@ -2011,17 +2274,14 @@ async function buildPartyYearlyRecord(customer, period, groupNameMap) {
       totals: summarizeBuiltyRows(rows),
     }));
 
-  const groupId = customer.group ? String(customer.group._id || customer.group) : "";
-  return {
-    partyId: String(customerId),
-    name: customer.name || "—",
-    phone: customer.phone || "",
-    groupId,
-    groupName: groupId ? groupNameMap.get(groupId) || "—" : "",
-    summary: summarizeBuiltyRows(yearBuilties),
-    months,
-    openBeforeYear,
-  };
+  const record = partyMetaFromCustomer(
+    customer,
+    groupNameMap,
+    summarizeBuiltyRows(yearBuilties)
+  );
+  record.months = months;
+  record.openBeforeYear = openBeforeYear;
+  return record;
 }
 
 /**
@@ -2077,10 +2337,44 @@ async function getYearlyBillReport({ year, groupId, customerId, dateFrom, dateTo
       .lean();
   }
 
-  const parties = [];
-  for (const c of customers) {
-    parties.push(await buildPartyYearlyRecord(c, period, groupNameMap));
+  const detail = Boolean(customerId);
+  const customerIds = customers.map((c) => c._id);
+  let builties = [];
+  if (customerIds.length > 0) {
+    const rangeMatch = detail
+      ? {
+          customer: { $in: customerIds },
+          $or: [
+            { builtyDate: { $gte: period.start, $lte: period.end } },
+            { builtyDate: { $lt: period.start }, balance: { $gt: 0 } },
+          ],
+        }
+      : {
+          customer: { $in: customerIds },
+          builtyDate: { $gte: period.start, $lte: period.end },
+        };
+    let query = Builty.find(rangeMatch).sort({ builtyDate: 1, createdAt: 1 });
+    query = detail
+      ? query.populate({ path: "items.product", select: "name sku weightKg" })
+      : query.select("customer builtyDate totalAmount amountPaid balance");
+    builties = await query.lean();
   }
+  const builtiesByCustomer = new Map();
+  for (const b of builties) {
+    const id = String(b.customer && b.customer._id ? b.customer._id : b.customer);
+    const list = builtiesByCustomer.get(id) || [];
+    list.push(b);
+    builtiesByCustomer.set(id, list);
+  }
+  const parties = customers.map((c) =>
+    buildPartyYearlyRecord(
+      c,
+      builtiesByCustomer.get(String(c._id)) || [],
+      period,
+      groupNameMap,
+      detail
+    )
+  );
 
   const byGroupMap = new Map();
   for (const p of parties) {
@@ -2779,6 +3073,72 @@ async function exportMonthlyReceivables(query, format, res) {
     meta,
   });
   return sendExcel(res, buf, "monthly-receivables.xlsx");
+}
+
+async function exportYearlyCalendar(query, format, res) {
+  const report = await getYearlyCalendarReport(query);
+  const rowLabel =
+    report.mode === "supplier" ? "Supplier" : report.mode === "group" ? "Group" : "Party";
+  const amountLabel =
+    report.amountKind === "payable" ? "Amount to pay" : "Amount to receive";
+  const title = `Yearly ${report.mode} — ${report.year}`;
+  const columns = [rowLabel, ...report.months.map((m) => m.label), "Total"];
+  const colWidths = [0.16, ...report.months.map(() => 0.06), 0.12];
+  const colAlign = ["left", ...report.months.map(() => "right"), "right"];
+  const rows = (report.rows || []).map((r) => [
+    r.name,
+    ...report.months.map((m) => money(r.months[m.key] || 0)),
+    money(r.total),
+  ]);
+  if (rows.length > 0) {
+    rows.push({
+      bold: true,
+      cells: [
+        "Total",
+        ...report.months.map((m) => money(report.totals.months[m.key] || 0)),
+        money(report.totals.total),
+      ],
+    });
+  }
+  const meta = {
+    Year: report.year,
+    View: rowLabel,
+    "Date mode": report.dateMode === "single" ? "One date" : "Date range",
+    Period:
+      report.dateMode === "single" && report.dayOfMonth
+        ? `${dayOrdinalLabel(report.dayOfMonth)} of each month`
+        : `${report.period.from || ""} → ${report.period.to || ""}`,
+    [amountLabel]: money(report.totals.total),
+    Rows: report.totals.rowCount,
+  };
+
+  if (format === "pdf") {
+    const buf = await buildPdf({
+      title,
+      subtitle: "Khan Engineerings",
+      layout: "landscape",
+      metaLines: Object.entries(meta).map(([k, v]) => `${k}: ${v}`),
+      sections: [
+        {
+          heading: `${amountLabel} by month`,
+          columns,
+          columnWidths: colWidths,
+          columnAlign: colAlign,
+          rows,
+        },
+      ],
+    });
+    return sendPdf(res, buf, `yearly-${report.mode}.pdf`);
+  }
+
+  const buf = await buildExcel({
+    title,
+    sheetName: "Yearly",
+    columns,
+    rows: rows.map((r) => (Array.isArray(r) ? r : r.cells)),
+    meta,
+  });
+  return sendExcel(res, buf, `yearly-${report.mode}.xlsx`);
 }
 
 async function exportReceived(query, format, res) {
@@ -3960,6 +4320,401 @@ async function getCombinedPreview(query) {
   };
 }
 
+function productLabel(item) {
+  const product = item?.product;
+  if (product && typeof product === "object" && product.name) return product.name;
+  return "Product";
+}
+
+function lineRate(item) {
+  if (item?.pricingMode === "fixed") return Number(item.unitPrice) || 0;
+  return Number(item.ratePerKg) || 0;
+}
+
+function fileSlug(name) {
+  return String(name || "report")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "") || "report";
+}
+
+function handoutTarget(query) {
+  const audience = String(query.audience || "");
+  const id = String(query.id || "").trim();
+  if (!["party", "group", "supplier", "builty"].includes(audience)) {
+    throw httpError("Choose a party, group, supplier, or builty", 400);
+  }
+  if (!id) throw httpError("Select who this report is for", 400);
+  return { audience, id };
+}
+
+function section(id, heading, columns, rows, meta) {
+  return {
+    id,
+    title: heading,
+    heading,
+    columns,
+    rows,
+    subsections: null,
+    meta: meta || {},
+  };
+}
+
+function builtyDetailRows(builties, { partyName } = {}) {
+  const rows = [];
+  for (const builty of builties) {
+    const items = Array.isArray(builty.items) ? builty.items : [];
+    const party = partyName || builty.customer?.name || "";
+    const head = [
+      party,
+      fmtDate(builty.builtyDate),
+      builty.builtyNo || "",
+    ];
+    if (items.length === 0) {
+      rows.push([
+        ...head,
+        builty.notes || "—",
+        "",
+        "",
+        money(builty.totalAmount),
+        money(builty.amountPaid),
+        money(builty.balance),
+      ]);
+      continue;
+    }
+    items.forEach((item, index) => {
+      rows.push([
+        index === 0 ? head[0] : "",
+        index === 0 ? head[1] : "",
+        index === 0 ? head[2] : "",
+        productLabel(item),
+        item.quantity ?? "",
+        money(lineRate(item)),
+        money(item.lineTotal),
+        index === 0 ? money(builty.amountPaid) : "",
+        index === 0 ? money(builty.balance) : "",
+      ]);
+    });
+  }
+  return rows;
+}
+
+const BUILTY_COLUMNS = [
+  "Party",
+  "Date",
+  "Builty",
+  "Product",
+  "Qty",
+  "Rate",
+  "Amount",
+  "Paid",
+  "Remaining",
+];
+
+async function partyHandout(customerId, query) {
+  const statement = await customerStatement(customerId, query);
+  const builties = await Builty.find({
+    customer: customerId,
+    ...dateRangeFilter("builtyDate", query.dateFrom, query.dateTo),
+  })
+    .populate("items.product", "name")
+    .sort({ builtyDate: 1, createdAt: 1 });
+  const payments = await CustomerPayment.find({
+    customer: customerId,
+    ...dateRangeFilter("paymentDate", query.dateFrom, query.dateTo),
+  }).sort({ paymentDate: 1, createdAt: 1 });
+
+  const billed = roundMoney(builties.reduce((sum, row) => sum + (Number(row.totalAmount) || 0), 0));
+  const received = roundMoney(payments.reduce((sum, row) => sum + (Number(row.amount) || 0), 0));
+  const meta = {
+    Party: statement.party.name,
+    Phone: statement.party.phone || "—",
+    Period: periodLabel(query.dateFrom, query.dateTo),
+    "Previous remaining": money(statement.openingBalance),
+    "Billed in period": money(billed),
+    "Received in period": money(received),
+    "Still to receive": money(statement.periodBalance),
+  };
+  if (Math.abs(statement.periodBalance - statement.closingBalance) > 0.009) {
+    meta["Remaining now"] = money(statement.closingBalance);
+  }
+
+  const sections = [
+    section("builties", "Builties", BUILTY_COLUMNS, builtyDetailRows(builties, { partyName: statement.party.name }), meta),
+    section(
+      "payments",
+      "Payments received",
+      ["Date", "Method", "Reference", "Amount", "Notes"],
+      payments.map((row) => [
+        fmtDate(row.paymentDate),
+        row.method || "",
+        row.reference || "",
+        money(row.amount),
+        row.notes || "",
+      ])
+    ),
+  ];
+  const adjustments = statement.lines.filter((line) => line.type === "adjustment" && (line.debit || line.credit));
+  if (adjustments.length) {
+    sections.push(
+      section(
+        "adjustments",
+        "Adjustments and old dues",
+        ["Date", "Notes", "Added", "Reduced"],
+        adjustments.map((line) => [
+          fmtDate(line.date),
+          line.notes || line.reference || "",
+          money(line.debit),
+          money(line.credit),
+        ])
+      )
+    );
+  }
+
+  return {
+    title: `Statement — ${statement.party.name}`,
+    filename: `party-${fileSlug(statement.party.name)}`,
+    layout: "landscape",
+    period: periodLabel(query.dateFrom, query.dateTo),
+    sections,
+  };
+}
+
+async function groupHandout(groupId, query) {
+  const statement = await groupStatement(groupId, query);
+  const members = await Customer.find({ group: groupId }).select("name").sort({ name: 1 });
+  const ids = members.map((member) => member._id);
+  const builties = await Builty.find({
+    customer: { $in: ids },
+    ...dateRangeFilter("builtyDate", query.dateFrom, query.dateTo),
+  })
+    .populate("customer", "name")
+    .populate("items.product", "name")
+    .sort({ builtyDate: 1, createdAt: 1 });
+  const payments = await CustomerPayment.find({
+    customer: { $in: ids },
+    ...dateRangeFilter("paymentDate", query.dateFrom, query.dateTo),
+  }).select("customer amount");
+
+  const billedBy = new Map();
+  const receivedBy = new Map();
+  for (const builty of builties) {
+    const key = String(builty.customer?._id || builty.customer);
+    billedBy.set(key, (billedBy.get(key) || 0) + (Number(builty.totalAmount) || 0));
+  }
+  for (const payment of payments) {
+    const key = String(payment.customer);
+    receivedBy.set(key, (receivedBy.get(key) || 0) + (Number(payment.amount) || 0));
+  }
+
+  const partyRows = statement.parties.map((party) => [
+    party.name,
+    money(party.openingBalance),
+    money(billedBy.get(party.partyId) || 0),
+    money(receivedBy.get(party.partyId) || 0),
+    money(party.periodBalance),
+  ]);
+  if (partyRows.length) {
+    partyRows.push([
+      "Total",
+      money(statement.openingBalance),
+      money([...billedBy.values()].reduce((sum, n) => sum + n, 0)),
+      money([...receivedBy.values()].reduce((sum, n) => sum + n, 0)),
+      money(statement.periodBalance),
+    ]);
+  }
+
+  return {
+    title: `Group statement — ${statement.group.name}`,
+    filename: `group-${fileSlug(statement.group.name)}`,
+    layout: "landscape",
+    period: periodLabel(query.dateFrom, query.dateTo),
+    sections: [
+      section(
+        "parties",
+        "Parties",
+        ["Party", "Previous remaining", "Billed", "Received", "Still to receive"],
+        partyRows,
+        {
+          Group: statement.group.name,
+          Period: periodLabel(query.dateFrom, query.dateTo),
+          Parties: statement.parties.length,
+          "Still to receive": money(statement.periodBalance),
+        }
+      ),
+      section("builties", "Builty details", BUILTY_COLUMNS, builtyDetailRows(builties)),
+    ],
+  };
+}
+
+async function supplierHandout(supplierId, query) {
+  const statement = await supplierStatement(supplierId, query);
+  const purchases = await Purchase.find({
+    supplier: supplierId,
+    ...dateRangeFilter("purchaseDate", query.dateFrom, query.dateTo),
+  }).sort({ purchaseDate: 1, createdAt: 1 });
+  const purchased = roundMoney(
+    purchases.reduce((sum, row) => sum + (Number(row.totalAmount) || 0) + (Number(row.freightAmount) || 0), 0)
+  );
+  const paid = roundMoney(
+    statement.lines
+      .filter((line) => line.type === "payment")
+      .reduce((sum, line) => sum + (Number(line.credit) || 0), 0)
+  );
+  const meta = {
+    Supplier: statement.party.name,
+    Phone: statement.party.phone || "—",
+    Period: periodLabel(query.dateFrom, query.dateTo),
+    "Previous remaining": money(statement.openingBalance),
+    "Purchased in period": money(purchased),
+    "Paid in period": money(paid),
+    "Still to pay": money(statement.periodBalance),
+  };
+  if (Math.abs(statement.periodBalance - statement.closingBalance) > 0.009) {
+    meta["Remaining now"] = money(statement.closingBalance);
+  }
+
+  return {
+    title: `Supplier statement — ${statement.party.name}`,
+    filename: `supplier-${fileSlug(statement.party.name)}`,
+    layout: "landscape",
+    period: periodLabel(query.dateFrom, query.dateTo),
+    sections: [
+      section(
+        "purchases",
+        "Purchases",
+        ["Date", "Invoice", "Material", "Kg", "Rate", "Freight", "Amount", "Paid", "Remaining"],
+        purchases.map((row) => [
+          fmtDate(row.purchaseDate),
+          row.invoiceNo || "",
+          row.materialType || "",
+          row.quantityKg ?? "",
+          money(row.ratePerKg),
+          money(row.freightAmount),
+          money((Number(row.totalAmount) || 0) + (Number(row.freightAmount) || 0)),
+          money(row.amountPaid),
+          money(row.balance),
+        ]),
+        meta
+      ),
+      section(
+        "payments",
+        "Payments made",
+        ["Date", "Reference", "Amount", "Notes"],
+        statement.lines
+          .filter((line) => line.type === "payment")
+          .map((line) => [fmtDate(line.date), line.reference || "", money(line.credit), line.notes || ""])
+      ),
+    ],
+  };
+}
+
+async function builtyHandout(builtyId) {
+  const builty = await Builty.findById(builtyId)
+    .populate("customer", "name phone address")
+    .populate("items.product", "name");
+  if (!builty) throw httpError("Builty not found", 404);
+  const payments = await CustomerPayment.find({ builty: builty._id }).sort({ paymentDate: 1 });
+  const partyName = builty.customer?.name || "Party";
+  const rows = (builty.items || []).map((item) => [
+    productLabel(item),
+    item.quantity ?? "",
+    item.weightKg ? String(item.weightKg) : "",
+    money(lineRate(item)),
+    money(item.lineTotal),
+  ]);
+  if (rows.length) {
+    rows.push(["Total", "", "", "", money(builty.totalAmount)]);
+  }
+  const meta = {
+    Party: partyName,
+    Phone: builty.customer?.phone || "—",
+    Date: fmtDate(builty.builtyDate),
+    Builty: builty.builtyNo || "",
+    "Bill no": builty.billNo || "—",
+    Total: money(builty.totalAmount),
+    Paid: money(builty.amountPaid),
+    "Still to receive": money(builty.balance),
+  };
+  if (Number(builty.discountAmount) > 0) meta.Discount = money(builty.discountAmount);
+  if (Number(builty.previousPending) > 0) meta["Previous pending"] = money(builty.previousPending);
+  if (builty.notes) meta.Notes = builty.notes;
+
+  const sections = [
+    section("items", "Items", ["Product", "Qty", "Weight kg", "Rate", "Amount"], rows, meta),
+  ];
+  if (payments.length) {
+    sections.push(
+      section(
+        "payments",
+        "Payments on this builty",
+        ["Date", "Method", "Reference", "Amount", "Notes"],
+        payments.map((row) => [
+          fmtDate(row.paymentDate),
+          row.method || "",
+          row.reference || "",
+          money(row.amount),
+          row.notes || "",
+        ])
+      )
+    );
+  }
+  return {
+    title: `Builty ${builty.builtyNo} — ${partyName}`,
+    filename: `builty-${fileSlug(builty.builtyNo)}`,
+    layout: "portrait",
+    period: fmtDate(builty.builtyDate),
+    sections,
+  };
+}
+
+async function buildHandout(query) {
+  const { audience, id } = handoutTarget(query);
+  if (audience === "party") return partyHandout(id, query);
+  if (audience === "group") return groupHandout(id, query);
+  if (audience === "supplier") return supplierHandout(id, query);
+  return builtyHandout(id);
+}
+
+async function getHandoutPreview(query) {
+  const report = await buildHandout(query);
+  return {
+    title: report.title,
+    period: report.period,
+    modules: [query.audience],
+    summaryOnly: false,
+    sections: report.sections,
+  };
+}
+
+async function exportHandout(query, format, res) {
+  const report = await buildHandout(query);
+  const meta = report.sections[0]?.meta || {};
+  const sections = report.sections.map((part) => ({
+    heading: part.heading,
+    columns: part.columns,
+    rows: part.rows,
+  }));
+  if (format === "pdf") {
+    const buf = await buildPdf({
+      title: report.title,
+      subtitle: "Khan Engineerings",
+      sections,
+      metaPairs: Object.entries(meta),
+      layout: report.layout,
+    });
+    return sendPdf(res, buf, `${report.filename}.pdf`);
+  }
+  const buf = await buildExcel({
+    title: report.title,
+    sheetName: "Statement",
+    sections,
+    meta,
+  });
+  return sendExcel(res, buf, `${report.filename}.xlsx`);
+}
+
 module.exports = {
   globalSearch,
   customerStatement,
@@ -3973,6 +4728,7 @@ module.exports = {
   getPayablesReport,
   getPositionReport,
   getYearlyBillReport,
+  getYearlyCalendarReport,
   exportSales,
   exportPurchases,
   exportProduction,
@@ -3985,11 +4741,14 @@ module.exports = {
   exportPaid,
   exportPayables,
   exportYearlyBill,
+  exportYearlyCalendar,
   exportStatement,
   exportGroupStatement,
   exportCustomersOverviewStatement,
   exportFull,
   exportCustom,
   getCombinedPreview,
+  getHandoutPreview,
+  exportHandout,
   COMBINED_MODULES,
 };

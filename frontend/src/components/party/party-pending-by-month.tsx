@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { ChevronRight } from "lucide-react";
 import { formatDate, formatMoney } from "@/lib/materials-api";
-import { formatMonthLabel, type PeriodPending } from "@/lib/party-pending";
+import { formatMonthLabel, roundMoney, type PendingCharge, type PeriodPending } from "@/lib/party-pending";
 import { useI18n } from "@/hooks/use-i18n";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -37,6 +38,7 @@ export function PartyPendingByMonth({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [query, setQuery] = useState("");
+  const [openParties, setOpenParties] = useState<Set<string>>(new Set());
   const detailKind = parsePendingDetailKind(searchParams.get("pending"));
 
   function openDetail(kind: PendingDetailKind) {
@@ -60,6 +62,54 @@ export function PartyPendingByMonth({
       return m.month.includes(q) || label.includes(q);
     });
   }, [snapshot.months, query, locale]);
+
+  const filteredLeftoverLines = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return snapshot.leftoverLines.filter((line) => {
+      if (!q) return true;
+      const month = formatMonthLabel(line.month, locale).toLowerCase();
+      return (
+        line.month.includes(q) ||
+        month.includes(q) ||
+        line.label.toLowerCase().includes(q) ||
+        line.date.includes(q) ||
+        (line.partyName || "").toLowerCase().includes(q)
+      );
+    });
+  }, [snapshot.leftoverLines, query, locale]);
+
+  const partyGroups = useMemo(() => {
+    if (!filteredLeftoverLines.some((line) => line.partyName)) return null;
+    const map = new Map<
+      string,
+      { name: string; href?: string; lines: PendingCharge[]; total: number }
+    >();
+    for (const line of filteredLeftoverLines) {
+      const name = line.partyName || "—";
+      const row = map.get(name) || { name, href: line.partyHref, lines: [], total: 0 };
+      row.lines.push(line);
+      row.total = roundMoney(row.total + line.remaining);
+      if (!row.href && line.partyHref) row.href = line.partyHref;
+      map.set(name, row);
+    }
+    return [...map.values()].sort(
+      (a, b) => b.total - a.total || a.name.localeCompare(b.name)
+    );
+  }, [filteredLeftoverLines]);
+
+  function lineDetailLabel(line: PendingCharge) {
+    const prefix = line.partyName ? `${line.partyName} · ` : "";
+    return prefix && line.label.startsWith(prefix) ? line.label.slice(prefix.length) : line.label;
+  }
+
+  function toggleParty(name: string) {
+    setOpenParties((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
 
   const leftoverTotal = leftoverMonths.reduce((s, m) => s + m.remaining, 0);
   const saleTotal = leftoverMonths.reduce((s, m) => s + m.sale, 0);
@@ -216,7 +266,7 @@ export function PartyPendingByMonth({
         )}
       </div>
 
-      {snapshot.leftoverLines.length > 0 ? (
+      {filteredLeftoverLines.length > 0 ? (
         <div>
           <p className="mb-2 text-nameplate text-sm">{t("customerDetail.pendingLines")}</p>
           <div className="overflow-x-auto rounded-lg border">
@@ -229,35 +279,77 @@ export function PartyPendingByMonth({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {snapshot.leftoverLines
-                  .filter((line) => {
-                    const q = query.trim().toLowerCase();
-                    if (!q) return true;
-                    const month = formatMonthLabel(line.month, locale).toLowerCase();
-                    return (
-                      line.month.includes(q) ||
-                      month.includes(q) ||
-                      line.label.toLowerCase().includes(q) ||
-                      line.date.includes(q)
-                    );
-                  })
-                  .map((line) => (
-                    <TableRow key={line.id}>
-                      <TableCell className="font-data text-sm">{formatDate(line.date)}</TableCell>
-                      <TableCell className="text-sm">
-                        {line.href ? (
-                          <Link href={line.href} className="text-primary hover:underline">
-                            {line.label}
-                          </Link>
-                        ) : (
-                          line.label
-                        )}
-                      </TableCell>
-                      <TableCell className="font-data text-right text-sm font-medium">
-                        {formatMoney(line.remaining)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                {partyGroups
+                  ? partyGroups.map((party) => {
+                      const open = openParties.has(party.name);
+                      return (
+                        <Fragment key={party.name}>
+                          <TableRow
+                            className="cursor-pointer hover:bg-muted/50"
+                            onClick={() => toggleParty(party.name)}
+                          >
+                            <TableCell className="font-data text-sm">
+                              {formatDate(party.lines[0]?.date || "")}
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              <span className="inline-flex items-center gap-2 font-medium">
+                                <ChevronRight
+                                  className={cn(
+                                    "size-4 shrink-0 text-muted-foreground transition-transform",
+                                    open && "rotate-90"
+                                  )}
+                                />
+                                {party.name}
+                                <span className="font-data text-xs font-normal text-muted-foreground">
+                                  {party.lines.length}
+                                </span>
+                              </span>
+                            </TableCell>
+                            <TableCell className="font-data text-right text-sm font-semibold">
+                              {formatMoney(party.total)}
+                            </TableCell>
+                          </TableRow>
+                          {open
+                            ? party.lines.map((line) => (
+                                <TableRow key={line.id} className="bg-muted/30">
+                                  <TableCell className="font-data ps-8 text-sm">
+                                    {formatDate(line.date)}
+                                  </TableCell>
+                                  <TableCell className="text-sm">
+                                    {line.href ? (
+                                      <Link href={line.href} className="text-primary hover:underline">
+                                        {lineDetailLabel(line)}
+                                      </Link>
+                                    ) : (
+                                      lineDetailLabel(line)
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="font-data text-right text-sm font-medium">
+                                    {formatMoney(line.remaining)}
+                                  </TableCell>
+                                </TableRow>
+                              ))
+                            : null}
+                        </Fragment>
+                      );
+                    })
+                  : filteredLeftoverLines.map((line) => (
+                      <TableRow key={line.id}>
+                        <TableCell className="font-data text-sm">{formatDate(line.date)}</TableCell>
+                        <TableCell className="text-sm">
+                          {line.href ? (
+                            <Link href={line.href} className="text-primary hover:underline">
+                              {line.label}
+                            </Link>
+                          ) : (
+                            line.label
+                          )}
+                        </TableCell>
+                        <TableCell className="font-data text-right text-sm font-medium">
+                          {formatMoney(line.remaining)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
               </TableBody>
             </Table>
           </div>

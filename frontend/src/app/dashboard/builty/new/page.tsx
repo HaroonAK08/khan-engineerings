@@ -884,8 +884,12 @@ function BuiltyForm() {
                         type="number"
                         step="1"
                         min={1}
-                        value={line.quantity}
-                        onChange={(e) => updateLine(index, { quantity: Number(e.target.value) })}
+                        value={line.quantity > 0 ? line.quantity : ""}
+                        onChange={(e) =>
+                          updateLine(index, {
+                            quantity: e.target.value === "" ? 0 : Number(e.target.value),
+                          })
+                        }
                         className="h-11"
                       />
                       {selected && available < line.quantity && (

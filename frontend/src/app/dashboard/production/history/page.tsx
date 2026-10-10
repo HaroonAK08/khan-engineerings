@@ -7,7 +7,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, Search } from "lucide-react";
+import { ArrowLeft, ChevronRight, Loader2, Search } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 import { useTallyChecks } from "@/hooks/use-tally-checks";
@@ -15,8 +15,10 @@ import { calendarDay, todayInput } from "@/lib/date-range";
 import { apiError, formatDate, formatKg, getStock } from "@/lib/materials-api";
 import {
   deleteBatch,
+  deleteBatches,
   listBatches,
   listProducts,
+  shiftProductionDates,
   updateProduce,
 } from "@/lib/production-api";
 import type { StockSummary } from "@/types/materials";
@@ -49,7 +51,7 @@ import {
   familyRowClass,
 } from "@/lib/product-family";
 import { cn } from "@/lib/utils";
-import type { MessageKey } from "@/lib/i18n/messages";
+import type { MessageKey, TranslateParams } from "@/lib/i18n/messages";
 
 const produceSchema = z.object({
   productId: z.string().min(1, "Product is required"),
@@ -203,6 +205,11 @@ export default function ProductionHistoryPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [openDays, setOpenDays] = useState<Record<string, boolean>>({});
+  const [dayDialog, setDayDialog] = useState<DayTotals | null>(null);
+  const [dayDate, setDayDate] = useState("");
+  const [daySaving, setDaySaving] = useState(false);
+  const [deletingDay, setDeletingDay] = useState<string | null>(null);
   const [produceFamily, setProduceFamily] = useState<"all" | "hub" | "drum">("all");
   const [listFamily, setListFamily] = useState<"all" | "hub" | "drum">("all");
   const [productSearch, setProductSearch] = useState("");
@@ -374,6 +381,64 @@ export default function ProductionHistoryPage() {
     setDialogOpen(true);
   }
 
+  function toggleDay(day: string) {
+    setOpenDays((current) => ({ ...current, [day]: !current[day] }));
+  }
+
+  function openDayEdit(group: DayTotals) {
+    setDayDialog(group);
+    setDayDate(group.day === "—" ? todayInput() : group.day);
+  }
+
+  async function onSaveDayDate() {
+    if (!dayDialog || !dayDate) return;
+    if (dayDate === dayDialog.day) {
+      setDayDialog(null);
+      return;
+    }
+    setDaySaving(true);
+    try {
+      const result = await shiftProductionDates(
+        dayDialog.batches.map((b) => b._id),
+        dayDate
+      );
+      toast.success(t("prod.dayUpdated", { count: result.updated }));
+      setOpenDays((current) => {
+        const next = { ...current };
+        if (next[dayDialog.day]) {
+          next[dayDate] = true;
+          delete next[dayDialog.day];
+        }
+        return next;
+      });
+      setDayDialog(null);
+      await load();
+    } catch (err) {
+      toast.error(apiError(err, "Failed to update production date"));
+    } finally {
+      setDaySaving(false);
+    }
+  }
+
+  async function onDeleteDay(group: DayTotals) {
+    if (!confirm(t("prod.dayDeleteConfirm", { count: group.batches.length }))) return;
+    setDeletingDay(group.day);
+    try {
+      const result = await deleteBatches(group.batches.map((b) => b._id));
+      toast.success(t("prod.dayDeleted", { count: result.removed }));
+      setOpenDays((current) => {
+        const next = { ...current };
+        delete next[group.day];
+        return next;
+      });
+      await load();
+    } catch (err) {
+      toast.error(apiError(err, "Failed to delete production"));
+    } finally {
+      setDeletingDay(null);
+    }
+  }
+
   async function onDelete(batch: ProductionBatch) {
     if (!confirm(t("prod.deleteConfirm"))) return;
     setDeletingId(batch._id);
@@ -534,9 +599,14 @@ export default function ProductionHistoryPage() {
                   <DayGroupRows
                     key={group.day}
                     group={group}
+                    open={Boolean(openDays[group.day])}
                     deletingId={deletingId}
+                    deletingDay={deletingDay === group.day}
+                    onToggle={() => toggleDay(group.day)}
                     onEdit={openEdit}
                     onDelete={onDelete}
+                    onEditDay={() => openDayEdit(group)}
+                    onDeleteDay={() => void onDeleteDay(group)}
                     isChecked={isChecked}
                     setCheckedState={setCheckedState}
                     t={t}
@@ -547,6 +617,57 @@ export default function ProductionHistoryPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={dayDialog != null}
+        onOpenChange={(open) => {
+          if (!open && !daySaving) setDayDialog(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("prod.dayEditTitle")}</DialogTitle>
+          </DialogHeader>
+          {dayDialog ? (
+            <div className="flex flex-col gap-3">
+              <p className="text-sm text-muted-foreground">
+                {t("prod.dayEditHint", { count: dayDialog.batches.length })}
+              </p>
+              <p className="font-data text-sm">
+                {t("prod.historyDayHub")} {dayDialog.hubQty} · {t("prod.historyDayDrum")}{" "}
+                {dayDialog.drumQty} · {t("prod.historyDayUsed")} {formatKg(dayDialog.usedKg)} kg
+              </p>
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("prod.date")}</Label>
+                <Input
+                  type="date"
+                  value={dayDate}
+                  onChange={(e) => setDayDate(e.target.value)}
+                />
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={daySaving}
+                  onClick={() => setDayDialog(null)}
+                >
+                  {t("prod.cancel")}
+                </Button>
+                <Button
+                  type="button"
+                  disabled={daySaving || !dayDate}
+                  className="gap-2"
+                  onClick={() => void onSaveDayDate()}
+                >
+                  {daySaving && <Loader2 className="size-4 animate-spin" />}
+                  {t("prod.save")}
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={dialogOpen}
@@ -677,13 +798,19 @@ export default function ProductionHistoryPage() {
                   type="number"
                   min={1}
                   step={1}
-                  value={quantity || ""}
+                  value={quantity > 0 ? quantity : ""}
                   onChange={(e) => {
-                    const qty = Math.max(0, Math.round(Number(e.target.value) || 0));
-                    form.setValue("quantity", qty || 1, { shouldValidate: true });
-                    if (!metalCustom) {
+                    const raw = e.target.value;
+                    if (raw === "") {
+                      form.setValue("quantity", 0, { shouldValidate: false });
+                      return;
+                    }
+                    const qty = Math.max(0, Math.round(Number(raw)));
+                    if (!Number.isFinite(qty)) return;
+                    form.setValue("quantity", qty, { shouldValidate: true });
+                    if (!metalCustom && qty > 0) {
                       const nextMetal = catalogMetalKg(
-                        qty || 1,
+                        qty,
                         Number(selectedProduct?.weightKg) || 0
                       );
                       if (nextMetal > 0) {
@@ -699,9 +826,16 @@ export default function ProductionHistoryPage() {
                   type="number"
                   min={0.001}
                   step="0.001"
-                  value={metalKg || ""}
+                  value={metalKg > 0 ? metalKg : ""}
                   onChange={(e) => {
-                    const next = Math.round((Number(e.target.value) || 0) * 1000) / 1000;
+                    const raw = e.target.value;
+                    if (raw === "" || raw === ".") {
+                      form.setValue("metalKg", 0, { shouldValidate: false });
+                      setMetalCustom(true);
+                      return;
+                    }
+                    const next = Math.round(Number(raw) * 1000) / 1000;
+                    if (!Number.isFinite(next)) return;
                     form.setValue("metalKg", next, { shouldValidate: true });
                     setMetalCustom(true);
                   }}
@@ -756,25 +890,43 @@ export default function ProductionHistoryPage() {
 
 function DayGroupRows({
   group,
+  open,
   deletingId,
+  deletingDay,
+  onToggle,
   onEdit,
   onDelete,
+  onEditDay,
+  onDeleteDay,
   isChecked,
   setCheckedState,
   t,
 }: {
   group: DayTotals;
+  open: boolean;
   deletingId: string | null;
+  deletingDay: boolean;
+  onToggle: () => void;
   onEdit: (batch: ProductionBatch) => void;
   onDelete: (batch: ProductionBatch) => void;
+  onEditDay: () => void;
+  onDeleteDay: () => void;
   isChecked: (id: string) => boolean;
   setCheckedState: (id: string, value: boolean) => void;
-  t: (key: MessageKey) => string;
+  t: (key: MessageKey, params?: TranslateParams) => string;
 }) {
   return (
     <>
-      <TableRow className="bg-muted/40 hover:bg-muted/40">
-        <TableCell />
+      <TableRow
+        className="cursor-pointer bg-muted/50 hover:bg-muted"
+        onClick={onToggle}
+        aria-expanded={open}
+      >
+        <TableCell>
+          <ChevronRight
+            className={cn("size-4 text-muted-foreground transition-transform", open && "rotate-90")}
+          />
+        </TableCell>
         <TableCell colSpan={3} className="font-medium">
           {group.day === "—" ? "—" : formatDate(group.day)}
           <span className="ml-2 text-xs font-normal text-muted-foreground">
@@ -790,12 +942,27 @@ function DayGroupRows({
         </TableCell>
         <TableCell className="font-data text-right text-xs font-medium">{group.totalQty}</TableCell>
         <TableCell />
-        <TableCell />
+        <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+          <div className="flex justify-end gap-1">
+            <Button type="button" variant="ghost" size="sm" onClick={onEditDay}>
+              {t("prod.edit")}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:text-destructive"
+              disabled={deletingDay}
+              onClick={onDeleteDay}
+            >
+              {deletingDay ? <Loader2 className="size-4 animate-spin" /> : t("prod.delete")}
+            </Button>
+          </div>
+        </TableCell>
       </TableRow>
-      {group.batches.map((b) => {
+      {open &&
+        group.batches.map((b) => {
         const family = batchFamily(b);
-        const isHub = family === "hub";
-        const isDrum = family === "drum";
         return (
           <TableRow key={b._id} className={familyRowClass(family)}>
             <TallyCell
@@ -803,15 +970,11 @@ function DayGroupRows({
               onChange={(next) => setCheckedState(b._id, next)}
               label={t("common.tally")}
             />
-            <TableCell className="text-sm">{batchProductName(b)}</TableCell>
+            <TableCell className="pl-8 text-sm">{batchProductName(b)}</TableCell>
             <TableCell className="font-data text-right text-xs">{batchQty(b)}</TableCell>
             <TableCell className="font-data text-right text-xs">{formatKg(batchUsedKg(b))}</TableCell>
-            <TableCell className="font-data text-right text-xs text-sky-700/80 dark:text-sky-300/80">
-              {isHub ? group.hubQty : ""}
-            </TableCell>
-            <TableCell className="font-data text-right text-xs text-yellow-800/80 dark:text-yellow-300/80">
-              {isDrum ? group.drumQty : ""}
-            </TableCell>
+            <TableCell />
+            <TableCell />
             <TableCell />
             <TableCell className="font-data text-xs">{formatDate(b.productionDate)}</TableCell>
             <TableCell className="text-right">

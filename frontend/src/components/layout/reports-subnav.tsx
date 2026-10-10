@@ -15,6 +15,7 @@ const LINKS: Array<{ href: string; labelKey: MessageKey; exact?: boolean }> = [
   { href: "/dashboard/reports/payables", labelKey: "rep.nav.payables" },
   { href: "/dashboard/reports/position", labelKey: "rep.nav.position" },
   { href: "/dashboard/reports/sales", labelKey: "rep.nav.sales" },
+  { href: "/dashboard/reports/ranking", labelKey: "rep.nav.ranking" },
   { href: "/dashboard/reports/purchases", labelKey: "rep.nav.purchases" },
   { href: "/dashboard/reports/production", labelKey: "rep.nav.production" },
   { href: "/dashboard/reports/costs", labelKey: "rep.nav.expenses" },

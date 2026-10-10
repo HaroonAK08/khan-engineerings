@@ -45,6 +45,24 @@ async function update(req, res, next) {
   }
 }
 
+async function shiftDate(req, res, next) {
+  try {
+    const result = await productionService.shiftDates(req.body.ids, req.body.productionDate);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function removeMany(req, res, next) {
+  try {
+    const result = await productionService.removeMany(req.body.ids);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function remove(req, res, next) {
   try {
     await productionService.remove(req.params.id);
@@ -123,7 +141,9 @@ module.exports = {
   list,
   getOne,
   update,
+  shiftDate,
   remove,
+  removeMany,
   report,
   productReport,
   furnace,

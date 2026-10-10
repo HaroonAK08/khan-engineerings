@@ -786,11 +786,6 @@ export default function ClaimsPage() {
                             recoveredKg: roundKg((Number(line.weightKg) || 0) * quantity),
                           });
                         }}
-                        onBlur={() => {
-                          if (!(line.quantity > 0)) {
-                            updateLine(index, { quantity: 1 });
-                          }
-                        }}
                       />
                       {remaining != null ? (
                         <p className="text-[10px] text-muted-foreground">

@@ -3,7 +3,24 @@ import { Input as InputPrimitive } from "@base-ui/react/input"
 
 import { cn } from "@/lib/utils"
 
-function Input({ className, type, ...props }: React.ComponentProps<"input">) {
+function Input({
+  className,
+  type,
+  value,
+  onChange,
+  onFocus,
+  onBlur,
+  ...props
+}: React.ComponentProps<"input">) {
+  const [draft, setDraft] = React.useState<string | null>(null);
+  const numberControlled = type === "number" && value !== undefined;
+  const valueProps =
+    numberControlled && draft !== null
+      ? { value: draft }
+      : value !== undefined
+        ? { value }
+        : {};
+
   return (
     <InputPrimitive
       type={type}
@@ -13,6 +30,19 @@ function Input({ className, type, ...props }: React.ComponentProps<"input">) {
         className
       )}
       {...props}
+      {...valueProps}
+      onFocus={(event) => {
+        if (numberControlled) setDraft(event.currentTarget.value);
+        onFocus?.(event);
+      }}
+      onChange={(event) => {
+        if (numberControlled) setDraft(event.currentTarget.value);
+        onChange?.(event);
+      }}
+      onBlur={(event) => {
+        if (numberControlled) setDraft(null);
+        onBlur?.(event);
+      }}
     />
   )
 }
