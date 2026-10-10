@@ -1,27 +1,5 @@
 import { api } from "@/lib/api";
 
-export type SearchHit = {
-  id: string;
-  label: string;
-  meta: string;
-  href: string;
-};
-
-export type GlobalSearchResult = {
-  q: string;
-  results: {
-    customers: SearchHit[];
-    suppliers: SearchHit[];
-    orders: SearchHit[];
-    purchases: SearchHit[];
-    batches: SearchHit[];
-    products: SearchHit[];
-    workers?: SearchHit[];
-    salesmen?: SearchHit[];
-    groups?: SearchHit[];
-  };
-};
-
 export type StatementLine = {
   id: string;
   date: string;
@@ -67,11 +45,6 @@ export type GroupStatement = {
   periodBalance: number;
   parties: GroupStatementParty[];
 };
-
-export async function globalSearch(params: { q: string; limit?: number }) {
-  const { data } = await api.get<GlobalSearchResult>("/reports/search", { params });
-  return data;
-}
 
 export async function getCustomerStatement(
   id: string,

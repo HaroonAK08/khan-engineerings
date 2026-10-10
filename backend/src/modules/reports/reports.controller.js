@@ -206,7 +206,7 @@ async function exportCustomersOverviewStatement(req, res, next) {
   }
 }
 
-async function exportYearlyBill(req, res, next) {
+async function exportYearlyCalendar(req, res, next) {
   try {
     const format = String(req.query.format || "pdf").toLowerCase() === "xlsx" ? "xlsx" : "pdf";
     await reportsService.exportYearlyCalendar(req.query, format, res);
@@ -289,7 +289,7 @@ module.exports = {
   exportSupplierStatement,
   exportGroupStatement,
   exportCustomersOverviewStatement,
-  exportYearlyBill,
+  exportYearlyCalendar,
   exportFull,
   exportCustom,
   combinedPreview,

@@ -33,7 +33,7 @@ router.get("/export/received", controller.exportReceived);
 router.get("/export/paid", controller.exportPaid);
 router.get("/export/payables", controller.exportPayables);
 router.get("/export/position", controller.exportPosition);
-router.get("/export/yearly", controller.exportYearlyBill);
+router.get("/export/yearly", controller.exportYearlyCalendar);
 router.get("/export/statements/customers/:id", controller.exportCustomerStatement);
 router.get("/export/statements/suppliers/:id", controller.exportSupplierStatement);
 router.get("/export/statements/groups/:id", controller.exportGroupStatement);
