@@ -1533,7 +1533,6 @@ async function getYearlyCalendarReport({
   const inventoryFamily = ["all", "hub", "drum"].includes(String(family || ""))
     ? String(family)
     : "all";
-  const snapshotMode = view === "inventory" || view === "cash";
 
   let y = Number(year);
   let fromStr;
@@ -1603,11 +1602,48 @@ async function getYearlyCalendarReport({
     row.months[monthKey] = roundMoney((row.months[monthKey] || 0) + value);
     row.total = roundMoney(row.total + value);
   }
-  function setSnapshot(rowId, rowName, monthKey, amount, unit) {
+  function setSnapshot(rowId, rowName, monthKey, amount, unit, href) {
     if (!monthKey.startsWith(`${y}-`)) return;
-    const row = ensureRow(rowId, rowName, "", unit);
-    const value = unit === "kg" ? roundQtyValue(amount) : roundMoney(amount || 0);
+    const row = ensureRow(rowId, rowName, href || "", unit || "money");
+    if (href) row.href = href;
+    const value =
+      unit === "kg" ? roundQtyValue(amount) : roundMoney(Number(amount) || 0);
     row.months[monthKey] = value;
+  }
+
+  function finishSnapshotRows(amountKind) {
+    const focusKey = single && asOfIso ? asOfIso.slice(0, 7) : toStr.slice(0, 7);
+    const rows = [...rowsMap.values()].sort(
+      (a, b) => Number(b.months[focusKey] || 0) - Number(a.months[focusKey] || 0)
+    );
+    const monthTotals = emptyMonthMap();
+    let focusGrand = 0;
+    for (const row of rows) {
+      row.total = Number(row.months[focusKey] || 0);
+      focusGrand = roundMoney(focusGrand + row.total);
+      for (const m of months) {
+        monthTotals[m.key] = roundMoney(
+          (monthTotals[m.key] || 0) + (Number(row.months[m.key]) || 0)
+        );
+      }
+    }
+    return {
+      year: y,
+      mode: view,
+      dateMode: single ? "single" : "range",
+      asOf: asOfIso,
+      dayOfMonth,
+      period: { from: fromStr, to: toStr },
+      amountKind,
+      valueKind: "snapshot",
+      months,
+      rows,
+      totals: {
+        months: monthTotals,
+        total: focusGrand,
+        rowCount: rows.length,
+      },
+    };
   }
 
   const asOfOpts = { single, dayOfMonth, fromStr, toStr };
@@ -1762,58 +1798,57 @@ async function getYearlyCalendarReport({
   }
 
   if (single) {
+    // One date = outstanding / on-hand as of that day in every month (unpaid carries forward).
     if (view === "supplier") {
+      const payData = await loadPayablesLedgerData();
       for (let i = 0; i < 12; i += 1) {
+        const asOf = isoDateOnMonthDay(y, i, dayOfMonth);
         const monthKey = months[i].key;
-        const monthFrom = `${y}-${String(i + 1).padStart(2, "0")}-01`;
-        const monthTo = isoDateOnMonthDay(y, i, dayOfMonth);
-        const payables = await getPayablesReport({ dateFrom: monthFrom, dateTo: monthTo });
-        for (const r of payables.records || []) {
-          addAmount(
-            r.partyId || r.partyName || "unknown",
-            r.partyName || "—",
-            monthKey,
-            r.balance,
-            r.href
-          );
+        for (const info of buildSupplierBalancesAsOf(payData, asOf)) {
+          setSnapshot(info.id, info.name, monthKey, info.bal, "money", info.href);
         }
       }
-    } else {
-      const data = await loadReceivablesLedgerData();
-      const groupNameById = data.groupNameMap;
-      for (let i = 0; i < 12; i += 1) {
-        const monthKey = months[i].key;
-        const monthFrom = `${y}-${String(i + 1).padStart(2, "0")}-01`;
-        const monthTo = isoDateOnMonthDay(y, i, dayOfMonth);
-        const receivables = buildReceivablesReportFromData(data, {
-          dateFrom: monthFrom,
-          dateTo: monthTo,
-          asOfDate: monthTo,
-        });
-        for (const r of receivables.records || []) {
-          const balance = roundMoney(r.balance || 0);
-          if (balance <= 0) continue;
-          if (view === "party") {
-            addAmount(
-              r.partyId || r.partyName || "unknown",
-              r.partyName || "—",
-              monthKey,
-              balance,
-              r.partyId ? `/dashboard/party/customers/${r.partyId}` : ""
-            );
-          } else {
-            const rowId = r.groupId || "__ungrouped__";
-            addAmount(
-              rowId,
-              groupNameById.get(r.groupId) || (r.groupId ? "—" : "Ungrouped"),
-              monthKey,
-              balance,
-              rowId && rowId !== "__ungrouped__" ? `/dashboard/party/groups/${rowId}` : ""
-            );
-          }
+      return finishSnapshotRows("payable");
+    }
+
+    const data = await loadReceivablesLedgerData();
+    const groupNameById = data.groupNameMap;
+    for (let i = 0; i < 12; i += 1) {
+      const asOf = isoDateOnMonthDay(y, i, dayOfMonth);
+      const monthKey = months[i].key;
+      // Full outstanding as of that day (unpaid from earlier months carries forward).
+      const receivables = buildReceivablesReportFromData(data, {
+        asOfDate: asOf,
+      });
+      const byRow = new Map();
+      for (const r of receivables.records || []) {
+        const balance = roundMoney(r.balance || 0);
+        if (balance <= 0) continue;
+        if (view === "party") {
+          const id = r.partyId || r.partyName || "unknown";
+          const prev = byRow.get(id) || {
+            name: r.partyName || "—",
+            href: r.partyId ? `/dashboard/party/customers/${r.partyId}` : "",
+            bal: 0,
+          };
+          prev.bal = roundMoney(prev.bal + balance);
+          byRow.set(id, prev);
+        } else {
+          const id = r.groupId || "__ungrouped__";
+          const prev = byRow.get(id) || {
+            name: groupNameById.get(r.groupId) || (r.groupId ? "—" : "Ungrouped"),
+            href: id && id !== "__ungrouped__" ? `/dashboard/party/groups/${id}` : "",
+            bal: 0,
+          };
+          prev.bal = roundMoney(prev.bal + balance);
+          byRow.set(id, prev);
         }
+      }
+      for (const [id, info] of byRow.entries()) {
+        setSnapshot(id, info.name, monthKey, info.bal, "money", info.href);
       }
     }
+    return finishSnapshotRows("receivable");
   } else if (view === "supplier") {
     const payables = await getPayablesReport({ dateFrom: fromStr, dateTo: toStr });
     for (const r of payables.records || []) {
@@ -2148,6 +2183,101 @@ async function getPaidReport({ dateFrom, dateTo, supplierId } = {}) {
     bySupplier,
     records,
   };
+}
+
+async function loadPayablesLedgerData() {
+  const LedgerEntry = require("../ledger/ledger.model");
+  const [purchases, ledger, suppliers] = await Promise.all([
+    Purchase.find({})
+      .populate("supplier", "name phone")
+      .sort({ purchaseDate: 1, createdAt: 1 })
+      .lean(),
+    LedgerEntry.find({ type: { $in: ["payment", "adjustment"] } })
+      .select("supplier type amount signedAmount entryDate")
+      .lean(),
+    Supplier.find({}).select("name phone").lean(),
+  ]);
+  const supplierNameById = new Map(
+    suppliers.map((s) => [String(s._id), s.name || "—"])
+  );
+  return { purchases, ledger, supplierNameById };
+}
+
+/** Outstanding payable per supplier as of a day (payments after that day ignored). */
+function buildSupplierBalancesAsOf(data, asOfIso) {
+  const asOf = String(asOfIso).slice(0, 10);
+  const bySupplier = new Map();
+
+  function ensure(id) {
+    if (!bySupplier.has(id)) {
+      bySupplier.set(id, {
+        name: data.supplierNameById.get(id) || "—",
+        href: `/dashboard/suppliers/${id}`,
+        charges: [],
+        credits: [],
+      });
+    }
+    return bySupplier.get(id);
+  }
+
+  for (const p of data.purchases) {
+    if (!inDateRange(p.purchaseDate, null, asOf)) continue;
+    const sid =
+      p.supplier && typeof p.supplier === "object"
+        ? String(p.supplier._id || "")
+        : String(p.supplier || "");
+    if (!sid) continue;
+    const row = ensure(sid);
+    if (p.supplier && typeof p.supplier === "object" && p.supplier.name) {
+      row.name = p.supplier.name;
+    }
+    row.charges.push({
+      id: String(p._id),
+      date: p.purchaseDate,
+      amount: (p.totalAmount || 0) + (p.freightAmount || 0),
+      kind: "invoice",
+    });
+  }
+
+  for (const e of data.ledger) {
+    if (!inDateRange(e.entryDate, null, asOf)) continue;
+    const sid = String(e.supplier || "");
+    if (!sid) continue;
+    const row = ensure(sid);
+    if (e.type === "payment") {
+      row.credits.push({
+        id: String(e._id),
+        date: e.entryDate,
+        amount: e.amount || 0,
+      });
+    } else if ((e.signedAmount || 0) < 0) {
+      row.credits.push({
+        id: String(e._id),
+        date: e.entryDate,
+        amount: Math.abs(e.signedAmount || 0),
+      });
+    } else if ((e.signedAmount || 0) > 0) {
+      row.charges.push({
+        id: String(e._id),
+        date: e.entryDate,
+        amount: e.signedAmount || e.amount || 0,
+        kind: "adjustment",
+      });
+    }
+  }
+
+  const out = [];
+  for (const [id, info] of bySupplier.entries()) {
+    const allocated = allocateThisMonthFirst(info.charges, info.credits);
+    let bal = 0;
+    for (const c of allocated) {
+      bal = roundMoney(bal + (c.remaining || 0));
+    }
+    if (bal > 0.005) {
+      out.push({ id, name: info.name, href: info.href, bal });
+    }
+  }
+  return out;
 }
 
 async function getPayablesReport({ dateFrom, dateTo } = {}) {

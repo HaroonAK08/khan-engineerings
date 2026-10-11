@@ -24,7 +24,10 @@ import {
   type PartySalesMarginParty,
   type ProductionMarginProduct,
 } from "@/lib/finance-api";
+import { listProducts } from "@/lib/production-api";
+import { listCustomers, type Customer } from "@/lib/sales-api";
 import { apiError, formatMoney } from "@/lib/materials-api";
+import type { Product } from "@/types/production";
 import { useTaxSplitStore } from "@/stores/tax-split-store";
 import { cn } from "@/lib/utils";
 
@@ -78,6 +81,13 @@ function sortBy<T>(
   });
 }
 
+function customerGroupName(customer: Customer) {
+  if (customer.group && typeof customer.group === "object") {
+    return customer.group.name || "";
+  }
+  return "";
+}
+
 function toPartyRow(party: PartySalesMarginParty): PartyRow {
   const sale = party.totalSale || 0;
   const profit = party.profit || 0;
@@ -101,6 +111,42 @@ function toProductRow(product: ProductionMarginProduct): ProductRow {
     sale: product.sellValue || 0,
     qty: product.unitsSoldPeriod || 0,
   };
+}
+
+function mergeAllParties(active: PartyRow[], customers: Customer[]) {
+  const byId = new Map(active.map((row) => [row.id, row]));
+  for (const customer of customers) {
+    const id = String(customer._id);
+    if (byId.has(id)) continue;
+    byId.set(id, {
+      id,
+      name: customer.name || "—",
+      group: customerGroupName(customer),
+      pct: null,
+      profit: 0,
+      sale: 0,
+    });
+  }
+  return [...byId.values()];
+}
+
+function mergeAllProducts(active: ProductRow[], catalog: Product[]) {
+  const byId = new Map(active.map((row) => [row.id, row]));
+  for (const product of catalog) {
+    if (!product.isActive) continue;
+    const id = String(product._id);
+    if (byId.has(id)) continue;
+    byId.set(id, {
+      id,
+      name: product.name || "—",
+      family: product.family === "drum" ? "drum" : "hub",
+      pct: null,
+      profit: 0,
+      sale: 0,
+      qty: 0,
+    });
+  }
+  return [...byId.values()];
 }
 
 function sumTotals(rows: Array<{ profit: number; sale: number }>) {
@@ -133,20 +179,16 @@ export default function RankingReportPage() {
     if (!hydrated) return;
     setLoading(true);
     try {
-      const [partyReport, productReport] = await Promise.all([
+      const [partyReport, productReport, customers, catalog] = await Promise.all([
         getPartySalesMargin({ dateFrom, dateTo, taxSplit: taxMode }),
         getProductionMargin({ dateFrom, dateTo, taxSplit: taxMode }),
+        listCustomers({ active: "true" }),
+        listProducts({ active: "true" }),
       ]);
-      setParties(
-        (partyReport.parties || [])
-          .map(toPartyRow)
-          .filter((row) => row.sale !== 0 || row.profit !== 0)
-      );
-      setProducts(
-        (productReport.products || [])
-          .map(toProductRow)
-          .filter((row) => row.qty !== 0 || row.sale !== 0 || row.profit !== 0)
-      );
+      const activeParties = (partyReport.parties || []).map(toPartyRow);
+      const activeProducts = (productReport.products || []).map(toProductRow);
+      setParties(mergeAllParties(activeParties, customers));
+      setProducts(mergeAllProducts(activeProducts, catalog));
     } catch (err) {
       setParties([]);
       setProducts([]);

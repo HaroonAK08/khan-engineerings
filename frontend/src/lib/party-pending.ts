@@ -194,9 +194,26 @@ export function computePeriodPending(
   const asOfEntries = entries.filter((entry) => dayKey(entry.entryDate) <= to);
   const allocated = allocatePartyPending(asOfEntries);
 
+  // Opening = unpaid before the range starts (payments before `from` only).
+  const openingAllocated = allocatePartyPending(
+    asOfEntries.filter((entry) => dayKey(entry.entryDate) < from)
+  );
+  const previousRemaining = roundMoney(
+    openingAllocated.reduce((sum, c) => sum + (c.remaining > 0.001 ? c.remaining : 0), 0)
+  );
+  const previousLines: PendingDetailLine[] = openingAllocated
+    .filter((c) => c.remaining > 0.001)
+    .map((c) => ({
+      id: c.id,
+      date: c.date,
+      partyName: "",
+      label: c.label,
+      amount: c.remaining,
+      href: c.href,
+    }));
+
   let periodSale = 0;
   let periodPaid = 0;
-  let previousNet = 0;
 
   const byMonth = new Map<string, MonthPending>();
   const monthRow = (month: string): MonthPending => {
@@ -215,28 +232,29 @@ export function computePeriodPending(
     const day = dayKey(entry.entryDate);
     const debit = chargeAmount(entry);
     const credit = paymentAmount(entry);
-    if (inRange(day)) {
-      periodSale = roundMoney(periodSale + debit);
-      periodPaid = roundMoney(periodPaid + credit);
-      const row = monthRow(monthKey(day));
-      row.sale = roundMoney(row.sale + debit);
-      row.paid = roundMoney(row.paid + credit);
-      row.remaining = roundMoney(row.sale - row.paid);
-    } else if (day < from) {
-      previousNet = roundMoney(previousNet + debit - credit);
-    }
+    if (!inRange(day)) continue;
+    periodSale = roundMoney(periodSale + debit);
+    periodPaid = roundMoney(periodPaid + credit);
+    const row = monthRow(monthKey(day));
+    row.sale = roundMoney(row.sale + debit);
+    row.paid = roundMoney(row.paid + credit);
+    row.remaining = roundMoney(row.sale - row.paid);
   }
 
-  for (const line of allocated) {
-    if (!inRange(line.date) || line.remaining <= 0.001) continue;
+  // Unpaid builties / old dues = every charge still open as of dateTo (includes before range).
+  const leftoverLines = allocated
+    .filter((c) => c.remaining > 0.001)
+    .sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
+
+  for (const line of leftoverLines) {
+    if (!inRange(line.date)) continue;
     monthRow(line.month).lines.push(line);
   }
 
   const periodRemaining = roundMoney(periodSale - periodPaid);
-  const previousRemaining = previousNet;
-  const leftoverLines = allocated
-    .filter((c) => inRange(c.date) && c.remaining > 0.001)
-    .sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
+  const totalRemaining = roundMoney(
+    leftoverLines.reduce((sum, c) => sum + c.remaining, 0)
+  );
 
   const saleLines: PendingDetailLine[] = [];
   const paidLines: PendingDetailLine[] = [];
@@ -268,20 +286,6 @@ export function computePeriodPending(
     }
   }
 
-  const openingAllocated = allocatePartyPending(
-    asOfEntries.filter((entry) => dayKey(entry.entryDate) < from)
-  );
-  const previousLines: PendingDetailLine[] = openingAllocated
-    .filter((c) => c.remaining > 0.001)
-    .map((c) => ({
-      id: c.id,
-      date: c.date,
-      partyName: "",
-      label: c.label,
-      amount: c.remaining,
-      href: c.href,
-    }));
-
   const byDateDesc = (a: PendingDetailLine, b: PendingDetailLine) =>
     b.date.localeCompare(a.date) || a.id.localeCompare(b.id);
 
@@ -290,7 +294,7 @@ export function computePeriodPending(
     periodSale,
     periodPaid,
     periodRemaining,
-    totalRemaining: roundMoney(previousRemaining + periodRemaining),
+    totalRemaining,
     months: [...byMonth.values()].sort((a, b) => b.month.localeCompare(a.month)),
     leftoverLines,
     saleLines: saleLines.sort(byDateDesc),

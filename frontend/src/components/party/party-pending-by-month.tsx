@@ -351,6 +351,20 @@ export function PartyPendingByMonth({
                       </TableRow>
                     ))}
               </TableBody>
+              <TableFooter>
+                <TableRow>
+                  <TableCell colSpan={2}>{t("common.total")}</TableCell>
+                  <TableCell className="font-data text-right font-semibold text-amber-700 dark:text-amber-400">
+                    {formatMoney(
+                      (partyGroups || filteredLeftoverLines).reduce(
+                        (sum, row) =>
+                          sum + ("total" in row ? row.total : row.remaining),
+                        0
+                      )
+                    )}
+                  </TableCell>
+                </TableRow>
+              </TableFooter>
             </Table>
           </div>
         </div>

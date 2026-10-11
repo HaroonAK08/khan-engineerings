@@ -29,13 +29,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Table,
   TableBody,
   TableCell,
@@ -50,6 +43,78 @@ import { ReportsSubnav } from "@/components/layout/reports-subnav";
 
 type ReportMode = "full" | "custom";
 type Audience = "company" | HandoutAudience;
+
+function SearchablePickList({
+  query,
+  onQueryChange,
+  placeholder,
+  options,
+  value,
+  onChange,
+  emptyLabel,
+}: {
+  query: string;
+  onQueryChange: (next: string) => void;
+  placeholder: string;
+  options: Array<{ id: string; name: string }>;
+  value: string;
+  onChange: (id: string, name: string) => void;
+  emptyLabel: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const showList = open && (query.trim().length > 0 || !value);
+
+  return (
+    <div className="relative flex w-full flex-col gap-1.5">
+      <Input
+        value={query}
+        placeholder={placeholder}
+        autoComplete="off"
+        autoCorrect="off"
+        spellCheck={false}
+        onFocus={() => setOpen(true)}
+        onChange={(event) => {
+          onQueryChange(event.target.value);
+          setOpen(true);
+          if (value) onChange("", "");
+        }}
+      />
+      {showList ? (
+        options.length === 0 ? (
+          <p className="rounded-lg border px-3 py-2 text-sm text-muted-foreground">
+            {emptyLabel}
+          </p>
+        ) : (
+          <div className="absolute top-full right-0 left-0 z-20 mt-1 flex max-h-60 w-full flex-col overflow-y-auto rounded-lg border bg-card shadow-md">
+            {options.map((row) => {
+              const active = String(value) === String(row.id);
+              return (
+                <button
+                  key={row.id}
+                  type="button"
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    onChange(String(row.id), row.name);
+                    onQueryChange(row.name);
+                    setOpen(false);
+                  }}
+                  className={cn(
+                    "w-full border-b px-3 py-2.5 text-left text-sm last:border-b-0",
+                    active
+                      ? "bg-primary/10 font-medium text-foreground"
+                      : "hover:bg-muted/40"
+                  )}
+                >
+                  {row.name}
+                </button>
+              );
+            })}
+          </div>
+        )
+      ) : null}
+    </div>
+  );
+}
 
 export default function ReportsHubPage() {
   const { t } = useI18n();
@@ -209,34 +274,6 @@ export default function ReportsHubPage() {
     return suppliers.filter((row) => row.name.toLowerCase().includes(q));
   }, [suppliers, supplierQuery]);
 
-  const partyItems = useMemo(() => {
-    const items: Record<string, string> = {};
-    for (const row of filteredCustomers) items[row._id] = row.name;
-    if (partyId && customers.find((row) => row._id === partyId)) {
-      const selected = customers.find((row) => row._id === partyId)!;
-      items[selected._id] = selected.name;
-    }
-    return items;
-  }, [filteredCustomers, customers, partyId]);
-  const groupItems = useMemo(() => {
-    const items: Record<string, string> = {};
-    for (const row of filteredGroups) items[row._id] = row.name;
-    if (groupId && groups.find((row) => row._id === groupId)) {
-      const selected = groups.find((row) => row._id === groupId)!;
-      items[selected._id] = selected.name;
-    }
-    return items;
-  }, [filteredGroups, groups, groupId]);
-  const supplierItems = useMemo(() => {
-    const items: Record<string, string> = {};
-    for (const row of filteredSuppliers) items[row._id] = row.name;
-    if (supplierId && suppliers.find((row) => row._id === supplierId)) {
-      const selected = suppliers.find((row) => row._id === supplierId)!;
-      items[selected._id] = selected.name;
-    }
-    return items;
-  }, [filteredSuppliers, suppliers, supplierId]);
-
   function openCustom(next: Audience = "party") {
     setMode("custom");
     setAudience(next);
@@ -315,7 +352,7 @@ export default function ReportsHubPage() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+    <div className="flex w-full flex-col gap-6">
       <ReportsSubnav />
       <div>
         <p className="font-data text-[10px] tracking-[0.15em] text-muted-foreground uppercase">
@@ -431,130 +468,62 @@ export default function ReportsHubPage() {
               </div>
 
               {audience === "party" ? (
-                <div className="flex flex-col gap-2">
-                  <Input
-                    value={partyQuery}
-                    placeholder={t("handout.searchParty")}
-                    onChange={(event) => setPartyQuery(event.target.value)}
-                  />
-                  <Select
-                    value={partyId || null}
-                    onValueChange={(value) => setPartyId(value || "")}
-                    items={partyItems}
-                  >
-                    <SelectTrigger className="w-full max-w-md">
-                      <SelectValue placeholder={t("handout.selectParty")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {filteredCustomers.length === 0 ? (
-                        <div className="px-3 py-2 text-sm text-muted-foreground">
-                          {t("handout.noMatch")}
-                        </div>
-                      ) : (
-                        filteredCustomers.map((row) => (
-                          <SelectItem key={row._id} value={row._id}>
-                            {row.name}
-                          </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <SearchablePickList
+                  query={partyQuery}
+                  onQueryChange={setPartyQuery}
+                  placeholder={t("handout.searchParty")}
+                  options={filteredCustomers.map((row) => ({
+                    id: String(row._id),
+                    name: row.name,
+                  }))}
+                  value={partyId}
+                  onChange={(id) => setPartyId(id)}
+                  emptyLabel={t("handout.noMatch")}
+                />
               ) : null}
               {audience === "group" ? (
-                <div className="flex flex-col gap-2">
-                  <Input
-                    value={groupQuery}
-                    placeholder={t("handout.searchGroup")}
-                    onChange={(event) => setGroupQuery(event.target.value)}
-                  />
-                  <Select
-                    value={groupId || null}
-                    onValueChange={(value) => setGroupId(value || "")}
-                    items={groupItems}
-                  >
-                    <SelectTrigger className="w-full max-w-md">
-                      <SelectValue placeholder={t("handout.selectGroup")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {filteredGroups.length === 0 ? (
-                        <div className="px-3 py-2 text-sm text-muted-foreground">
-                          {t("handout.noMatch")}
-                        </div>
-                      ) : (
-                        filteredGroups.map((row) => (
-                          <SelectItem key={row._id} value={row._id}>
-                            {row.name}
-                          </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <SearchablePickList
+                  query={groupQuery}
+                  onQueryChange={setGroupQuery}
+                  placeholder={t("handout.searchGroup")}
+                  options={filteredGroups.map((row) => ({
+                    id: String(row._id),
+                    name: row.name,
+                  }))}
+                  value={groupId}
+                  onChange={(id) => setGroupId(id)}
+                  emptyLabel={t("handout.noMatch")}
+                />
               ) : null}
               {audience === "supplier" ? (
-                <div className="flex flex-col gap-2">
-                  <Input
-                    value={supplierQuery}
-                    placeholder={t("handout.searchSupplier")}
-                    onChange={(event) => setSupplierQuery(event.target.value)}
-                  />
-                  <Select
-                    value={supplierId || null}
-                    onValueChange={(value) => setSupplierId(value || "")}
-                    items={supplierItems}
-                  >
-                    <SelectTrigger className="w-full max-w-md">
-                      <SelectValue placeholder={t("handout.selectSupplier")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {filteredSuppliers.length === 0 ? (
-                        <div className="px-3 py-2 text-sm text-muted-foreground">
-                          {t("handout.noMatch")}
-                        </div>
-                      ) : (
-                        filteredSuppliers.map((row) => (
-                          <SelectItem key={row._id} value={row._id}>
-                            {row.name}
-                          </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <SearchablePickList
+                  query={supplierQuery}
+                  onQueryChange={setSupplierQuery}
+                  placeholder={t("handout.searchSupplier")}
+                  options={filteredSuppliers.map((row) => ({
+                    id: String(row._id),
+                    name: row.name,
+                  }))}
+                  value={supplierId}
+                  onChange={(id) => setSupplierId(id)}
+                  emptyLabel={t("handout.noMatch")}
+                />
               ) : null}
               {audience === "builty" ? (
                 <div className="flex flex-col gap-3">
                   <p className="text-sm text-muted-foreground">{t("handout.pickPartyFirst")}</p>
-                  <div className="flex flex-col gap-2">
-                    <Input
-                      value={partyQuery}
-                      placeholder={t("handout.searchParty")}
-                      onChange={(event) => setPartyQuery(event.target.value)}
-                    />
-                    <Select
-                      value={partyId || null}
-                      onValueChange={(value) => setPartyId(value || "")}
-                      items={partyItems}
-                    >
-                      <SelectTrigger className="w-full max-w-md">
-                        <SelectValue placeholder={t("handout.selectParty")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {filteredCustomers.length === 0 ? (
-                          <div className="px-3 py-2 text-sm text-muted-foreground">
-                            {t("handout.noMatch")}
-                          </div>
-                        ) : (
-                          filteredCustomers.map((row) => (
-                            <SelectItem key={row._id} value={row._id}>
-                              {row.name}
-                            </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <SearchablePickList
+                    query={partyQuery}
+                    onQueryChange={setPartyQuery}
+                    placeholder={t("handout.searchParty")}
+                    options={filteredCustomers.map((row) => ({
+                      id: String(row._id),
+                      name: row.name,
+                    }))}
+                    value={partyId}
+                    onChange={(id) => setPartyId(id)}
+                    emptyLabel={t("handout.noMatch")}
+                  />
                   {!partyId ? null : loadingPartyBuilties ? (
                     <div className="flex justify-center py-6">
                       <Loader2 className="size-5 animate-spin text-muted-foreground" />

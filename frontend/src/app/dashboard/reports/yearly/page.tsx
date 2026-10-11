@@ -101,7 +101,6 @@ export default function YearlyCalendarReportPage() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<"pdf" | null>(null);
 
-  const isSnapshot = mode === "inventory" || mode === "cash";
   const showSearch = mode !== "cash";
 
   function applyYear(nextYear: string) {
@@ -222,7 +221,7 @@ export default function YearlyCalendarReportPage() {
   const displayTotals =
     report == null
       ? null
-      : q && !isSnapshot
+      : q
         ? { total: filteredTotal, rowCount: rows.length, months: filteredMonthTotals }
         : report.totals;
 
@@ -483,6 +482,11 @@ export default function YearlyCalendarReportPage() {
                   <p className="font-data mt-1 text-xl text-destructive">
                     {formatMoney(displayTotals?.total || 0)}
                   </p>
+                  {report.dateMode === "single" ? (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t("yearlyReports.onSelectedDate")}
+                    </p>
+                  ) : null}
                 </CardContent>
               </Card>
               <Card className="py-0">
@@ -573,7 +577,9 @@ export default function YearlyCalendarReportPage() {
                         <TableCell
                           className={cn(
                             "font-data text-right text-xs font-medium whitespace-nowrap",
-                            !isSnapshot && row.total > 0 && "text-destructive"
+                            row.total > 0 &&
+                              (row.unit || "money") === "money" &&
+                              "text-destructive"
                           )}
                         >
                           {formatYearlyValue(row.total, row.unit || "money")}
@@ -582,7 +588,9 @@ export default function YearlyCalendarReportPage() {
                     ))
                   )}
                 </TableBody>
-                {!isSnapshot && rows.length > 0 && displayTotals ? (
+                {rows.length > 0 &&
+                displayTotals &&
+                (report.amountKind === "receivable" || report.amountKind === "payable") ? (
                   <TableFooter>
                     <TableRow>
                       <TableCell className="sticky left-0 z-10 bg-muted/40 font-medium">

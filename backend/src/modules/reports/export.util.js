@@ -148,12 +148,20 @@ function buildPdf({
   return new Promise((resolve, reject) => {
     const isLandscape = String(layout).toLowerCase() === "landscape";
     const pageMargin = isLandscape ? 28 : 36;
+    const footerReserve = 36;
+    // Bottom margin must cover the footer band. Writing below PDFKit's bottom
+    // margin triggers automatic addPage() and produces blank white pages.
     const doc = new PDFDocument({
-      margin: pageMargin,
       size: "A4",
       layout: isLandscape ? "landscape" : "portrait",
       bufferPages: true,
       autoFirstPage: true,
+      margins: {
+        top: pageMargin,
+        left: pageMargin,
+        right: pageMargin,
+        bottom: footerReserve,
+      },
     });
     const chunks = [];
     doc.on("data", (c) => chunks.push(c));
@@ -172,12 +180,11 @@ function buildPdf({
     const accent = "#1f3a3a";
     const bodySize = isLandscape ? 8.5 : 8;
     const headerSize = isLandscape ? 8.5 : 8;
-    const footerReserve = 32;
     const padX = 5;
     const padY = 6;
 
     function contentBottom() {
-      return doc.page.height - footerReserve;
+      return doc.page.height - doc.page.margins.bottom;
     }
 
     function remainingSpace() {
@@ -476,18 +483,28 @@ function buildPdf({
     });
 
     const pages = doc.bufferedPageRange();
-    for (let i = 0; i < pages.count; i += 1) {
-      doc.switchToPage(i);
-      const footerY = doc.page.height - 22;
-      doc
-        .font("Helvetica")
-        .fontSize(7)
-        .fillColor(muted)
-        .text(`Khan Engineerings · Page ${i + 1} of ${pages.count}`, left, footerY, {
-          width: usableWidth,
-          align: "center",
-          lineBreak: false,
-        });
+    const addPageOrig = doc.addPage.bind(doc);
+    // Footers must never create new pages (PDFKit will if y is past bottom margin).
+    doc.addPage = function blockedFooterAddPage() {
+      return doc;
+    };
+    try {
+      for (let i = 0; i < pages.count; i += 1) {
+        doc.switchToPage(i);
+        const footerY = doc.page.height - footerReserve + 12;
+        doc
+          .font("Helvetica")
+          .fontSize(7)
+          .fillColor(muted)
+          .text(`Khan Engineerings · Page ${i + 1} of ${pages.count}`, left, footerY, {
+            width: usableWidth,
+            align: "center",
+            lineBreak: false,
+            height: 12,
+          });
+      }
+    } finally {
+      doc.addPage = addPageOrig;
     }
 
     doc.end();

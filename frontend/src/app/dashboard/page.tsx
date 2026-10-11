@@ -13,6 +13,7 @@ import {
   type ProductionMarginProduct,
   type ProductionMarginReport,
 } from "@/lib/finance-api";
+import { getLiveInventoryReport, type InventoryReport } from "@/lib/inventory-api";
 import { splitCastingKhrad } from "@/lib/casting-khrad";
 import { useTaxSplitStore } from "@/stores/tax-split-store";
 import { channelColors } from "@/lib/channel-colors";
@@ -497,18 +498,21 @@ export default function ProductionMarginPage() {
   const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
   const [report, setReport] = useState<ProductionMarginReport | null>(null);
   const [partyMargin, setPartyMargin] = useState<PartySalesMarginReport | null>(null);
+  const [inventoryAsOf, setInventoryAsOf] = useState<InventoryReport | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     if (!hydrated) return;
     setLoading(true);
     try {
-      const [data, party] = await Promise.all([
+      const [data, party, inventory] = await Promise.all([
         getProductionMargin({ dateFrom, dateTo, taxSplit: taxMode }),
         getPartySalesMargin({ dateFrom, dateTo, taxSplit: taxMode }),
+        getLiveInventoryReport({ asOf: dateTo, dateFrom, dateTo }),
       ]);
       setReport(data);
       setPartyMargin(party);
+      setInventoryAsOf(inventory);
     } catch (err) {
       toast.error(apiError(err, t("prodMargin.loadFailed")));
     } finally {
@@ -739,21 +743,23 @@ export default function ProductionMarginPage() {
                 accent: "bg-chart-1",
               },
               {
-                label: t("prodMargin.scrapUsed"),
-                value: formatKg(summary.scrapKg),
-                hint: t("prodMargin.inclWaste"),
-                money: formatMoney(
-                  report.purchasedVsUsed?.used.scrapAmount ?? summary.scrapCost ?? 0
+                label: t("prodMargin.scrapAvailable"),
+                value: formatKg(
+                  inventoryAsOf?.raw?.scrapKg ??
+                    inventoryAsOf?.raw?.byMaterial?.scrap?.availableKg ??
+                    0
                 ),
+                hint: t("prodMargin.availableHint"),
                 accent: "bg-chart-4",
               },
               {
-                label: t("prodMargin.daigUsed"),
-                value: formatKg(summary.daigKg),
-                hint: t("prodMargin.inclWaste"),
-                money: formatMoney(
-                  report.purchasedVsUsed?.used.daigAmount ?? summary.daigCost ?? 0
+                label: t("prodMargin.daigAvailable"),
+                value: formatKg(
+                  inventoryAsOf?.raw?.daigKg ??
+                    inventoryAsOf?.raw?.byMaterial?.daig?.availableKg ??
+                    0
                 ),
+                hint: t("prodMargin.availableHint"),
                 accent: "bg-chart-2",
               },
               {
