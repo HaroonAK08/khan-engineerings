@@ -1038,6 +1038,7 @@ module.exports = {
   updateWarehouse,
   removeWarehouse,
   getFinishedStock,
+  getRawStockAsOf,
   getAlerts,
   listMovements,
   createAdjustment,

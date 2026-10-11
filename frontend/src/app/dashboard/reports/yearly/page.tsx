@@ -6,13 +6,15 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { ReportsSubnav } from "@/components/layout/reports-subnav";
 import { ExportButtons } from "@/components/reports/export-buttons";
-import { apiError, formatMoney } from "@/lib/materials-api";
+import { apiError, formatKg, formatMoney } from "@/lib/materials-api";
 import {
   downloadYearlyCalendarExport,
   getYearlyCalendarReport,
   type YearlyCalendarMode,
   type YearlyCalendarReport,
+  type YearlyCalendarRow,
   type YearlyDateMode,
+  type YearlyInventoryFamily,
 } from "@/lib/reports-api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -71,9 +73,24 @@ function dayOrdinal(day: number) {
   return `${n}th`;
 }
 
+function formatYearlyValue(value: number, unit: YearlyCalendarRow["unit"]) {
+  const n = Number(value) || 0;
+  if (unit === "kg") {
+    if (Math.abs(n) < 0.0005) return "—";
+    return `${formatKg(n)} kg`;
+  }
+  if (unit === "pcs") {
+    if (Math.abs(n) < 0.0005) return "—";
+    return String(Math.round(n));
+  }
+  if (Math.abs(n) < 0.005) return "—";
+  return formatMoney(n);
+}
+
 export default function YearlyCalendarReportPage() {
   const { t, isUrdu } = useI18n();
   const [mode, setMode] = useState<YearlyCalendarMode>("party");
+  const [inventoryFamily, setInventoryFamily] = useState<YearlyInventoryFamily>("all");
   const [dateMode, setDateMode] = useState<YearlyDateMode>("single");
   const [year, setYear] = useState(String(currentYear()));
   const [singleDate, setSingleDate] = useState(todayInput());
@@ -83,6 +100,9 @@ export default function YearlyCalendarReportPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<"pdf" | null>(null);
+
+  const isSnapshot = mode === "inventory" || mode === "cash";
+  const showSearch = mode !== "cash";
 
   function applyYear(nextYear: string) {
     setYear(nextYear);
@@ -106,6 +126,7 @@ export default function YearlyCalendarReportPage() {
           date: dateMode === "single" ? singleDate : undefined,
           dateFrom: dateMode === "range" ? dateFrom : undefined,
           dateTo: dateMode === "range" ? dateTo : undefined,
+          family: mode === "inventory" ? inventoryFamily : undefined,
         })
       );
     } catch (err) {
@@ -114,7 +135,7 @@ export default function YearlyCalendarReportPage() {
     } finally {
       setLoading(false);
     }
-  }, [year, mode, dateMode, singleDate, dateFrom, dateTo, t]);
+  }, [year, mode, inventoryFamily, dateMode, singleDate, dateFrom, dateTo, t]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -134,6 +155,7 @@ export default function YearlyCalendarReportPage() {
         date: dateMode === "single" ? singleDate : undefined,
         dateFrom: dateMode === "range" ? dateFrom : undefined,
         dateTo: dateMode === "range" ? dateTo : undefined,
+        family: mode === "inventory" ? inventoryFamily : undefined,
       });
       toast.success(t("common.downloaded", { format: "PDF" }));
     } catch (err) {
@@ -148,21 +170,35 @@ export default function YearlyCalendarReportPage() {
       ? t("yearlyReports.col.supplier")
       : mode === "group"
         ? t("yearlyReports.col.group")
-        : t("yearlyReports.col.party");
+        : mode === "inventory"
+          ? t("yearlyReports.col.item")
+          : mode === "cash"
+            ? t("yearlyReports.col.cash")
+            : t("yearlyReports.col.party");
   const amountLabel =
-    mode === "supplier" ? t("yearlyReports.toPay") : t("yearlyReports.toReceive");
+    mode === "supplier"
+      ? t("yearlyReports.toPay")
+      : mode === "inventory"
+        ? t("yearlyReports.stockOnHand")
+        : mode === "cash"
+          ? t("yearlyReports.cashOnHand")
+          : t("yearlyReports.toReceive");
   const searchLabel =
     mode === "supplier"
       ? t("yearlyReports.searchSupplier")
       : mode === "group"
         ? t("yearlyReports.searchGroup")
-        : t("yearlyReports.searchParty");
+        : mode === "inventory"
+          ? t("yearlyReports.searchInventory")
+          : t("yearlyReports.searchParty");
   const searchPlaceholder =
     mode === "supplier"
       ? t("yearlyReports.searchSupplierPlaceholder")
       : mode === "group"
         ? t("yearlyReports.searchGroupPlaceholder")
-        : t("yearlyReports.searchPartyPlaceholder");
+        : mode === "inventory"
+          ? t("yearlyReports.searchInventoryPlaceholder")
+          : t("yearlyReports.searchPartyPlaceholder");
 
   const q = searchQuery.trim().toLowerCase();
   const rows =
@@ -186,9 +222,24 @@ export default function YearlyCalendarReportPage() {
   const displayTotals =
     report == null
       ? null
-      : q
+      : q && !isSnapshot
         ? { total: filteredTotal, rowCount: rows.length, months: filteredMonthTotals }
         : report.totals;
+
+  const focusKey =
+    report == null
+      ? ""
+      : report.dateMode === "single" && report.asOf
+        ? report.asOf.slice(0, 7)
+        : report.period.to.slice(0, 7);
+  const inventoryFocus = Object.fromEntries(
+    (report?.mode === "inventory" ? report.rows : []).map((row) => [
+      row.id,
+      Number(row.months[focusKey] ?? row.total ?? 0),
+    ])
+  );
+  const cashFocus =
+    report?.mode === "cash" ? Number(report.rows[0]?.months[focusKey] ?? report.totals.total ?? 0) : 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -206,6 +257,8 @@ export default function YearlyCalendarReportPage() {
             ["party", "yearlyReports.parties"],
             ["group", "yearlyReports.groups"],
             ["supplier", "yearlyReports.suppliers"],
+            ["inventory", "yearlyReports.inventory"],
+            ["cash", "yearlyReports.cash"],
           ] as const
         ).map(([id, label]) => (
           <Button
@@ -216,6 +269,7 @@ export default function YearlyCalendarReportPage() {
             onClick={() => {
               setMode(id);
               setSearchQuery("");
+              if (id === "inventory") setInventoryFamily("all");
             }}
           >
             {t(label)}
@@ -223,17 +277,44 @@ export default function YearlyCalendarReportPage() {
         ))}
       </div>
 
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="grid min-w-[14rem] flex-1 gap-1.5 sm:max-w-xs">
-          <Label htmlFor="yearly-search">{searchLabel}</Label>
-          <Input
-            id="yearly-search"
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder={searchPlaceholder}
-            className="h-10"
-          />
+      {mode === "inventory" ? (
+        <div className="flex flex-wrap gap-2">
+          {(
+            [
+              ["all", "yearlyReports.inventoryAll"],
+              ["hub", "yearlyReports.inventoryHub"],
+              ["drum", "yearlyReports.inventoryDrum"],
+            ] as const
+          ).map(([id, label]) => (
+            <Button
+              key={id}
+              type="button"
+              size="sm"
+              variant={inventoryFamily === id ? "default" : "outline"}
+              onClick={() => {
+                setInventoryFamily(id);
+                setSearchQuery("");
+              }}
+            >
+              {t(label)}
+            </Button>
+          ))}
         </div>
+      ) : null}
+
+      <div className="flex flex-wrap items-end gap-3">
+        {showSearch ? (
+          <div className="grid min-w-[14rem] flex-1 gap-1.5 sm:max-w-xs">
+            <Label htmlFor="yearly-search">{searchLabel}</Label>
+            <Input
+              id="yearly-search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder={searchPlaceholder}
+              className="h-10"
+            />
+          </div>
+        ) : null}
         <div className="grid gap-1.5">
           <Label>{t("yearlyReports.year")}</Label>
           <Select
@@ -327,34 +408,101 @@ export default function YearlyCalendarReportPage() {
         </p>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <Card className="py-0">
-              <CardContent className="p-4">
-                <p className="font-data text-[10px] tracking-wider text-muted-foreground uppercase">
-                  {amountLabel}
-                </p>
-                <p className="font-data mt-1 text-xl text-destructive">
-                  {formatMoney(displayTotals?.total || 0)}
-                </p>
-              </CardContent>
-            </Card>
-            <Card className="py-0">
-              <CardContent className="p-4">
-                <p className="font-data text-[10px] tracking-wider text-muted-foreground uppercase">
-                  {t("yearlyReports.year")}
-                </p>
-                <p className="font-data mt-1 text-xl">{report.year}</p>
-              </CardContent>
-            </Card>
-            <Card className="py-0">
-              <CardContent className="p-4">
-                <p className="font-data text-[10px] tracking-wider text-muted-foreground uppercase">
-                  {rowLabel}
-                </p>
-                <p className="font-data mt-1 text-xl">{displayTotals?.rowCount ?? 0}</p>
-              </CardContent>
-            </Card>
-          </div>
+          {mode === "inventory" ? (
+            <div
+              className={cn(
+                "grid grid-cols-2 gap-3",
+                inventoryFamily === "all" ? "sm:grid-cols-4" : "sm:grid-cols-2"
+              )}
+            >
+              {(inventoryFamily === "all"
+                ? ([
+                    ["scrap", t("invReportsHub.rawScrap"), "kg"],
+                    ["daig", t("invReportsHub.rawDaig"), "kg"],
+                    ["hub", t("invReportsHub.finishedHub"), "pcs"],
+                    ["drum", t("invReportsHub.finishedDrum"), "pcs"],
+                  ] as const)
+                : inventoryFamily === "hub"
+                  ? ([["hub", t("invReportsHub.finishedHub"), "pcs"]] as const)
+                  : ([["drum", t("invReportsHub.finishedDrum"), "pcs"]] as const)
+              ).map(([id, label, unit]) => (
+                <Card key={id} className="py-0">
+                  <CardContent className="p-4">
+                    <p className="font-data text-[10px] tracking-wider text-muted-foreground uppercase">
+                      {label}
+                    </p>
+                    <p className="font-data mt-1 text-xl">
+                      {formatYearlyValue(inventoryFocus[id] || 0, unit)}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t("yearlyReports.onSelectedDate")}
+                    </p>
+                  </CardContent>
+                </Card>
+              ))}
+              {inventoryFamily !== "all" ? (
+                <Card className="py-0">
+                  <CardContent className="p-4">
+                    <p className="font-data text-[10px] tracking-wider text-muted-foreground uppercase">
+                      {rowLabel}
+                    </p>
+                    <p className="font-data mt-1 text-xl">{rows.length}</p>
+                  </CardContent>
+                </Card>
+              ) : null}
+            </div>
+          ) : mode === "cash" ? (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <Card className="py-0">
+                <CardContent className="p-4">
+                  <p className="font-data text-[10px] tracking-wider text-muted-foreground uppercase">
+                    {t("yearlyReports.cashOnHand")}
+                  </p>
+                  <p className="font-data mt-1 text-xl">{formatMoney(cashFocus)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {t("yearlyReports.onSelectedDate")}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card className="py-0">
+                <CardContent className="p-4">
+                  <p className="font-data text-[10px] tracking-wider text-muted-foreground uppercase">
+                    {t("yearlyReports.year")}
+                  </p>
+                  <p className="font-data mt-1 text-xl">{report.year}</p>
+                </CardContent>
+              </Card>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <Card className="py-0">
+                <CardContent className="p-4">
+                  <p className="font-data text-[10px] tracking-wider text-muted-foreground uppercase">
+                    {amountLabel}
+                  </p>
+                  <p className="font-data mt-1 text-xl text-destructive">
+                    {formatMoney(displayTotals?.total || 0)}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card className="py-0">
+                <CardContent className="p-4">
+                  <p className="font-data text-[10px] tracking-wider text-muted-foreground uppercase">
+                    {t("yearlyReports.year")}
+                  </p>
+                  <p className="font-data mt-1 text-xl">{report.year}</p>
+                </CardContent>
+              </Card>
+              <Card className="py-0">
+                <CardContent className="p-4">
+                  <p className="font-data text-[10px] tracking-wider text-muted-foreground uppercase">
+                    {rowLabel}
+                  </p>
+                  <p className="font-data mt-1 text-xl">{displayTotals?.rowCount ?? 0}</p>
+                </CardContent>
+              </Card>
+            </div>
+          )}
 
           <Card>
             <CardHeader>
@@ -418,23 +566,23 @@ export default function YearlyCalendarReportPage() {
                               key={month.key}
                               className="font-data text-right text-xs whitespace-nowrap"
                             >
-                              {value > 0 ? formatMoney(value) : "—"}
+                              {formatYearlyValue(value, row.unit || "money")}
                             </TableCell>
                           );
                         })}
                         <TableCell
                           className={cn(
                             "font-data text-right text-xs font-medium whitespace-nowrap",
-                            row.total > 0 && "text-destructive"
+                            !isSnapshot && row.total > 0 && "text-destructive"
                           )}
                         >
-                          {formatMoney(row.total)}
+                          {formatYearlyValue(row.total, row.unit || "money")}
                         </TableCell>
                       </TableRow>
                     ))
                   )}
                 </TableBody>
-                {rows.length > 0 && displayTotals ? (
+                {!isSnapshot && rows.length > 0 && displayTotals ? (
                   <TableFooter>
                     <TableRow>
                       <TableCell className="sticky left-0 z-10 bg-muted/40 font-medium">

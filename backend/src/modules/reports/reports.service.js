@@ -1473,11 +1473,49 @@ async function getMonthlyReceivablesReport({ date, year, groupId } = {}) {
   };
 }
 
+async function sumAmountAsOf(Model, match, field = "amount") {
+  const result = await Model.aggregate([
+    { $match: match },
+    { $group: { _id: null, total: { $sum: `$${field}` }, count: { $sum: 1 } } },
+  ]);
+  return roundMoney(result[0]?.total || 0);
+}
+
+async function getCashBalanceAsOf(asOfIso) {
+  const end = parseDate(asOfIso, "asOf");
+  end.setHours(23, 59, 59, 999);
+  const LedgerEntry = require("../ledger/ledger.model");
+  const FinanceEntry = require("../finance/finance.model");
+  const BatchExpense = require("../expenses/expense.model");
+  const [paymentsIn, incomeIn, supplierOut, mfgOut, otherOut] = await Promise.all([
+    sumAmountAsOf(CustomerPayment, { paymentDate: { $lte: end } }, "amount"),
+    sumAmountAsOf(FinanceEntry, { type: "income", entryDate: { $lte: end } }, "amount"),
+    sumAmountAsOf(LedgerEntry, { type: "payment", entryDate: { $lte: end } }, "amount"),
+    sumAmountAsOf(BatchExpense, { expenseDate: { $lte: end } }, "amount"),
+    sumAmountAsOf(FinanceEntry, { type: "expense", entryDate: { $lte: end } }, "amount"),
+  ]);
+  return roundMoney(paymentsIn + incomeIn - supplierOut - mfgOut - otherOut);
+}
+
+function snapshotAsOfForMonth(y, monthIndex0, { single, dayOfMonth, fromStr, toStr }) {
+  if (single) return isoDateOnMonthDay(y, monthIndex0, dayOfMonth);
+  const monthStart = `${y}-${String(monthIndex0 + 1).padStart(2, "0")}-01`;
+  const monthEnd = toIsoDateLocal(new Date(y, monthIndex0 + 1, 0, 12, 0, 0, 0));
+  if (monthEnd < fromStr || monthStart > toStr) return null;
+  return monthEnd <= toStr ? monthEnd : toStr;
+}
+
+function roundQtyValue(n) {
+  return Math.round((Number(n) || 0) * 1000) / 1000;
+}
+
 /**
  * Yearly calendar: name on the left, Jan–Dec of the year across.
  * Parties / groups = amount still to receive. Suppliers = amount still to pay.
+ * Inventory / cash = stock or cash on hand as of that day each month.
  * dateMode=single = same day-of-month cutoff in every month (e.g. 11th of Jan…Dec).
- * dateMode=range = documents inside dateFrom/dateTo, bucketed by month.
+ * dateMode=range = documents inside dateFrom/dateTo, bucketed by month
+ *   (for inventory/cash: month-end snapshots inside the range).
  */
 async function getYearlyCalendarReport({
   year,
@@ -1486,9 +1524,16 @@ async function getYearlyCalendarReport({
   date,
   dateFrom,
   dateTo,
+  family,
 } = {}) {
-  const view = ["party", "group", "supplier"].includes(String(mode)) ? String(mode) : "party";
+  const view = ["party", "group", "supplier", "inventory", "cash"].includes(String(mode))
+    ? String(mode)
+    : "party";
   const single = String(dateMode || "range") === "single";
+  const inventoryFamily = ["all", "hub", "drum"].includes(String(family || ""))
+    ? String(family)
+    : "all";
+  const snapshotMode = view === "inventory" || view === "cash";
 
   let y = Number(year);
   let fromStr;
@@ -1537,22 +1582,183 @@ async function getYearlyCalendarReport({
   }
 
   const rowsMap = new Map();
-  function addAmount(rowId, rowName, monthKey, amount, href) {
-    const value = roundMoney(amount || 0);
-    if (value <= 0) return;
-    if (!monthKey.startsWith(`${y}-`)) return;
+  function ensureRow(rowId, rowName, href, unit) {
     if (!rowsMap.has(rowId)) {
       rowsMap.set(rowId, {
         id: rowId === "__ungrouped__" ? "" : rowId,
         name: rowName,
         href: href || "",
+        unit: unit || "money",
         months: emptyMonthMap(),
         total: 0,
       });
     }
-    const row = rowsMap.get(rowId);
+    return rowsMap.get(rowId);
+  }
+  function addAmount(rowId, rowName, monthKey, amount, href) {
+    const value = roundMoney(amount || 0);
+    if (value <= 0) return;
+    if (!monthKey.startsWith(`${y}-`)) return;
+    const row = ensureRow(rowId, rowName, href, "money");
     row.months[monthKey] = roundMoney((row.months[monthKey] || 0) + value);
     row.total = roundMoney(row.total + value);
+  }
+  function setSnapshot(rowId, rowName, monthKey, amount, unit) {
+    if (!monthKey.startsWith(`${y}-`)) return;
+    const row = ensureRow(rowId, rowName, "", unit);
+    const value = unit === "kg" ? roundQtyValue(amount) : roundMoney(amount || 0);
+    row.months[monthKey] = value;
+  }
+
+  const asOfOpts = { single, dayOfMonth, fromStr, toStr };
+
+  if (view === "inventory") {
+    if (inventoryFamily === "all") {
+      for (const [id, name, unit] of [
+        ["scrap", "Scrap", "kg"],
+        ["daig", "Daig", "kg"],
+        ["hub", "Hub", "pcs"],
+        ["drum", "Drum", "pcs"],
+      ]) {
+        ensureRow(id, name, "", unit);
+      }
+    } else if (inventoryFamily === "hub") {
+      ensureRow("hub", "Hub", "", "pcs");
+    } else {
+      ensureRow("drum", "Drum", "", "pcs");
+    }
+
+    for (let i = 0; i < 12; i += 1) {
+      const asOf = snapshotAsOfForMonth(y, i, asOfOpts);
+      if (!asOf) continue;
+      const monthKey = months[i].key;
+      const [raw, finished] = await Promise.all([
+        inventoryFamily === "all"
+          ? inventoryService.getRawStockAsOf(asOf)
+          : Promise.resolve(null),
+        inventoryService.getFinishedStock({ asOf }),
+      ]);
+
+      if (inventoryFamily === "all") {
+        setSnapshot(
+          "scrap",
+          "Scrap",
+          monthKey,
+          raw.scrapKg ?? raw.byMaterial?.scrap?.availableKg ?? 0,
+          "kg"
+        );
+        setSnapshot(
+          "daig",
+          "Daig",
+          monthKey,
+          raw.daigKg ?? raw.byMaterial?.daig?.availableKg ?? 0,
+          "kg"
+        );
+        setSnapshot("hub", "Hub", monthKey, finished.hubUnits ?? 0, "pcs");
+        setSnapshot("drum", "Drum", monthKey, finished.drumUnits ?? 0, "pcs");
+      } else if (inventoryFamily === "hub") {
+        setSnapshot("hub", "Hub", monthKey, finished.hubUnits ?? 0, "pcs");
+        const byProduct = new Map();
+        for (const item of finished.items || []) {
+          if ((item.family || "hub") !== "hub") continue;
+          const pid = String(item.productId || item.name || "");
+          if (!pid) continue;
+          const prev = byProduct.get(pid) || { name: item.name || "—", qty: 0 };
+          prev.qty = roundMoney((prev.qty || 0) + (item.quantity || 0));
+          byProduct.set(pid, prev);
+        }
+        for (const [pid, info] of byProduct.entries()) {
+          setSnapshot(`hub:${pid}`, info.name, monthKey, info.qty, "pcs");
+        }
+      } else {
+        setSnapshot("drum", "Drum", monthKey, finished.drumUnits ?? 0, "pcs");
+        const byProduct = new Map();
+        for (const item of finished.items || []) {
+          if (item.family !== "drum") continue;
+          const pid = String(item.productId || item.name || "");
+          if (!pid) continue;
+          const prev = byProduct.get(pid) || { name: item.name || "—", qty: 0 };
+          prev.qty = roundMoney((prev.qty || 0) + (item.quantity || 0));
+          byProduct.set(pid, prev);
+        }
+        for (const [pid, info] of byProduct.entries()) {
+          setSnapshot(`drum:${pid}`, info.name, monthKey, info.qty, "pcs");
+        }
+      }
+    }
+
+    const order = ["scrap", "daig", "hub", "drum"];
+    const rows = [...rowsMap.values()].sort((a, b) => {
+      const ai = order.indexOf(a.id);
+      const bi = order.indexOf(b.id);
+      if (ai >= 0 || bi >= 0) {
+        if (ai < 0) return 1;
+        if (bi < 0) return -1;
+        return ai - bi;
+      }
+      return String(a.name).localeCompare(String(b.name));
+    });
+    const focusKey = single && asOfIso ? asOfIso.slice(0, 7) : toStr.slice(0, 7);
+    for (const row of rows) {
+      row.total = Number(row.months[focusKey] || 0);
+    }
+    const focusTotal =
+      inventoryFamily === "hub"
+        ? Number(rowsMap.get("hub")?.total || 0)
+        : inventoryFamily === "drum"
+          ? Number(rowsMap.get("drum")?.total || 0)
+          : 0;
+    return {
+      year: y,
+      mode: view,
+      inventoryFamily,
+      dateMode: single ? "single" : "range",
+      asOf: asOfIso,
+      dayOfMonth,
+      period: { from: fromStr, to: toStr },
+      amountKind: "inventory",
+      valueKind: "snapshot",
+      months,
+      rows,
+      totals: {
+        months: emptyMonthMap(),
+        total: focusTotal,
+        rowCount: rows.length,
+      },
+    };
+  }
+
+  if (view === "cash") {
+    ensureRow("cash", "Cash in hand", "", "money");
+    for (let i = 0; i < 12; i += 1) {
+      const asOf = snapshotAsOfForMonth(y, i, asOfOpts);
+      if (!asOf) continue;
+      const balance = await getCashBalanceAsOf(asOf);
+      setSnapshot("cash", "Cash in hand", months[i].key, balance, "money");
+    }
+    const rows = [...rowsMap.values()];
+    const focusKey = single && asOfIso ? asOfIso.slice(0, 7) : toStr.slice(0, 7);
+    for (const row of rows) {
+      row.total = Number(row.months[focusKey] || 0);
+    }
+    const cashTotal = rows[0]?.total || 0;
+    return {
+      year: y,
+      mode: view,
+      dateMode: single ? "single" : "range",
+      asOf: asOfIso,
+      dayOfMonth,
+      period: { from: fromStr, to: toStr },
+      amountKind: "cash",
+      valueKind: "snapshot",
+      months,
+      rows,
+      totals: {
+        months: emptyMonthMap(),
+        total: cashTotal,
+        rowCount: rows.length,
+      },
+    };
   }
 
   if (single) {
@@ -1674,6 +1880,7 @@ async function getYearlyCalendarReport({
     dayOfMonth,
     period: { from: fromStr, to: toStr },
     amountKind: view === "supplier" ? "payable" : "receivable",
+    valueKind: "flow",
     months,
     rows,
     totals: {
@@ -2408,22 +2615,51 @@ async function exportMonthlyReceivables(query, format, res) {
   return sendExcel(res, buf, "monthly-receivables.xlsx");
 }
 
+function formatYearlyCell(value, unit) {
+  const n = Number(value) || 0;
+  if (unit === "kg") {
+    if (Math.abs(n) < 0.0005) return "—";
+    return `${n.toLocaleString("en-PK", { maximumFractionDigits: 3 })} kg`;
+  }
+  if (unit === "pcs") {
+    if (Math.abs(n) < 0.0005) return "—";
+    return String(Math.round(n));
+  }
+  if (Math.abs(n) < 0.005) return "—";
+  return money(n);
+}
+
 async function exportYearlyCalendar(query, format, res) {
   const report = await getYearlyCalendarReport(query);
+  const snapshot = report.valueKind === "snapshot";
   const rowLabel =
-    report.mode === "supplier" ? "Supplier" : report.mode === "group" ? "Group" : "Party";
+    report.mode === "supplier"
+      ? "Supplier"
+      : report.mode === "group"
+        ? "Group"
+        : report.mode === "inventory"
+          ? "Item"
+          : report.mode === "cash"
+            ? "Cash"
+            : "Party";
   const amountLabel =
-    report.amountKind === "payable" ? "Amount to pay" : "Amount to receive";
+    report.amountKind === "payable"
+      ? "Amount to pay"
+      : report.amountKind === "inventory"
+        ? "Stock on hand"
+        : report.amountKind === "cash"
+          ? "Cash in hand"
+          : "Amount to receive";
   const title = `Yearly ${report.mode} — ${report.year}`;
   const columns = [rowLabel, ...report.months.map((m) => m.label), "Total"];
   const colWidths = [0.16, ...report.months.map(() => 0.06), 0.12];
   const colAlign = ["left", ...report.months.map(() => "right"), "right"];
   const rows = (report.rows || []).map((r) => [
     r.name,
-    ...report.months.map((m) => money(r.months[m.key] || 0)),
-    money(r.total),
+    ...report.months.map((m) => formatYearlyCell(r.months[m.key] || 0, r.unit || "money")),
+    formatYearlyCell(r.total, r.unit || "money"),
   ]);
-  if (rows.length > 0) {
+  if (!snapshot && rows.length > 0) {
     rows.push({
       bold: true,
       cells: [
@@ -2441,9 +2677,10 @@ async function exportYearlyCalendar(query, format, res) {
       report.dateMode === "single" && report.dayOfMonth
         ? `${dayOrdinalLabel(report.dayOfMonth)} of each month`
         : `${report.period.from || ""} → ${report.period.to || ""}`,
-    [amountLabel]: money(report.totals.total),
     Rows: report.totals.rowCount,
   };
+  if (!snapshot) meta[amountLabel] = money(report.totals.total);
+  else if (report.amountKind === "cash") meta[amountLabel] = money(report.totals.total);
 
   if (format === "pdf") {
     const buf = await buildPdf({

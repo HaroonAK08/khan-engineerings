@@ -579,13 +579,15 @@ export async function downloadCustomersOverviewExport(params: {
   triggerDownload(data as Blob, "customers-overview-statement.pdf");
 }
 
-export type YearlyCalendarMode = "party" | "group" | "supplier";
+export type YearlyCalendarMode = "party" | "group" | "supplier" | "inventory" | "cash";
 export type YearlyDateMode = "single" | "range";
+export type YearlyInventoryFamily = "all" | "hub" | "drum";
 
 export type YearlyCalendarRow = {
   id: string;
   name: string;
   href?: string;
+  unit?: "money" | "kg" | "pcs";
   months: Record<string, number>;
   total: number;
 };
@@ -593,11 +595,13 @@ export type YearlyCalendarRow = {
 export type YearlyCalendarReport = {
   year: number;
   mode: YearlyCalendarMode;
+  inventoryFamily?: YearlyInventoryFamily;
   dateMode: YearlyDateMode;
   asOf: string;
   dayOfMonth?: number | null;
   period: { from: string; to: string };
-  amountKind: "receivable" | "payable";
+  amountKind: "receivable" | "payable" | "inventory" | "cash";
+  valueKind?: "flow" | "snapshot";
   months: Array<{ key: string; label: string }>;
   rows: YearlyCalendarRow[];
   totals: {
@@ -614,6 +618,7 @@ export async function getYearlyCalendarReport(params?: {
   date?: string;
   dateFrom?: string;
   dateTo?: string;
+  family?: YearlyInventoryFamily;
 }) {
   const { data } = await api.get<{ report: YearlyCalendarReport }>("/reports/yearly", {
     params,
@@ -630,6 +635,7 @@ export async function downloadYearlyCalendarExport(params: {
   date?: string;
   dateFrom?: string;
   dateTo?: string;
+  family?: YearlyInventoryFamily;
 }) {
   const query: Record<string, string> = {
     format: params.format || "pdf",
@@ -640,6 +646,7 @@ export async function downloadYearlyCalendarExport(params: {
   if (params.date) query.date = params.date;
   if (params.dateFrom) query.dateFrom = params.dateFrom;
   if (params.dateTo) query.dateTo = params.dateTo;
+  if (params.family) query.family = params.family;
   const { data } = await api.get("/reports/export/yearly", {
     params: query,
     responseType: "blob",
