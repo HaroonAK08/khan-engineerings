@@ -87,6 +87,35 @@ function formatYearlyValue(value: number, unit: YearlyCalendarRow["unit"]) {
   return formatMoney(n);
 }
 
+/** One-date months whose day-of-month cutoff is still in the future stay blank. */
+function blankFutureSingleMonths(report: YearlyCalendarReport): YearlyCalendarReport {
+  if (report.dateMode !== "single" || !report.dayOfMonth) return report;
+  const today = todayInput();
+  const day = report.dayOfMonth;
+  const nextMonths = { ...(report.totals?.months || {}) };
+  const rows = report.rows.map((row) => {
+    const months = { ...row.months };
+    for (const month of report.months) {
+      const [y, m] = month.key.split("-").map(Number);
+      if (!y || !m) continue;
+      const lastDay = new Date(y, m, 0).getDate();
+      const cutoff = `${y}-${String(m).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
+      if (cutoff > today) {
+        months[month.key] = 0;
+        nextMonths[month.key] = 0;
+      }
+    }
+    return { ...row, months };
+  });
+  return {
+    ...report,
+    rows,
+    totals: report.totals
+      ? { ...report.totals, months: nextMonths }
+      : report.totals,
+  };
+}
+
 export default function YearlyCalendarReportPage() {
   const { t, isUrdu } = useI18n();
   const [mode, setMode] = useState<YearlyCalendarMode>("party");
@@ -117,17 +146,16 @@ export default function YearlyCalendarReportPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setReport(
-        await getYearlyCalendarReport({
-          year,
-          mode,
-          dateMode,
-          date: dateMode === "single" ? singleDate : undefined,
-          dateFrom: dateMode === "range" ? dateFrom : undefined,
-          dateTo: dateMode === "range" ? dateTo : undefined,
-          family: mode === "inventory" ? inventoryFamily : undefined,
-        })
-      );
+      const next = await getYearlyCalendarReport({
+        year,
+        mode,
+        dateMode,
+        date: dateMode === "single" ? singleDate : undefined,
+        dateFrom: dateMode === "range" ? dateFrom : undefined,
+        dateTo: dateMode === "range" ? dateTo : undefined,
+        family: mode === "inventory" ? inventoryFamily : undefined,
+      });
+      setReport(blankFutureSingleMonths(next));
     } catch (err) {
       setReport(null);
       toast.error(apiError(err, t("yearlyReports.loadFailed")));

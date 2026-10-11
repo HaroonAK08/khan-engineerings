@@ -2096,8 +2096,9 @@ async function computeProductionMarginForPeriod(query = {}) {
       : null;
 
   // P/L on sold goods: sold revenue − sold COGS.
-  // Period production uses actual cost/pc; units sold beyond production (opening / pre-system
-  // stock) use product make-cost (standardCost), then family $/kg as fallback.
+  // Period production uses actual cost/pc. Units sold without matching production
+  // (opening / other SKUs) use this period's family mfg $/kg × weight first — catalog
+  // standardCost is often stale and understates overhead, which inflated ranking profit.
   for (const row of productRows) {
     const fam = row.family === "drum" ? "drum" : "hub";
     const familyCostPerKg = byFamily[fam].costPerKg;
@@ -2109,16 +2110,18 @@ async function computeProductionMarginForPeriod(query = {}) {
     const standardCost = Number(row.standardCost) || 0;
     const periodUnitCost = Number(row.costPerPiece) || 0;
     const familyUnitCost =
-      familyCostPerKg != null && row.weightKg > 0
-        ? familyCostPerKg * row.weightKg
+      familyCostPerKg != null && Number(row.weightKg) > 0
+        ? familyCostPerKg * Number(row.weightKg)
         : 0;
 
     function currentMfgCost() {
-      // 1) Product's current make cost (from latest production)
+      // 1) This period's actual family manufacturing $/kg × piece weight
+      if (familyUnitCost > 0) {
+        return { cost: familyUnitCost, source: "family_kg" };
+      }
+      // 2) Product catalog make-cost (last known production blend)
       if (standardCost > 0) return { cost: standardCost, source: "standard_cost" };
-      // 2) This period's family manufacturing $/kg × piece weight
-      if (familyUnitCost > 0) return { cost: familyUnitCost, source: "family_kg" };
-      // 3) Current material rate × weight (scrap for hub, daig for drum)
+      // 3) Material rate × weight only (no overhead) — last resort
       const w = Number(row.weightKg) || 0;
       if (w > 0) {
         const rate = fam === "drum" ? avgDaigRate : avgScrapRate;

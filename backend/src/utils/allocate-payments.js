@@ -20,8 +20,9 @@ function byDateThenId(a, b) {
 }
 
 /**
- * Each payment first covers this calendar month's invoices, then older invoices,
- * then previous-pending adjustments, then any newer invoices (leftover credit).
+ * Each payment first covers this calendar month's invoices dated on/before the
+ * payment, then older invoices, then previous-pending adjustments.
+ * Never applies to charges dated after the payment (avoids Sep 17 paying Sep 29).
  */
 function allocateThisMonthFirst(chargesInput, paymentsInput) {
   const charges = (chargesInput || []).map((c) => {
@@ -55,14 +56,14 @@ function allocateThisMonthFirst(chargesInput, paymentsInput) {
     let left = payment.amount;
     if (left <= 0) continue;
     const month = monthKey(payment.date);
-    const open = charges.filter((c) => c.remaining > 0.001);
+    // Only charges that already existed on the payment date.
+    const open = charges.filter((c) => c.remaining > 0.001 && c.date <= payment.date);
     const invoices = open.filter((c) => c.kind !== "adjustment");
     const sameMonth = invoices.filter((c) => c.month === month).sort(byDateThenId);
     const older = invoices.filter((c) => c.month < month).sort(byDateThenId);
-    const newer = invoices.filter((c) => c.month > month).sort(byDateThenId);
     const adjustments = open.filter((c) => c.kind === "adjustment").sort(byDateThenId);
 
-    for (const c of [...sameMonth, ...older, ...adjustments, ...newer]) {
+    for (const c of [...sameMonth, ...older, ...adjustments]) {
       if (left <= 0) break;
       const take = Math.min(c.remaining, left);
       c.paid = roundMoney(c.paid + take);

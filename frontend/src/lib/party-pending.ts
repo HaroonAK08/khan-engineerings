@@ -125,7 +125,8 @@ function applyPay(charges: PendingCharge[], payment: { date: string; amount: num
   if (left <= 0) return;
 
   const month = monthKey(payment.date);
-  const open = charges.filter((c) => c.remaining > 0.001);
+  // Only charges that already existed on the payment date.
+  const open = charges.filter((c) => c.remaining > 0.001 && c.date <= payment.date);
   const invoices = open.filter((c) => c.kind !== "adjustment");
   const sameMonth = invoices
     .filter((c) => c.month === month)
@@ -133,14 +134,11 @@ function applyPay(charges: PendingCharge[], payment: { date: string; amount: num
   const older = invoices
     .filter((c) => c.month < month)
     .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
-  const newer = invoices
-    .filter((c) => c.month > month)
-    .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   const adjustments = open
     .filter((c) => c.kind === "adjustment")
     .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
 
-  for (const c of [...sameMonth, ...older, ...adjustments, ...newer]) {
+  for (const c of [...sameMonth, ...older, ...adjustments]) {
     if (left <= 0) break;
     const take = Math.min(c.remaining, left);
     c.paid = roundMoney(c.paid + take);
@@ -241,20 +239,17 @@ export function computePeriodPending(
     row.remaining = roundMoney(row.sale - row.paid);
   }
 
-  // Unpaid builties / old dues = every charge still open as of dateTo (includes before range).
+  // Unpaid in this date range only (previous leftover is on the Previous card).
   const leftoverLines = allocated
-    .filter((c) => c.remaining > 0.001)
+    .filter((c) => inRange(c.date) && c.remaining > 0.001)
     .sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
 
   for (const line of leftoverLines) {
-    if (!inRange(line.date)) continue;
     monthRow(line.month).lines.push(line);
   }
 
   const periodRemaining = roundMoney(periodSale - periodPaid);
-  const totalRemaining = roundMoney(
-    leftoverLines.reduce((sum, c) => sum + c.remaining, 0)
-  );
+  const totalRemaining = roundMoney(previousRemaining + periodRemaining);
 
   const saleLines: PendingDetailLine[] = [];
   const paidLines: PendingDetailLine[] = [];

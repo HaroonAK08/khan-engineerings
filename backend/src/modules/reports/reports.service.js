@@ -1497,8 +1497,13 @@ async function getCashBalanceAsOf(asOfIso) {
   return roundMoney(paymentsIn + incomeIn - supplierOut - mfgOut - otherOut);
 }
 
-function snapshotAsOfForMonth(y, monthIndex0, { single, dayOfMonth, fromStr, toStr }) {
-  if (single) return isoDateOnMonthDay(y, monthIndex0, dayOfMonth);
+function snapshotAsOfForMonth(y, monthIndex0, { single, dayOfMonth, fromStr, toStr, todayIso }) {
+  if (single) {
+    const asOf = isoDateOnMonthDay(y, monthIndex0, dayOfMonth);
+    // Future cutoffs (e.g. Nov/Dec when today is Oct) stay blank — not confirmed yet.
+    if (todayIso && asOf > todayIso) return null;
+    return asOf;
+  }
   const monthStart = `${y}-${String(monthIndex0 + 1).padStart(2, "0")}-01`;
   const monthEnd = toIsoDateLocal(new Date(y, monthIndex0 + 1, 0, 12, 0, 0, 0));
   if (monthEnd < fromStr || monthStart > toStr) return null;
@@ -1576,8 +1581,20 @@ async function getYearlyCalendarReport({
     label,
   }));
 
+  const todayIso = toIsoDateLocal(new Date());
+  const asOfOpts = { single, dayOfMonth, fromStr, toStr, todayIso };
+
   function emptyMonthMap() {
     return Object.fromEntries(months.map((m) => [m.key, 0]));
+  }
+
+  /** Latest month whose day-of-month cutoff has already occurred (single mode). */
+  function focusMonthKey() {
+    if (!single) return toStr.slice(0, 7);
+    for (let i = 11; i >= 0; i -= 1) {
+      if (snapshotAsOfForMonth(y, i, asOfOpts)) return months[i].key;
+    }
+    return asOfIso && asOfIso <= todayIso ? asOfIso.slice(0, 7) : `${y}-01`;
   }
 
   const rowsMap = new Map();
@@ -1612,7 +1629,7 @@ async function getYearlyCalendarReport({
   }
 
   function finishSnapshotRows(amountKind) {
-    const focusKey = single && asOfIso ? asOfIso.slice(0, 7) : toStr.slice(0, 7);
+    const focusKey = focusMonthKey();
     const rows = [...rowsMap.values()].sort(
       (a, b) => Number(b.months[focusKey] || 0) - Number(a.months[focusKey] || 0)
     );
@@ -1645,8 +1662,6 @@ async function getYearlyCalendarReport({
       },
     };
   }
-
-  const asOfOpts = { single, dayOfMonth, fromStr, toStr };
 
   if (view === "inventory") {
     if (inventoryFamily === "all") {
@@ -1734,7 +1749,7 @@ async function getYearlyCalendarReport({
       }
       return String(a.name).localeCompare(String(b.name));
     });
-    const focusKey = single && asOfIso ? asOfIso.slice(0, 7) : toStr.slice(0, 7);
+    const focusKey = focusMonthKey();
     for (const row of rows) {
       row.total = Number(row.months[focusKey] || 0);
     }
@@ -1773,7 +1788,7 @@ async function getYearlyCalendarReport({
       setSnapshot("cash", "Cash in hand", months[i].key, balance, "money");
     }
     const rows = [...rowsMap.values()];
-    const focusKey = single && asOfIso ? asOfIso.slice(0, 7) : toStr.slice(0, 7);
+    const focusKey = focusMonthKey();
     for (const row of rows) {
       row.total = Number(row.months[focusKey] || 0);
     }
@@ -1798,11 +1813,12 @@ async function getYearlyCalendarReport({
   }
 
   if (single) {
-    // One date = outstanding / on-hand as of that day in every month (unpaid carries forward).
+    // One date = outstanding as of that day in each month that has already passed.
     if (view === "supplier") {
       const payData = await loadPayablesLedgerData();
       for (let i = 0; i < 12; i += 1) {
-        const asOf = isoDateOnMonthDay(y, i, dayOfMonth);
+        const asOf = snapshotAsOfForMonth(y, i, asOfOpts);
+        if (!asOf) continue;
         const monthKey = months[i].key;
         for (const info of buildSupplierBalancesAsOf(payData, asOf)) {
           setSnapshot(info.id, info.name, monthKey, info.bal, "money", info.href);
@@ -1814,7 +1830,8 @@ async function getYearlyCalendarReport({
     const data = await loadReceivablesLedgerData();
     const groupNameById = data.groupNameMap;
     for (let i = 0; i < 12; i += 1) {
-      const asOf = isoDateOnMonthDay(y, i, dayOfMonth);
+      const asOf = snapshotAsOfForMonth(y, i, asOfOpts);
+      if (!asOf) continue;
       const monthKey = months[i].key;
       // Full outstanding as of that day (unpaid from earlier months carries forward).
       const receivables = buildReceivablesReportFromData(data, {
