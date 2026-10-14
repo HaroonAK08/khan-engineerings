@@ -99,10 +99,18 @@ function baqayaClass(baqaya: number) {
   return undefined;
 }
 
+function isCreditAdjustment(e: CustomerLedgerEntry) {
+  return e.type === "adjustment" && (e.signedAmount ?? 0) < -0.001;
+}
+
+function claimCreditNo(notes?: string) {
+  const match = String(notes || "").match(/Claim\s+(CLAIM-\d{8}-\d+)/);
+  return match ? match[1] : "";
+}
+
 /** Classic khata: oldest → newest, baqaya after each line. */
 function buildKhataRows(entries: CustomerLedgerEntry[]): KhataRow[] {
   const ordered = entries
-    .filter((e) => !(e.type === "adjustment" && (e.signedAmount ?? 0) <= 0))
     .slice()
     .sort((a, b) => entryTime(a) - entryTime(b) || a._id.localeCompare(b._id));
 
@@ -115,8 +123,14 @@ function buildKhataRows(entries: CustomerLedgerEntry[]): KhataRow[] {
       credit = roundMoney(e.amount || 0);
       baqaya = roundMoney(baqaya - credit);
     } else if (e.type === "adjustment") {
-      debit = roundMoney(e.signedAmount ?? e.amount ?? 0);
-      baqaya = roundMoney(baqaya + debit);
+      const signed = roundMoney(e.signedAmount ?? e.amount ?? 0);
+      if (signed < 0) {
+        credit = roundMoney(Math.abs(signed));
+        baqaya = roundMoney(baqaya - credit);
+      } else {
+        debit = signed;
+        baqaya = roundMoney(baqaya + debit);
+      }
     } else {
       const b = builtyOf(e);
       debit = roundMoney(b?.totalAmount ?? e.amount ?? 0);
@@ -326,6 +340,10 @@ export function PartyHistoryCalendar({
         : t("customerDetail.khataPayment");
     }
     if (e.type === "adjustment") {
+      if (isCreditAdjustment(e)) {
+        const no = claimCreditNo(e.notes);
+        return no ? `${t("claims.partyCredit")} · ${no}` : t("claims.partyCredit");
+      }
       return e.notes && !isInternalNote(e.notes)
         ? e.notes
         : t("customerDetail.previousPending");
@@ -770,6 +788,7 @@ export function PartyHistoryCalendar({
                   const row = item.row;
                   const e = row.entry;
                   const isPayment = e.type === "payment";
+                  const isClaimCredit = isCreditAdjustment(e);
                   const isInvoice = e.type === "invoice";
                   const isCleared = Math.abs(row.baqaya) <= 0.001;
                   const invoiceBuiltyId = isInvoice ? builtyIdOf(e) : "";
@@ -787,7 +806,7 @@ export function PartyHistoryCalendar({
                       tabIndex={isInvoice ? 0 : undefined}
                       className={[
                         isInvoice ? "cursor-pointer" : "",
-                        isPayment
+                        isPayment || isClaimCredit
                           ? "bg-emerald-100 hover:bg-emerald-100/90 dark:bg-emerald-900/50 dark:hover:bg-emerald-900/60"
                           : isCleared
                             ? "bg-muted/40 hover:bg-muted/50"
@@ -815,7 +834,7 @@ export function PartyHistoryCalendar({
                       </TableCell>
                       <TableCell className="whitespace-normal">
                         <span
-                          className={`text-sm ${isPayment ? "font-medium text-emerald-800 dark:text-emerald-300" : ""}`}
+                          className={`text-sm ${isPayment || isClaimCredit ? "font-medium text-emerald-800 dark:text-emerald-300" : ""}`}
                         >
                           {rowDetail(e)}
                         </span>
@@ -841,6 +860,7 @@ export function PartyHistoryCalendar({
                         className="text-end"
                         onClick={(ev) => ev.stopPropagation()}
                       >
+                        {isClaimCredit ? null : (
                         <div className="inline-flex flex-wrap justify-end gap-1">
                           <Button
                             type="button"
@@ -863,6 +883,7 @@ export function PartyHistoryCalendar({
                             <Trash2 className="size-3.5" />
                           </Button>
                         </div>
+                        )}
                       </TableCell>
                     </TableRow>
                   );
