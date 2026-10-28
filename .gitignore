@@ -16,6 +16,7 @@ node_modules/
 .mongo-cloud-export/
 .mongo-data/
 .mongo-logs/
+.mongo-local-backup-*/
 desktop/dist/
 desktop/out/
 desktop/resources/

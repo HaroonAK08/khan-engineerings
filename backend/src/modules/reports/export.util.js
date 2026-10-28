@@ -1,8 +1,25 @@
 const ExcelJS = require("exceljs");
 const PDFDocument = require("pdfkit");
+const fs = require("fs");
+const path = require("path");
+
+let cachedLogo;
+function companyLogo() {
+  if (cachedLogo !== undefined) return cachedLogo;
+  try {
+    cachedLogo = fs.readFileSync(path.join(__dirname, "../../assets/logo.png"));
+  } catch {
+    cachedLogo = null;
+  }
+  return cachedLogo;
+}
 
 function money(n) {
-  return Number(n || 0).toFixed(2);
+  const num = Number(n || 0);
+  const sign = num < 0 ? "-" : "";
+  const [intPart, decPart] = Math.abs(num).toFixed(2).split(".");
+  const withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `${sign}${withCommas}.${decPart}`;
 }
 
 function fmtDate(value) {
@@ -173,15 +190,17 @@ function buildPdf({
     const usableWidth = right - left;
     const ink = "#1a1a1a";
     const muted = "#5c5c5c";
-    const line = "#d4d4d4";
+    const line = "#d7dee5";
     const headerBg = "#eceff1";
     const zebraBg = "#f8fafb";
-    const sectionBg = "#e2e8f0";
-    const accent = "#1f3a3a";
+    const sectionBg = "#e6ecf2";
+    const accent = "#173c55";
+    const accent2 = "#c2501a";
     const bodySize = isLandscape ? 8.5 : 8;
     const headerSize = isLandscape ? 8.5 : 8;
     const padX = 5;
     const padY = 6;
+    const HIGHLIGHT_KEY_RE = /still to (receive|pay)/i;
 
     function contentBottom() {
       return doc.page.height - doc.page.margins.bottom;
@@ -192,20 +211,43 @@ function buildPdf({
     }
 
     if (theme === "report") {
+      const logo = companyLogo();
+      const logoSize = 32;
+      const textLeft = logo ? left + logoSize + 10 : left;
       doc.rect(left, pageMargin - 8, usableWidth, 3).fill(accent);
+      if (logo) {
+        try {
+          doc.image(logo, left, pageMargin + 2, { width: logoSize, height: logoSize });
+        } catch {
+          // Corrupt/unreadable logo asset: fall back to text-only header.
+        }
+      }
       doc.fillColor(ink);
-      doc.font("Helvetica-Bold").fontSize(15).text(title || "Report", left, pageMargin + 4, {
-        width: usableWidth,
-        lineBreak: false,
-      });
-      doc.y = pageMargin + 22;
-      if (subtitle) {
-        doc.font("Helvetica").fontSize(9).fillColor(muted).text(String(subtitle), left, doc.y, {
-          width: usableWidth,
+      doc
+        .font("Helvetica-Bold")
+        .fontSize(15)
+        .text(title || "Report", textLeft, pageMargin + 4, {
+          width: usableWidth - (textLeft - left),
           lineBreak: false,
         });
-        doc.y += 14;
+      const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
+      doc
+        .font("Helvetica")
+        .fontSize(7)
+        .fillColor(muted)
+        .text(`Generated ${stamp}`, left, pageMargin + 5, {
+          width: usableWidth,
+          align: "right",
+          lineBreak: false,
+        });
+      doc.y = pageMargin + 22;
+      if (subtitle) {
+        doc.font("Helvetica").fontSize(9).fillColor(muted).text(String(subtitle), textLeft, doc.y, {
+          width: usableWidth - (textLeft - left),
+          lineBreak: false,
+        });
       }
+      doc.y = Math.max(doc.y + 14, pageMargin + 2 + logoSize + 6);
       doc.fillColor(ink);
 
       const pairs =
@@ -225,7 +267,7 @@ function buildPdf({
         const rowH = 28;
         const rowsNeeded = Math.ceil(pairs.length / colCount);
         const boxH = rowsNeeded * rowH + 10;
-        doc.roundedRect(left, boxTop, usableWidth, boxH, 4).fill("#f7f7f7");
+        doc.roundedRect(left, boxTop, usableWidth, boxH, 4).fill("#f7f9fa");
         doc
           .roundedRect(left, boxTop, usableWidth, boxH, 4)
           .strokeColor(line)
@@ -238,14 +280,15 @@ function buildPdf({
           const r = Math.floor(i / colCount);
           const x = left + 10 + c * colW;
           const y = boxTop + 8 + r * rowH;
+          const isHighlight = HIGHLIGHT_KEY_RE.test(String(k));
           doc.font("Helvetica").fontSize(7).fillColor(muted).text(String(k).toUpperCase(), x, y, {
             width: colW - 16,
             lineBreak: false,
           });
           doc
             .font("Helvetica-Bold")
-            .fontSize(9)
-            .fillColor(ink)
+            .fontSize(isHighlight ? 11 : 9)
+            .fillColor(isHighlight ? accent2 : ink)
             .text(String(v), x, y + 11, { width: colW - 16, lineBreak: false });
         });
         doc.y = boxTop + boxH + 14;

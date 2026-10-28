@@ -35,10 +35,15 @@ function parseDate(value, label = "Date") {
 }
 
 function periodLabel(dateFrom, dateTo) {
-  if (dateFrom && dateTo) return `${dateFrom} → ${dateTo}`;
+  if (dateFrom && dateTo) return `${dateFrom} - ${dateTo}`;
   if (dateFrom) return `From ${dateFrom}`;
   if (dateTo) return `Until ${dateTo}`;
   return "All time";
+}
+
+/** Currency-prefixed money, for the headline figures in a statement sent to another party. */
+function moneyRs(n) {
+  return `Rs ${money(n)}`;
 }
 
 function emptySearchResults() {
@@ -4043,6 +4048,27 @@ function productLabel(item) {
   return "Product";
 }
 
+/**
+ * Product names are sometimes typed with the weight baked in, e.g. "Nissan TK20 - 35kg"
+ * or "Tatra 42kg". Pull the trailing "<number>kg" off so the Product column stays short
+ * (e.g. "Nissan TK20"). Numbers that aren't followed by "kg" (e.g. "Hino SG 41", "cpb/12")
+ * are left untouched.
+ */
+const TRAILING_WEIGHT_RE = /\s*-?\s*(\d+(?:\.\d+)?)\s*kgs?\.?\s*$/i;
+
+function splitProductWeight(rawName) {
+  const name = String(rawName || "").trim();
+  const match = name.match(TRAILING_WEIGHT_RE);
+  if (!match) return { name };
+  const cleanName = name.slice(0, match.index).trim();
+  return { name: cleanName || name };
+}
+
+/** Product name with the "kg" suffix stripped. */
+function productNameAndWeight(item) {
+  return splitProductWeight(productLabel(item));
+}
+
 function lineRate(item) {
   if (item?.pricingMode === "fixed") return Number(item.unitPrice) || 0;
   return Number(item.ratePerKg) || 0;
@@ -4066,7 +4092,7 @@ function handoutTarget(query) {
   return { audience, id };
 }
 
-function section(id, heading, columns, rows, meta) {
+function section(id, heading, columns, rows, meta, layout = {}) {
   return {
     id,
     title: heading,
@@ -4075,6 +4101,8 @@ function section(id, heading, columns, rows, meta) {
     rows,
     subsections: null,
     meta: meta || {},
+    columnWidths: layout.columnWidths || null,
+    columnAlign: layout.columnAlign || null,
   };
 }
 
@@ -4101,11 +4129,12 @@ function builtyDetailRows(builties, { partyName } = {}) {
       continue;
     }
     items.forEach((item, index) => {
+      const { name } = productNameAndWeight(item);
       rows.push([
         index === 0 ? head[0] : "",
         index === 0 ? head[1] : "",
         index === 0 ? head[2] : "",
-        productLabel(item),
+        name,
         item.quantity ?? "",
         money(lineRate(item)),
         money(item.lineTotal),
@@ -4117,16 +4146,47 @@ function builtyDetailRows(builties, { partyName } = {}) {
   return rows;
 }
 
+/** Grand-total row for the Builties table: sums Qty/Amount/Paid/Remaining across all builties shown. */
+function builtyTotalsRow(builties) {
+  let qty = 0;
+  let amount = 0;
+  let paid = 0;
+  let remaining = 0;
+  for (const builty of builties) {
+    const items = Array.isArray(builty.items) ? builty.items : [];
+    for (const item of items) qty += Number(item.quantity) || 0;
+    amount += Number(builty.totalAmount) || 0;
+    paid += Number(builty.amountPaid) || 0;
+    remaining += Number(builty.balance) || 0;
+  }
+  return {
+    cells: ["", "", "", "Total", qty || "", "", money(amount), money(paid), money(remaining)],
+    bold: true,
+  };
+}
+
 const BUILTY_COLUMNS = [
   "Party",
   "Date",
   "Builty",
   "Product",
   "Qty",
-  "Rate",
-  "Amount",
-  "Paid",
-  "Remaining",
+  "Rate (Rs.)",
+  "Amount (Rs.)",
+  "Paid (Rs.)",
+  "Remaining (Rs.)",
+];
+const BUILTY_COLUMN_WIDTHS = [1.3, 0.85, 0.8, 2.2, 0.55, 0.85, 1.0, 1.0, 1.0];
+const BUILTY_COLUMN_ALIGN = [
+  "left",
+  "left",
+  "left",
+  "left",
+  "right",
+  "right",
+  "right",
+  "right",
+  "right",
 ];
 
 async function partyHandout(customerId, query) {
@@ -4148,17 +4208,27 @@ async function partyHandout(customerId, query) {
     Party: statement.party.name,
     Phone: statement.party.phone || "—",
     Period: periodLabel(query.dateFrom, query.dateTo),
-    "Previous remaining": money(statement.openingBalance),
-    "Billed in period": money(billed),
-    "Received in period": money(received),
-    "Still to receive": money(statement.periodBalance),
+    "Previous remaining": moneyRs(statement.openingBalance),
+    "Billed in period": moneyRs(billed),
+    "Received in period": moneyRs(received),
+    "Still to receive": moneyRs(statement.periodBalance),
   };
   if (Math.abs(statement.periodBalance - statement.closingBalance) > 0.009) {
-    meta["Remaining now"] = money(statement.closingBalance);
+    meta["Remaining now"] = moneyRs(statement.closingBalance);
   }
 
+  const builtyRows = builtyDetailRows(builties, { partyName: statement.party.name });
+  if (builties.length) builtyRows.push(builtyTotalsRow(builties));
+
   const sections = [
-    section("builties", "Builties", BUILTY_COLUMNS, builtyDetailRows(builties, { partyName: statement.party.name }), meta),
+    section(
+      "builties",
+      "Builties",
+      BUILTY_COLUMNS,
+      builtyRows,
+      meta,
+      { columnWidths: BUILTY_COLUMN_WIDTHS, columnAlign: BUILTY_COLUMN_ALIGN }
+    ),
     section(
       "payments",
       "Payments received",
@@ -4169,7 +4239,9 @@ async function partyHandout(customerId, query) {
         row.reference || "",
         money(row.amount),
         row.notes || "",
-      ])
+      ]),
+      null,
+      { columnAlign: ["left", "left", "left", "right", "left"] }
     ),
   ];
   const adjustments = statement.lines.filter((line) => line.type === "adjustment" && (line.debit || line.credit));
@@ -4184,7 +4256,9 @@ async function partyHandout(customerId, query) {
           line.notes || line.reference || "",
           money(line.debit),
           money(line.credit),
-        ])
+        ]),
+        null,
+        { columnAlign: ["left", "left", "right", "right"] }
       )
     );
   }
@@ -4233,14 +4307,20 @@ async function groupHandout(groupId, query) {
     money(party.periodBalance),
   ]);
   if (partyRows.length) {
-    partyRows.push([
-      "Total",
-      money(statement.openingBalance),
-      money([...billedBy.values()].reduce((sum, n) => sum + n, 0)),
-      money([...receivedBy.values()].reduce((sum, n) => sum + n, 0)),
-      money(statement.periodBalance),
-    ]);
+    partyRows.push({
+      cells: [
+        "Total",
+        money(statement.openingBalance),
+        money([...billedBy.values()].reduce((sum, n) => sum + n, 0)),
+        money([...receivedBy.values()].reduce((sum, n) => sum + n, 0)),
+        money(statement.periodBalance),
+      ],
+      bold: true,
+    });
   }
+
+  const groupBuilties = builtyDetailRows(builties);
+  if (builties.length) groupBuilties.push(builtyTotalsRow(builties));
 
   return {
     title: `Group statement — ${statement.group.name}`,
@@ -4251,16 +4331,24 @@ async function groupHandout(groupId, query) {
       section(
         "parties",
         "Parties",
-        ["Party", "Previous remaining", "Billed", "Received", "Still to receive"],
+        ["Party", "Previous remaining (Rs.)", "Billed (Rs.)", "Received (Rs.)", "Still to receive (Rs.)"],
         partyRows,
         {
           Group: statement.group.name,
           Period: periodLabel(query.dateFrom, query.dateTo),
           Parties: statement.parties.length,
-          "Still to receive": money(statement.periodBalance),
-        }
+          "Still to receive": moneyRs(statement.periodBalance),
+        },
+        { columnAlign: ["left", "right", "right", "right", "right"] }
       ),
-      section("builties", "Builty details", BUILTY_COLUMNS, builtyDetailRows(builties)),
+      section(
+        "builties",
+        "Builty details",
+        BUILTY_COLUMNS,
+        groupBuilties,
+        null,
+        { columnWidths: BUILTY_COLUMN_WIDTHS, columnAlign: BUILTY_COLUMN_ALIGN }
+      ),
     ],
   };
 }
@@ -4283,13 +4371,43 @@ async function supplierHandout(supplierId, query) {
     Supplier: statement.party.name,
     Phone: statement.party.phone || "—",
     Period: periodLabel(query.dateFrom, query.dateTo),
-    "Previous remaining": money(statement.openingBalance),
-    "Purchased in period": money(purchased),
-    "Paid in period": money(paid),
-    "Still to pay": money(statement.periodBalance),
+    "Previous remaining": moneyRs(statement.openingBalance),
+    "Purchased in period": moneyRs(purchased),
+    "Paid in period": moneyRs(paid),
+    "Still to pay": moneyRs(statement.periodBalance),
   };
   if (Math.abs(statement.periodBalance - statement.closingBalance) > 0.009) {
-    meta["Remaining now"] = money(statement.closingBalance);
+    meta["Remaining now"] = moneyRs(statement.closingBalance);
+  }
+
+  const purchaseRows = purchases.map((row) => [
+    fmtDate(row.purchaseDate),
+    row.invoiceNo || "",
+    row.materialType || "",
+    row.quantityKg ?? "",
+    money(row.ratePerKg),
+    money(row.freightAmount),
+    money((Number(row.totalAmount) || 0) + (Number(row.freightAmount) || 0)),
+    money(row.amountPaid),
+    money(row.balance),
+  ]);
+  if (purchases.length) {
+    let kg = 0;
+    let freight = 0;
+    let amount = 0;
+    let paidTotal = 0;
+    let remaining = 0;
+    for (const row of purchases) {
+      kg += Number(row.quantityKg) || 0;
+      freight += Number(row.freightAmount) || 0;
+      amount += (Number(row.totalAmount) || 0) + (Number(row.freightAmount) || 0);
+      paidTotal += Number(row.amountPaid) || 0;
+      remaining += Number(row.balance) || 0;
+    }
+    purchaseRows.push({
+      cells: ["", "", "Total", kg, "", money(freight), money(amount), money(paidTotal), money(remaining)],
+      bold: true,
+    });
   }
 
   return {
@@ -4301,19 +4419,12 @@ async function supplierHandout(supplierId, query) {
       section(
         "purchases",
         "Purchases",
-        ["Date", "Invoice", "Material", "Kg", "Rate", "Freight", "Amount", "Paid", "Remaining"],
-        purchases.map((row) => [
-          fmtDate(row.purchaseDate),
-          row.invoiceNo || "",
-          row.materialType || "",
-          row.quantityKg ?? "",
-          money(row.ratePerKg),
-          money(row.freightAmount),
-          money((Number(row.totalAmount) || 0) + (Number(row.freightAmount) || 0)),
-          money(row.amountPaid),
-          money(row.balance),
-        ]),
-        meta
+        ["Date", "Invoice", "Material", "Kg", "Rate (Rs.)", "Freight (Rs.)", "Amount (Rs.)", "Paid (Rs.)", "Remaining (Rs.)"],
+        purchaseRows,
+        meta,
+        {
+          columnAlign: ["left", "left", "left", "right", "right", "right", "right", "right", "right"],
+        }
       ),
       section(
         "payments",
@@ -4321,7 +4432,9 @@ async function supplierHandout(supplierId, query) {
         ["Date", "Reference", "Amount", "Notes"],
         statement.lines
           .filter((line) => line.type === "payment")
-          .map((line) => [fmtDate(line.date), line.reference || "", money(line.credit), line.notes || ""])
+          .map((line) => [fmtDate(line.date), line.reference || "", money(line.credit), line.notes || ""]),
+        null,
+        { columnAlign: ["left", "left", "right", "left"] }
       ),
     ],
   };
@@ -4334,15 +4447,12 @@ async function builtyHandout(builtyId) {
   if (!builty) throw httpError("Builty not found", 404);
   const payments = await CustomerPayment.find({ builty: builty._id }).sort({ paymentDate: 1 });
   const partyName = builty.customer?.name || "Party";
-  const rows = (builty.items || []).map((item) => [
-    productLabel(item),
-    item.quantity ?? "",
-    item.weightKg ? String(item.weightKg) : "",
-    money(lineRate(item)),
-    money(item.lineTotal),
-  ]);
+  const rows = (builty.items || []).map((item) => {
+    const { name } = productNameAndWeight(item);
+    return [name, item.quantity ?? "", money(lineRate(item)), money(item.lineTotal)];
+  });
   if (rows.length) {
-    rows.push(["Total", "", "", "", money(builty.totalAmount)]);
+    rows.push({ cells: ["Total", "", "", money(builty.totalAmount)], bold: true });
   }
   const meta = {
     Party: partyName,
@@ -4350,16 +4460,18 @@ async function builtyHandout(builtyId) {
     Date: fmtDate(builty.builtyDate),
     Builty: builty.builtyNo || "",
     "Bill no": builty.billNo || "—",
-    Total: money(builty.totalAmount),
-    Paid: money(builty.amountPaid),
-    "Still to receive": money(builty.balance),
+    Total: moneyRs(builty.totalAmount),
+    Paid: moneyRs(builty.amountPaid),
+    "Still to receive": moneyRs(builty.balance),
   };
-  if (Number(builty.discountAmount) > 0) meta.Discount = money(builty.discountAmount);
-  if (Number(builty.previousPending) > 0) meta["Previous pending"] = money(builty.previousPending);
+  if (Number(builty.discountAmount) > 0) meta.Discount = moneyRs(builty.discountAmount);
+  if (Number(builty.previousPending) > 0) meta["Previous pending"] = moneyRs(builty.previousPending);
   if (builty.notes) meta.Notes = builty.notes;
 
   const sections = [
-    section("items", "Items", ["Product", "Qty", "Weight kg", "Rate", "Amount"], rows, meta),
+    section("items", "Items", ["Product", "Qty", "Rate (Rs.)", "Amount (Rs.)"], rows, meta, {
+      columnAlign: ["left", "right", "right", "right"],
+    }),
   ];
   if (payments.length) {
     sections.push(
@@ -4373,7 +4485,9 @@ async function builtyHandout(builtyId) {
           row.reference || "",
           money(row.amount),
           row.notes || "",
-        ])
+        ]),
+        null,
+        { columnAlign: ["left", "left", "left", "right", "left"] }
       )
     );
   }
@@ -4412,6 +4526,8 @@ async function exportHandout(query, format, res) {
     heading: part.heading,
     columns: part.columns,
     rows: part.rows,
+    columnWidths: part.columnWidths,
+    columnAlign: part.columnAlign,
   }));
   if (format === "pdf") {
     const buf = await buildPdf({
