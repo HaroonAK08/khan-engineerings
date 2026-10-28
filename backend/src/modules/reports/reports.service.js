@@ -4508,6 +4508,11 @@ async function buildHandout(query) {
   return builtyHandout(id);
 }
 
+/** PDF/Excel builders accept rows as plain arrays or { cells, bold }; flatten to arrays for JSON. */
+function plainRows(rows) {
+  return (rows || []).map((row) => (Array.isArray(row) ? row : row?.cells || []));
+}
+
 async function getHandoutPreview(query) {
   const report = await buildHandout(query);
   return {
@@ -4515,7 +4520,7 @@ async function getHandoutPreview(query) {
     period: report.period,
     modules: [query.audience],
     summaryOnly: false,
-    sections: report.sections,
+    sections: report.sections.map((s) => ({ ...s, rows: plainRows(s.rows) })),
   };
 }
 
