@@ -785,7 +785,7 @@ export default function ReportsHubPage() {
                             <TableBody>
                               {sub.rows.map((row, rowIndex) => (
                                 <TableRow key={`${section.id}-${sub.heading}-${rowIndex}`}>
-                                  {row.map((cell, cellIndex) => (
+                                  {(Array.isArray(row) ? row : row.cells).map((cell, cellIndex) => (
                                     <TableCell
                                       key={`${section.id}-${sub.heading}-${rowIndex}-${cellIndex}`}
                                       className="font-data text-xs"
@@ -817,8 +817,17 @@ export default function ReportsHubPage() {
                       </TableHeader>
                       <TableBody>
                         {section.rows.map((row, rowIndex) => (
-                          <TableRow key={`${section.id}-${rowIndex}`}>
-                            {row.map((cell, cellIndex) => (
+                          <TableRow
+                            key={`${section.id}-${rowIndex}`}
+                            className={
+                              typeof row === "object" &&
+                              !Array.isArray(row) &&
+                              row.bg
+                                ? "bg-emerald-50 dark:bg-emerald-950/30"
+                                : ""
+                            }
+                          >
+                            {(Array.isArray(row) ? row : row.cells).map((cell, cellIndex) => (
                               <TableCell
                                 key={`${section.id}-${rowIndex}-${cellIndex}`}
                                 className="font-data text-xs"

@@ -5,11 +5,22 @@ export type StatementLine = {
   date: string;
   type: string;
   reference: string;
+  builtyNo?: string;
+  billNo?: string;
+  paymentId?: string;
   debit: number;
   credit: number;
   balance: number;
   notes: string;
 };
+
+export type CombinedReportRow =
+  | Array<string | number>
+  | {
+      cells: Array<string | number>;
+      bold?: boolean;
+      bg?: string;
+    };
 
 export type Statement = {
   party: {
@@ -500,11 +511,11 @@ export type CombinedReportSection = {
   title: string;
   heading: string;
   columns: string[];
-  rows: Array<Array<string | number>>;
+  rows: CombinedReportRow[];
   subsections?: Array<{
     heading: string;
     columns: string[];
-    rows: Array<Array<string | number>>;
+    rows: CombinedReportRow[];
   }> | null;
   meta: Record<string, string | number>;
 };
@@ -538,7 +549,8 @@ export async function getCombinedReportPreview(params: {
 export async function downloadStatementExport(
   type: "customers" | "suppliers",
   id: string,
-  params: { format: "pdf"; dateFrom?: string; dateTo?: string }
+  params: { format: "pdf"; dateFrom?: string; dateTo?: string },
+  opts?: { print?: boolean }
 ) {
   const query: Record<string, string> = { format: params.format };
   if (params.dateFrom) query.dateFrom = params.dateFrom;
@@ -547,7 +559,16 @@ export async function downloadStatementExport(
     params: query,
     responseType: "blob",
   });
-  triggerDownload(data as Blob, `${type}-statement.pdf`);
+  const blob = data as Blob;
+  if (opts?.print && typeof window !== "undefined") {
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, "_blank");
+    if (!win) {
+      triggerDownload(blob, `${type}-statement.pdf`);
+    }
+  } else {
+    triggerDownload(blob, `${type}-statement.pdf`);
+  }
 }
 
 export async function downloadGroupStatementExport(

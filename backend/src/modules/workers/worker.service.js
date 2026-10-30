@@ -1,6 +1,11 @@
 const Worker = require("./worker.model");
 const BatchExpense = require("../expenses/expense.model");
 const { EXPENSE_SCOPES } = require("./worker.model");
+const {
+  dayRange,
+  wantsConfirmDuplicate,
+  sameDayDuplicateError,
+} = require("../../utils/sameDay");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -146,12 +151,33 @@ async function pay(id, data) {
   const note = data.notes?.trim() || "";
   const notes = note ? `${worker.name} · ${note}` : worker.name;
   const scope = resolveScope(worker.scope) || "common";
+  const paid = roundMoney(amount);
+
+  if (!wantsConfirmDuplicate(data)) {
+    const { start, end } = dayRange(expenseDate);
+    const existing = await BatchExpense.findOne({
+      category: "fixed_salary",
+      worker: worker._id,
+      amount: paid,
+      expenseDate: { $gte: start, $lte: end },
+      $or: [{ batch: null }, { batch: { $exists: false } }],
+    })
+      .select("_id")
+      .lean();
+    if (existing) {
+      const err = sameDayDuplicateError(
+        `Trying to create a duplicate salary payment on the same day for "${worker.name}" (${paid}). Do you want to continue?`
+      );
+      err.existingId = existing._id;
+      throw err;
+    }
+  }
 
   const expense = await BatchExpense.create({
     batch: null,
     stage: null,
     category: "fixed_salary",
-    amount: roundMoney(amount),
+    amount: paid,
     expenseDate,
     notes,
     worker: worker._id,

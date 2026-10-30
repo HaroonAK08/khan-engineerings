@@ -558,6 +558,7 @@ export default function SalesReportsHubPage() {
                     <TableRow>
                       <TableHead>{t("common.date")}</TableHead>
                       <TableHead>{t("builty.col.no")}</TableHead>
+                      <TableHead>{t("builty.col.billNo")}</TableHead>
                       {!drilledParty ? (
                         <TableHead>{t("common.customer")}</TableHead>
                       ) : null}
@@ -571,7 +572,7 @@ export default function SalesReportsHubPage() {
                     {records.length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={drilledParty ? 6 : 7}
+                          colSpan={drilledParty ? 7 : 8}
                           className="text-muted-foreground"
                         >
                           {t("salesReportsHub.none")}
@@ -588,8 +589,11 @@ export default function SalesReportsHubPage() {
                               href={r.href || `/dashboard/builty/${r.orderId}`}
                               className="font-data text-xs text-primary hover:underline"
                             >
-                              {r.orderNo || r.invoiceNo}
+                              {r.orderNo}
                             </Link>
+                          </TableCell>
+                          <TableCell className="font-data text-xs text-muted-foreground">
+                            {r.billNo || "—"}
                           </TableCell>
                           {!drilledParty ? (
                             <TableCell className="text-sm">{r.customer}</TableCell>
@@ -614,7 +618,7 @@ export default function SalesReportsHubPage() {
                     <TableFooter>
                       <TableRow>
                         <TableCell
-                          colSpan={drilledParty ? 3 : 4}
+                          colSpan={drilledParty ? 4 : 5}
                           className="font-medium"
                         >
                           {t("recvReports.grandTotal")}

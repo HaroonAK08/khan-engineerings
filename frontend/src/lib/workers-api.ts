@@ -77,6 +77,7 @@ export async function payWorker(
     expenseDate: string;
     amount: number;
     notes?: string;
+    confirmDuplicate?: boolean;
   }
 ) {
   const { data } = await api.post<{ expense: BatchExpense; worker: Worker }>(

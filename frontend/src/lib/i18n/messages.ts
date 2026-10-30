@@ -1591,6 +1591,7 @@ const en = {
   "common.weight": "Weight",
   "common.pay": "Pay",
   "common.address": "Address",
+  "common.print": "Print",
 
   "financeSubnav.overview": "Overview",
   "financeSubnav.monthly": "Monthly",
@@ -2093,6 +2094,8 @@ const en = {
   "statements.debit": "Debit",
   "statements.credit": "Credit",
   "statements.noEntriesPeriod": "No entries in this period",
+  "statements.print": "Print statement",
+  "statements.downloadStarted": "Statement report downloading…",
 
   "invReportsHub.loadFailed": "Failed to load inventory report",
   "invReportsHub.subtitle": "Stock as of the selected date.",
@@ -4052,6 +4055,7 @@ const ur: Record<MessageKey, string> = {
   "common.weight": "وزن",
   "common.pay": "ادائیگی",
   "common.address": "پتہ",
+  "common.print": "پرنٹ",
 
   "financeSubnav.overview": "جائزہ",
   "financeSubnav.monthly": "ماہانہ",
@@ -4553,6 +4557,8 @@ const ur: Record<MessageKey, string> = {
   "statements.debit": "ڈیبٹ",
   "statements.credit": "کریڈٹ",
   "statements.noEntriesPeriod": "اس مدت میں کوئی اندراج نہیں",
+  "statements.print": "اسٹیٹمنٹ پرنٹ کریں",
+  "statements.downloadStarted": "اسٹیٹمنٹ رپورٹ ڈاؤن لوڈ ہو رہی ہے…",
 
   "invReportsHub.loadFailed": "انوینٹری رپورٹ لوڈ نہیں ہو سکی",
   "invReportsHub.subtitle": "منتخب تاریخ تک کا اسٹاک۔",

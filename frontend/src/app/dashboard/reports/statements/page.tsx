@@ -454,6 +454,8 @@ export default function StatementsPage() {
                   <TableRow>
                     <TableHead>{t("common.date")}</TableHead>
                     <TableHead>{t("common.type")}</TableHead>
+                    <TableHead>{t("builty.col.no")}</TableHead>
+                    <TableHead>{t("builty.col.billNo")}</TableHead>
                     <TableHead>{t("statements.reference")}</TableHead>
                     <TableHead className="text-right">{t("statements.debit")}</TableHead>
                     <TableHead className="text-right">{t("statements.credit")}</TableHead>
@@ -461,18 +463,45 @@ export default function StatementsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
+                  {statement.openingBalance !== 0 || Boolean(dateFrom) ? (
+                    <TableRow className="bg-muted/30 font-medium">
+                      <TableCell className="font-data text-xs">
+                        {dateFrom ? formatDate(dateFrom) : "—"}
+                      </TableCell>
+                      <TableCell className="text-xs uppercase">Opening</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">—</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">—</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {t("statements.opening")}
+                      </TableCell>
+                      <TableCell className="text-right text-xs">—</TableCell>
+                      <TableCell className="text-right text-xs">—</TableCell>
+                      <TableCell className="font-data text-right text-xs font-semibold">
+                        {formatMoney(statement.openingBalance)}
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
                   {statement.lines.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-muted-foreground">
+                      <TableCell colSpan={8} className="text-muted-foreground">
                         {t("statements.noEntriesPeriod")}
                       </TableCell>
                     </TableRow>
                   ) : (
                     statement.lines.map((l) => (
-                      <TableRow key={l.id}>
+                      <TableRow
+                        key={l.id}
+                        className={
+                          l.type === "payment"
+                            ? "bg-emerald-50 dark:bg-emerald-950/30"
+                            : undefined
+                        }
+                      >
                         <TableCell className="font-data text-xs">{formatDate(l.date)}</TableCell>
                         <TableCell className="text-xs uppercase">{l.type}</TableCell>
-                        <TableCell className="max-w-[180px] truncate text-xs">
+                        <TableCell className="font-data text-xs">{l.builtyNo || "—"}</TableCell>
+                        <TableCell className="font-data text-xs">{l.billNo || "—"}</TableCell>
+                        <TableCell className="max-w-[220px] text-xs">
                           {l.reference}
                         </TableCell>
                         <TableCell className="font-data text-right text-xs">
@@ -488,6 +517,24 @@ export default function StatementsPage() {
                     ))
                   )}
                 </TableBody>
+                {statement.lines.length > 0 ? (
+                  <TableFooter>
+                    <TableRow>
+                      <TableCell colSpan={5} className="font-semibold">
+                        {t("common.total")}
+                      </TableCell>
+                      <TableCell className="font-data text-right text-xs font-semibold">
+                        {formatMoney(statement.lines.reduce((s, l) => s + (l.debit || 0), 0))}
+                      </TableCell>
+                      <TableCell className="font-data text-right text-xs font-semibold">
+                        {formatMoney(statement.lines.reduce((s, l) => s + (l.credit || 0), 0))}
+                      </TableCell>
+                      <TableCell className="font-data text-right text-sm font-semibold">
+                        {formatMoney(statement.periodBalance ?? statement.closingBalance)}
+                      </TableCell>
+                    </TableRow>
+                  </TableFooter>
+                ) : null}
               </Table>
             </CardContent>
           </Card>

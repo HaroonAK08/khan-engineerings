@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
-import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
+import { apiError, formatDate, formatMoney, withSameDayConfirm } from "@/lib/materials-api";
 import { deleteFactoryExpense, updateFactoryExpense } from "@/lib/expenses-api";
 import {
   getWorker,
@@ -167,11 +167,15 @@ export default function WorkerSalaryLedgerPage() {
     setSaving(true);
     try {
       if (dialogMode === "add") {
-        await payWorker(id, {
-          expenseDate: formDate,
-          amount,
-          notes: formNote.trim() || undefined,
-        });
+        const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
+          payWorker(id, {
+            expenseDate: formDate,
+            amount,
+            notes: formNote.trim() || undefined,
+            confirmDuplicate,
+          })
+        );
+        if (cancelled) return;
         toast.success(t("sal.paymentAdded"));
       } else if (editingPayment) {
         await updateFactoryExpense(editingPayment._id, {

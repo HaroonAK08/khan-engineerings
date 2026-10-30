@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { BookOpen, ChevronRight, Loader2, Plus, Search, Trash2 } from "lucide-react";
-import { apiError, formatDate, formatKg, formatMoney } from "@/lib/materials-api";
+import { apiError, formatDate, formatKg, formatMoney, withSameDayConfirm } from "@/lib/materials-api";
 import {
   createWorker,
   deactivateWorker,
@@ -601,11 +601,15 @@ export default function SalariesPage() {
     }
     setBusyId(w._id);
     try {
-      await payWorker(w._id, {
-        expenseDate: payDate,
-        amount,
-        notes: payNote.trim() || undefined,
-      });
+      const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
+        payWorker(w._id, {
+          expenseDate: payDate,
+          amount,
+          notes: payNote.trim() || undefined,
+          confirmDuplicate,
+        })
+      );
+      if (cancelled) return;
       toast.success(`Paid ${displayWorkerName(w, isUrdu)} · ${formatDate(payDate)}`);
       setPayingId(null);
       await load();
@@ -637,11 +641,15 @@ export default function SalariesPage() {
     }
     setBusyId("add-payment");
     try {
-      await payWorker(w._id, {
-        expenseDate: payDate,
-        amount,
-        notes: payNote.trim() || undefined,
-      });
+      const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
+        payWorker(w._id, {
+          expenseDate: payDate,
+          amount,
+          notes: payNote.trim() || undefined,
+          confirmDuplicate,
+        })
+      );
+      if (cancelled) return;
       toast.success(`Paid ${displayWorkerName(w, isUrdu)} · ${formatDate(payDate)}`);
       setShowAddPayment(false);
       setAddPayWorkerId("");

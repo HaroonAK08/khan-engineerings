@@ -189,6 +189,7 @@ export type SalesReport = {
   records?: Array<{
     orderId: string;
     orderNo: string;
+    billNo?: string;
     invoiceNo: string;
     customer: string;
     customerId?: string;
@@ -204,6 +205,7 @@ export type SalesReport = {
   outstanding: Array<{
     orderId: string;
     orderNo: string;
+    billNo?: string;
     invoiceNo: string;
     customer: string;
     customerId?: string;

@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Check, Loader2, Pencil, Trash2 } from "lucide-react";
+import { Check, Loader2, Pencil, Printer, Trash2 } from "lucide-react";
 import { apiError, formatDate, formatMoney, withSameDayConfirm } from "@/lib/materials-api";
 import {
   deleteBuilty,
@@ -22,6 +22,7 @@ import {
   ledgerPaymentId,
   summarizeInstruments,
 } from "@/lib/party-instruments";
+import { downloadStatementExport } from "@/lib/reports-api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -188,6 +189,28 @@ export function PartyHistoryCalendar({
   const [discountDate, setDiscountDate] = useState(todayInput());
   const [discountNotes, setDiscountNotes] = useState("");
   const [discountBusy, setDiscountBusy] = useState(false);
+  const [printing, setPrinting] = useState(false);
+
+  async function handlePrint() {
+    setPrinting(true);
+    try {
+      await downloadStatementExport(
+        "customers",
+        customerId,
+        {
+          format: "pdf",
+          dateFrom: dateFrom || undefined,
+          dateTo: dateTo || undefined,
+        },
+        { print: true }
+      );
+      toast.success(t("statements.downloadStarted"));
+    } catch (err) {
+      toast.error(apiError(err, t("statements.loadFailed")));
+    } finally {
+      setPrinting(false);
+    }
+  }
 
   const allRows = useMemo(() => buildKhataRows(entries), [entries]);
 
@@ -351,7 +374,7 @@ export function PartyHistoryCalendar({
     const b = builtyOf(e);
     if (!b) return t("customerDetail.builtyHistory");
     const no = b.builtyNo || "—";
-    return b.billNo ? `${no} · ${b.billNo}` : no;
+    return b.billNo ? `${no} · Bill: ${b.billNo}` : no;
   }
 
   function openEdit(e: CustomerLedgerEntry) {
@@ -601,14 +624,30 @@ export function PartyHistoryCalendar({
             >
               {t("sal.filterThisMonth")}
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              className="ms-auto"
-              onClick={openDiscountForm}
-            >
-              {t("customerDetail.applyDiscount")}
-            </Button>
+            <div className="ms-auto flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                disabled={printing}
+                onClick={() => void handlePrint()}
+              >
+                {printing ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Printer className="size-3.5" />
+                )}
+                {t("common.print")}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={openDiscountForm}
+              >
+                {t("customerDetail.applyDiscount")}
+              </Button>
+            </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="grid gap-1.5">

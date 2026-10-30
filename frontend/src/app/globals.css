@@ -438,3 +438,25 @@ html.locale-ur .gap-1\.5 {
 .animate-cheque-due {
   animation: cheque-due-blink 1.15s ease-in-out infinite;
 }
+
+@media print {
+  aside,
+  header,
+  nav,
+  button,
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+}

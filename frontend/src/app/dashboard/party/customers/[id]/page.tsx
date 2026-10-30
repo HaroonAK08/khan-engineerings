@@ -4,9 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, Plus } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, Printer } from "lucide-react";
 import { api } from "@/lib/api";
 import { apiError, formatDate, formatMoney, withSameDayConfirm } from "@/lib/materials-api";
+import { downloadStatementExport } from "@/lib/reports-api";
 import {
   createCustomerInstrument,
   getCustomer,
@@ -120,6 +121,29 @@ export default function CustomerDetailPage() {
   );
   const previousPendingShown =
     dateFrom || dateTo ? periodPending.previousRemaining : recordedPreviousPending;
+
+  const [printing, setPrinting] = useState(false);
+
+  const handlePrint = useCallback(async () => {
+    setPrinting(true);
+    try {
+      await downloadStatementExport(
+        "customers",
+        id,
+        {
+          format: "pdf",
+          dateFrom: dateFrom || undefined,
+          dateTo: dateTo || undefined,
+        },
+        { print: true }
+      );
+      toast.success(t("statements.downloadStarted"));
+    } catch (err) {
+      toast.error(apiError(err, t("statements.loadFailed")));
+    } finally {
+      setPrinting(false);
+    }
+  }, [id, dateFrom, dateTo, t]);
 
   const load = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -391,13 +415,29 @@ export default function CustomerDetailPage() {
             {[customer.phone].filter(Boolean).join(" · ") || t("customerDetail.noContact")}
           </p>
         </div>
-        <Link
-          href={`/dashboard/builty/new?customer=${id}`}
-          className="inline-flex h-12 min-w-44 items-center justify-center gap-2 rounded-lg bg-primary px-8 text-base font-semibold text-primary-foreground shadow-sm"
-        >
-          <Plus className="size-5" />
-          {t("builtyNew.title")}
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="inline-flex h-12 items-center justify-center gap-2 rounded-lg border px-5 text-sm font-semibold shadow-sm"
+            disabled={printing}
+            onClick={() => void handlePrint()}
+          >
+            {printing ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Printer className="size-4" />
+            )}
+            {t("common.print")}
+          </Button>
+          <Link
+            href={`/dashboard/builty/new?customer=${id}`}
+            className="inline-flex h-12 min-w-44 items-center justify-center gap-2 rounded-lg bg-primary px-8 text-base font-semibold text-primary-foreground shadow-sm"
+          >
+            <Plus className="size-5" />
+            {t("builtyNew.title")}
+          </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
