@@ -72,8 +72,19 @@ async function buildExcel({ title, sheetName, columns, rows, meta = {}, sections
     (section.rows || []).forEach((r) => {
       const cells = Array.isArray(r) ? r : r?.cells || [];
       sheet.addRow(cells);
-      if (r && typeof r === "object" && !Array.isArray(r) && r.bold) {
-        sheet.getRow(sheet.rowCount).font = { bold: true };
+      const rowObj = sheet.getRow(sheet.rowCount);
+      if (r && typeof r === "object" && !Array.isArray(r)) {
+        if (r.bold) {
+          rowObj.font = { bold: true };
+        }
+        if (r.bg) {
+          const hex = r.bg.replace("#", "").toUpperCase();
+          rowObj.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: `FF${hex}` },
+          };
+        }
       }
     });
   });
@@ -404,10 +415,11 @@ function buildPdf({
       function expandRow(row) {
         const cells = Array.isArray(row) ? [...row] : [...(row?.cells || [])];
         const bold = Boolean(row?.bold) || isTotalRow(cells);
+        const bg = row?.bg || null;
         const pageInner = Math.max(80, contentBottom() - pageMargin - measureHeaderHeight() - 8);
         let h = measureCells(cells, bold);
         if (h <= pageInner) {
-          return [{ cells, bold }];
+          return [{ cells, bold, bg }];
         }
         // Find the tallest (usually Items) column and split its lines.
         let tallest = 0;
@@ -435,11 +447,11 @@ function buildPdf({
               if (i !== tallIdx) next[i] = "";
             }
           }
-          return { cells: next, bold: bold && idx === parts.length - 1 };
+          return { cells: next, bold: bold && idx === parts.length - 1, bg };
         });
       }
 
-      function drawRow(cells, bold, rowIndex) {
+      function drawRow(cells, bold, rowIndex, bg) {
         let h = measureCells(cells, bold);
         // Whole row must fit; otherwise new page (avoids orphan lines).
         if (h > remainingSpace()) {
@@ -450,7 +462,9 @@ function buildPdf({
         }
         const y = doc.y;
         if (theme === "report") {
-          if (bold) {
+          if (bg) {
+            doc.rect(left, y, usableWidth, h).fill(bg);
+          } else if (bold) {
             doc.rect(left, y, usableWidth, h).fill("#efefef");
           } else if (rowIndex % 2 === 1) {
             doc.rect(left, y, usableWidth, h).fill(zebraBg);
@@ -519,7 +533,7 @@ function buildPdf({
       sectionRows.forEach((row) => {
         const pieces = expandRow(row);
         pieces.forEach((piece) => {
-          drawRow(piece.cells, piece.bold, drawn);
+          drawRow(piece.cells, piece.bold, drawn, piece.bg);
           drawn += 1;
         });
       });

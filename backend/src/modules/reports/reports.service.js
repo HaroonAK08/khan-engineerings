@@ -232,6 +232,10 @@ async function customerStatement(customerId, { dateFrom, dateTo } = {}) {
     }
   }
 
+  function isInternalNote(notes) {
+    return /^Payment [a-f0-9]{24}$/i.test(String(notes || "").trim());
+  }
+
   const openingBalance = Math.round(running * 100) / 100;
   const lines = [];
   let bal = openingBalance;
@@ -250,12 +254,37 @@ async function customerStatement(customerId, { dateFrom, dateTo } = {}) {
       else credit = Math.abs(s);
       bal += s;
     }
+
+    let reference = "";
+    const b = e.builty;
+    const bNo = b?.builtyNo ? String(b.builtyNo).trim() : "";
+    const billNo = b?.billNo ? String(b.billNo).trim() : "";
+    if (e.type === "invoice") {
+      if (bNo && billNo) {
+        reference = `${bNo} · Bill: ${billNo}`;
+      } else if (billNo) {
+        reference = `Bill: ${billNo}`;
+      } else if (bNo) {
+        reference = bNo;
+      } else {
+        reference = e.notes || "Builty";
+      }
+    } else if (e.type === "payment") {
+      reference = e.notes && !isInternalNote(e.notes) ? e.notes : "Party payment";
+    } else if (e.type === "adjustment") {
+      reference = e.notes && !isInternalNote(e.notes) ? e.notes : "Adjustment";
+    } else {
+      reference = e.notes || e.type;
+    }
+
     lines.push({
       id: e._id,
       date: e.entryDate,
       type: e.type,
-      reference:
-        e.builty?.builtyNo || e.builty?.billNo || e.notes || e.type,
+      reference,
+      builtyNo: bNo,
+      billNo: billNo,
+      paymentId: e.payment ? String(e.payment) : "",
       debit: Math.round(debit * 100) / 100,
       credit: Math.round(credit * 100) / 100,
       balance: Math.round(bal * 100) / 100,
@@ -484,7 +513,7 @@ async function exportSales(query, format, res) {
   const recordSource = report.records?.length ? report.records : report.outstanding || [];
   const recordRows = recordSource.map((o) => [
     o.orderNo,
-    o.invoiceNo,
+    o.billNo || "—",
     o.customer,
     fmtDate(o.orderDate),
     money(o.totalAmount),
@@ -933,15 +962,56 @@ async function exportStatement(type, id, query, format, res) {
     type === "customer"
       ? await customerStatement(id, query)
       : await supplierStatement(id, query);
-  const columns = ["Date", "Type", "Reference", "Debit", "Credit", "Balance"];
-  const rows = statement.lines.map((l) => [
-    fmtDate(l.date),
-    l.type,
-    l.reference,
-    money(l.debit),
-    money(l.credit),
-    money(l.balance),
-  ]);
+  const columns = ["Date", "Type", "Builty", "Bill No.", "Reference", "Debit", "Credit", "Balance"];
+  const rows = [];
+
+  if (statement.openingBalance !== 0 || query.dateFrom) {
+    rows.push([
+      query.dateFrom ? fmtDate(query.dateFrom) : "—",
+      "Opening",
+      "—",
+      "—",
+      "Opening balance",
+      "—",
+      "—",
+      money(statement.openingBalance),
+    ]);
+  }
+
+  for (const l of statement.lines) {
+    rows.push({
+      cells: [
+        fmtDate(l.date),
+        l.type,
+        l.builtyNo || "—",
+        l.billNo || "—",
+        l.reference,
+        l.debit ? money(l.debit) : "—",
+        l.credit ? money(l.credit) : "—",
+        money(l.balance),
+      ],
+      bg: l.type === "payment" ? "#e8f5e9" : null,
+    });
+  }
+
+  if (statement.lines.length > 0) {
+    const totalDebit = statement.lines.reduce((s, l) => s + (l.debit || 0), 0);
+    const totalCredit = statement.lines.reduce((s, l) => s + (l.credit || 0), 0);
+    rows.push({
+      bold: true,
+      cells: [
+        "Total",
+        "",
+        "",
+        "",
+        "",
+        money(totalDebit),
+        money(totalCredit),
+        money(statement.periodBalance ?? statement.closingBalance),
+      ],
+    });
+  }
+
   const meta = {
     Party: statement.party.name,
     Period: periodLabel(query.dateFrom, query.dateTo),
@@ -4115,6 +4185,7 @@ function builtyDetailRows(builties, { partyName } = {}) {
       party,
       fmtDate(builty.builtyDate),
       builty.builtyNo || "",
+      builty.billNo || "",
     ];
     if (items.length === 0) {
       rows.push([
@@ -4134,6 +4205,7 @@ function builtyDetailRows(builties, { partyName } = {}) {
         index === 0 ? head[0] : "",
         index === 0 ? head[1] : "",
         index === 0 ? head[2] : "",
+        index === 0 ? head[3] : "",
         name,
         item.quantity ?? "",
         money(lineRate(item)),
@@ -4160,7 +4232,7 @@ function builtyTotalsRow(builties) {
     remaining += Number(builty.balance) || 0;
   }
   return {
-    cells: ["", "", "", "Total", qty || "", "", money(amount), money(paid), money(remaining)],
+    cells: ["", "", "", "", "Total", qty || "", "", money(amount), money(paid), money(remaining)],
     bold: true,
   };
 }
@@ -4169,6 +4241,7 @@ const BUILTY_COLUMNS = [
   "Party",
   "Date",
   "Builty",
+  "Bill No.",
   "Product",
   "Qty",
   "Rate (Rs.)",
@@ -4176,8 +4249,35 @@ const BUILTY_COLUMNS = [
   "Paid (Rs.)",
   "Remaining (Rs.)",
 ];
-const BUILTY_COLUMN_WIDTHS = [1.3, 0.85, 0.8, 2.2, 0.55, 0.85, 1.0, 1.0, 1.0];
+const BUILTY_COLUMN_WIDTHS = [1.2, 0.8, 0.7, 0.75, 2.0, 0.5, 0.8, 0.95, 0.95, 0.95];
 const BUILTY_COLUMN_ALIGN = [
+  "left",
+  "left",
+  "left",
+  "left",
+  "left",
+  "right",
+  "right",
+  "right",
+  "right",
+  "right",
+];
+
+const PARTY_TRANSACTION_COLUMNS = [
+  "Date",
+  "Type",
+  "Builty",
+  "Bill No.",
+  "Product / Reference",
+  "Qty",
+  "Rate (Rs.)",
+  "Amount (Rs.)",
+  "Paid / Received (Rs.)",
+  "Remaining (Rs.)",
+];
+const PARTY_TRANSACTION_COLUMN_WIDTHS = [0.8, 0.9, 0.7, 0.75, 2.2, 0.5, 0.8, 1.0, 1.1, 1.0];
+const PARTY_TRANSACTION_COLUMN_ALIGN = [
+  "left",
   "left",
   "left",
   "left",
@@ -4217,51 +4317,115 @@ async function partyHandout(customerId, query) {
     meta["Remaining now"] = moneyRs(statement.closingBalance);
   }
 
-  const builtyRows = builtyDetailRows(builties, { partyName: statement.party.name });
-  if (builties.length) builtyRows.push(builtyTotalsRow(builties));
+  const transactionRows = [];
+  for (const line of statement.lines) {
+    if (line.type === "invoice") {
+      const builty = line.builtyNo
+        ? builties.find((row) => String(row.builtyNo) === line.builtyNo)
+        : null;
+      const items = Array.isArray(builty?.items) ? builty.items : [];
+      if (items.length === 0) {
+        transactionRows.push({
+          cells: [
+            fmtDate(line.date),
+            "Builty",
+            line.builtyNo || "—",
+            line.billNo || "—",
+            line.reference || "Builty",
+            "—",
+            "—",
+            money(line.debit),
+            "—",
+            money(line.balance),
+          ],
+        });
+        continue;
+      }
+      items.forEach((item, index) => {
+        const { name } = productNameAndWeight(item);
+        transactionRows.push({
+          cells: [
+            index === 0 ? fmtDate(line.date) : "",
+            index === 0 ? "Builty" : "",
+            index === 0 ? line.builtyNo || "—" : "",
+            index === 0 ? line.billNo || "—" : "",
+            name,
+            item.quantity ?? "",
+            money(lineRate(item)),
+            money(item.lineTotal),
+            index === 0 ? money(builty?.amountPaid || 0) : "",
+            index === 0 ? money(line.balance) : "",
+          ],
+        });
+      });
+    } else if (line.type === "payment") {
+      const payment = line.paymentId
+        ? payments.find((row) => String(row._id) === String(line.paymentId))
+        : null;
+      transactionRows.push({
+        cells: [
+          fmtDate(line.date),
+          "Party payment",
+          "—",
+          "—",
+          payment?.reference || line.reference || "Party payment",
+          payment?.method || "",
+          "",
+          "",
+          money(line.credit),
+          money(line.balance),
+        ],
+        bg: "#e8f5e9",
+      });
+    } else if (line.type === "adjustment" && (line.debit || line.credit)) {
+      transactionRows.push({
+        cells: [
+          fmtDate(line.date),
+          "Adjustment",
+          "—",
+          "—",
+          line.reference || line.notes || "Adjustment",
+          "",
+          "",
+          line.debit ? money(line.debit) : "",
+          line.credit ? money(line.credit) : "",
+          money(line.balance),
+        ],
+      });
+    }
+  }
+
+  if (transactionRows.length > 0) {
+    transactionRows.push({
+      cells: [
+        "",
+        "Total",
+        "",
+        "",
+        "",
+        "",
+        "",
+        money(builties.reduce((sum, row) => sum + (Number(row.totalAmount) || 0), 0)),
+        money(payments.reduce((sum, row) => sum + (Number(row.amount) || 0), 0)),
+        money(statement.periodBalance),
+      ],
+      bold: true,
+    });
+  }
 
   const sections = [
     section(
-      "builties",
-      "Builties",
-      BUILTY_COLUMNS,
-      builtyRows,
+      "transactions",
+      "Party transactions",
+      PARTY_TRANSACTION_COLUMNS,
+      transactionRows,
       meta,
-      { columnWidths: BUILTY_COLUMN_WIDTHS, columnAlign: BUILTY_COLUMN_ALIGN }
-    ),
-    section(
-      "payments",
-      "Payments received",
-      ["Date", "Method", "Reference", "Amount", "Notes"],
-      payments.map((row) => [
-        fmtDate(row.paymentDate),
-        row.method || "",
-        row.reference || "",
-        money(row.amount),
-        row.notes || "",
-      ]),
-      null,
-      { columnAlign: ["left", "left", "left", "right", "left"] }
+      {
+        columnWidths: PARTY_TRANSACTION_COLUMN_WIDTHS,
+        columnAlign: PARTY_TRANSACTION_COLUMN_ALIGN,
+      }
     ),
   ];
-  const adjustments = statement.lines.filter((line) => line.type === "adjustment" && (line.debit || line.credit));
-  if (adjustments.length) {
-    sections.push(
-      section(
-        "adjustments",
-        "Adjustments and old dues",
-        ["Date", "Notes", "Added", "Reduced"],
-        adjustments.map((line) => [
-          fmtDate(line.date),
-          line.notes || line.reference || "",
-          money(line.debit),
-          money(line.credit),
-        ]),
-        null,
-        { columnAlign: ["left", "left", "right", "right"] }
-      )
-    );
-  }
 
   return {
     title: `Statement — ${statement.party.name}`,
@@ -4428,11 +4592,14 @@ async function supplierHandout(supplierId, query) {
       ),
       section(
         "payments",
-        "Payments made",
+        "Party payments",
         ["Date", "Reference", "Amount", "Notes"],
         statement.lines
           .filter((line) => line.type === "payment")
-          .map((line) => [fmtDate(line.date), line.reference || "", money(line.credit), line.notes || ""]),
+          .map((line) => ({
+            cells: [fmtDate(line.date), line.reference || "Party payment", money(line.credit), line.notes || ""],
+            bg: "#e8f5e9",
+          })),
         null,
         { columnAlign: ["left", "left", "right", "left"] }
       ),
@@ -4508,9 +4675,9 @@ async function buildHandout(query) {
   return builtyHandout(id);
 }
 
-/** PDF/Excel builders accept rows as plain arrays or { cells, bold }; flatten to arrays for JSON. */
+/** Preview rows retain styling metadata so the browser matches PDF/Excel output. */
 function plainRows(rows) {
-  return (rows || []).map((row) => (Array.isArray(row) ? row : row?.cells || []));
+  return (rows || []).map((row) => (Array.isArray(row) ? row : row));
 }
 
 async function getHandoutPreview(query) {

@@ -924,6 +924,7 @@ async function getSalesReport({ dateFrom, dateTo, groupId, customerId } = {}) {
     return {
       orderId: b._id,
       orderNo: b.builtyNo,
+      billNo: b.billNo || "",
       invoiceNo: b.billNo || b.builtyNo,
       customer: b.customer?.name || "Unknown",
       customerId: b.customer?._id ? String(b.customer._id) : "",
