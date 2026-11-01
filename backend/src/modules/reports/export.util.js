@@ -179,7 +179,8 @@ async function findChrome() {
   const configured = process.env.CHROME_PATH || "/usr/bin/google-chrome";
   if (fs.existsSync(configured)) return { executablePath: configured, args: [] };
 
-  const chromium = require("@sparticuz/chromium");
+  const chromiumModule = await import("@sparticuz/chromium");
+  const chromium = chromiumModule.default || chromiumModule;
   return {
     executablePath: await chromium.executablePath(),
     args: chromium.args || [],
