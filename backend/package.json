@@ -9,6 +9,7 @@
     "start": "node src/server.js",
     "seed": "node src/scripts/seedAdmin.js",
     "seed:prod-db": "node --env-file=.env.production src/scripts/seedAdmin.js",
+    "migrate:product-urdu": "node src/scripts/migrate-product-urdu.js",
     "migrate:mfg": "node src/scripts/migrate-to-mfg-erp.js",
     "rebuild:stock": "node src/scripts/rebuild-finished-stock.js",
     "resync:payments": "node src/scripts/resync-party-payments.js",
@@ -20,6 +21,7 @@
   "type": "commonjs",
   "dependencies": {
     "@fontsource/noto-naskh-arabic": "^5.3.0",
+    "@sparticuz/chromium": "^153.0.0",
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
@@ -30,6 +32,7 @@
     "mongoose": "^9.7.4",
     "multer": "^2.2.0",
     "pdfkit": "^0.19.1",
+    "puppeteer-core": "^25.16.0",
     "serverless-http": "^4.0.0"
   },
   "devDependencies": {

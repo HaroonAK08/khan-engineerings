@@ -180,8 +180,15 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
-function findChrome() {
-  return process.env.CHROME_PATH || "/usr/bin/google-chrome";
+async function findChrome() {
+  const configured = process.env.CHROME_PATH || "/usr/bin/google-chrome";
+  if (fs.existsSync(configured)) return { executablePath: configured, args: [] };
+
+  const chromium = require("@sparticuz/chromium");
+  return {
+    executablePath: await chromium.executablePath(),
+    args: chromium.args || [],
+  };
 }
 
 async function buildPdfWithChrome({
@@ -198,6 +205,10 @@ async function buildPdfWithChrome({
   layout = "portrait",
 }) {
   const isLandscape = String(layout).toLowerCase() === "landscape";
+  const urduFontPath = require.resolve(
+    "@fontsource/noto-naskh-arabic/files/noto-naskh-arabic-arabic-400-normal.woff2"
+  );
+  const urduFontData = fs.readFileSync(urduFontPath).toString("base64");
   const tableSections =
     Array.isArray(sections) && sections.length > 0
       ? sections
@@ -259,9 +270,9 @@ async function buildPdfWithChrome({
         .join("")}</div>`
     : "";
   const html = `<!doctype html><html><head><meta charset="utf-8"><style>
-    @font-face{font-family:Urdu;src:url(file:///usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf)}
+    @font-face{font-family:Urdu;src:url(data:font/woff2;base64,${urduFontData}) format("woff2");font-weight:400}
     *{box-sizing:border-box} @page{size:A4 ${isLandscape ? "landscape" : "portrait"};margin:12mm 10mm 15mm}
-    body{margin:0;color:#1a1a1a;font-family:Arial,"Noto Naskh Arabic",sans-serif;font-size:${isLandscape ? 9 : 8.5}pt}
+    body{margin:0;color:#1a1a1a;font-family:Arial,Urdu,sans-serif;font-size:${isLandscape ? 9 : 8.5}pt}
     .top{border-top:3px solid #173c55;padding-top:5px;display:flex;align-items:flex-start;gap:10px}
     .logo{width:32px;height:32px;object-fit:contain}.title{font-size:15pt;font-weight:700;flex:1}
     .stamp{font-size:7pt;color:#5c5c5c;text-align:right}.subtitle{font-size:9pt;color:#5c5c5c;margin:3px 0 12px}
@@ -280,12 +291,14 @@ async function buildPdfWithChrome({
   const pdfPath = path.join(os.tmpdir(), `khan-report-${id}.pdf`);
   try {
     fs.writeFileSync(htmlPath, html);
-    await execFileAsync(findChrome(), [
+    const chrome = await findChrome();
+    await execFileAsync(chrome.executablePath, [
       "--headless=new",
       "--no-sandbox",
       "--disable-gpu",
       "--disable-dev-shm-usage",
       "--no-pdf-header-footer",
+      ...chrome.args,
       `--print-to-pdf=${pdfPath}`,
       `file://${htmlPath}`,
     ], { timeout: 120000 });
