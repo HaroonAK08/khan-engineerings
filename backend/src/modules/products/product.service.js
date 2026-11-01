@@ -53,6 +53,7 @@ async function create(data) {
 
   const product = await Product.create({
     name,
+    nameUr: data.nameUr?.trim() || "",
     sku: data.sku?.trim() || "",
     description: data.description?.trim() || "",
     unitLabel: data.unitLabel?.trim() || "pcs",
@@ -100,6 +101,7 @@ async function update(id, data) {
     if (!name) throw httpError("Name is required", 400);
     product.name = name;
   }
+  if (data.nameUr !== undefined) product.nameUr = data.nameUr.trim();
   if (data.sku !== undefined) product.sku = data.sku.trim();
   if (data.description !== undefined) product.description = data.description.trim();
   if (data.unitLabel !== undefined) product.unitLabel = data.unitLabel.trim() || "pcs";

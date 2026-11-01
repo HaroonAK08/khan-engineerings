@@ -158,7 +158,6 @@ async function pay(id, data) {
     const existing = await BatchExpense.findOne({
       category: "fixed_salary",
       worker: worker._id,
-      amount: paid,
       expenseDate: { $gte: start, $lte: end },
       $or: [{ batch: null }, { batch: { $exists: false } }],
     })
@@ -166,7 +165,7 @@ async function pay(id, data) {
       .lean();
     if (existing) {
       const err = sameDayDuplicateError(
-        `Trying to create a duplicate salary payment on the same day for "${worker.name}" (${paid}). Do you want to continue?`
+        `Trying to create another salary payment for "${worker.name}" on the same day. Do you want to continue?`
       );
       err.existingId = existing._id;
       throw err;

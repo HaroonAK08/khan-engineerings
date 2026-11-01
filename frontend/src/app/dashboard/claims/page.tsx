@@ -9,7 +9,7 @@ import { useI18n } from "@/hooks/use-i18n";
 import { useTallyChecks } from "@/hooks/use-tally-checks";
 import { todayInput, calendarDay } from "@/lib/date-range";
 import { api } from "@/lib/api";
-import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
+import { apiError, formatDate, formatMoney, withSameDayConfirm } from "@/lib/materials-api";
 import { listProducts } from "@/lib/production-api";
 import { listCustomers, getBuilty, type Customer, type Builty } from "@/lib/sales-api";
 import type { Product } from "@/types/production";
@@ -505,7 +505,10 @@ export default function ClaimsPage() {
         await api.patch(`/claims/${editingId}`, body);
         toast.success(t("claims.updated"));
       } else {
-        await api.post("/claims", body);
+        const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
+          api.post("/claims", { ...body, confirmDuplicate })
+        );
+        if (cancelled) return;
         toast.success(t("claims.saved"));
       }
       resetForm();

@@ -3,6 +3,7 @@ export type ProductFamily = "hub" | "drum";
 export type Product = {
   _id: string;
   name: string;
+  nameUr?: string;
   sku: string;
   description: string;
   unitLabel: string;

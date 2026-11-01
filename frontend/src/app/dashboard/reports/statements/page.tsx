@@ -46,7 +46,7 @@ import { useI18n } from "@/hooks/use-i18n";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 
 export default function StatementsPage() {
-  const { t } = useI18n();
+  const { t, isUrdu } = useI18n();
   const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
   const [partyType, setPartyType] = useState<"customer" | "supplier">("customer");
   const [view, setView] = useState<ReportViewMode>("party");
@@ -210,6 +210,23 @@ export default function StatementsPage() {
     }),
     [t]
   );
+
+  function displayType(type: string) {
+    if (!isUrdu) return type;
+    if (type === "payment") return "ادائیگی";
+    if (type === "invoice") return "بلٹی";
+    if (type === "adjustment") return "ایڈجسٹمنٹ";
+    return type;
+  }
+
+  function displayReference(line: Statement["lines"][number]) {
+    if (!isUrdu) return line.reference;
+    if (line.type === "payment") {
+      if (!line.reference || /^party payment$/i.test(line.reference)) return "فریق کی ادائیگی";
+      if (/^cheque received$/i.test(line.reference)) return "چیک موصول";
+    }
+    return line.reference;
+  }
 
   const partySelectItems = useMemo(() => {
     const items: Record<string, string> = {};
@@ -498,11 +515,11 @@ export default function StatementsPage() {
                         }
                       >
                         <TableCell className="font-data text-xs">{formatDate(l.date)}</TableCell>
-                        <TableCell className="text-xs uppercase">{l.type}</TableCell>
+                        <TableCell className="text-xs uppercase">{displayType(l.type)}</TableCell>
                         <TableCell className="font-data text-xs">{l.builtyNo || "—"}</TableCell>
                         <TableCell className="font-data text-xs">{l.billNo || "—"}</TableCell>
                         <TableCell className="max-w-[220px] text-xs">
-                          {l.reference}
+                          {displayReference(l)}
                         </TableCell>
                         <TableCell className="font-data text-right text-xs">
                           {l.debit ? formatMoney(l.debit) : "—"}

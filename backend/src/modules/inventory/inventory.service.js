@@ -9,6 +9,11 @@ const {
   ACTIVE_STOCK_ITEM_TYPE_IDS,
   materialTypeToItemType,
 } = require("../domain/mfg.constants");
+const {
+  dayRange,
+  wantsConfirmDuplicate,
+  sameDayDuplicateError,
+} = require("../../utils/sameDay");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -718,10 +723,34 @@ async function createAdjustment(data) {
     throw httpError("Product is required for finished goods", 400);
   }
 
+  const movementDate = parseMovementDate(data.movementDate || new Date());
   let warehouseId = data.warehouse;
   if (!warehouseId) {
     const wh = await getDefaultWarehouse();
     warehouseId = wh._id;
+  }
+
+  if (!wantsConfirmDuplicate(data)) {
+    const { start, end } = dayRange(movementDate);
+    const existing = await StockMovement.findOne({
+      refType: { $in: ["", null] },
+      refId: null,
+      itemType: data.itemType,
+      direction: data.direction,
+      product: data.product || null,
+      warehouse: warehouseId,
+      reason: { $in: ["adjustment", null] },
+      movementDate: { $gte: start, $lte: end },
+    })
+      .select("_id")
+      .lean();
+    if (existing) {
+      const err = sameDayDuplicateError(
+        "Trying to create another inventory adjustment of the same type on the same day. Do you want to continue?"
+      );
+      err.existingId = existing._id;
+      throw err;
+    }
   }
 
   return recordMovement({
@@ -732,7 +761,7 @@ async function createAdjustment(data) {
     unit: data.itemType === "finished_good" ? "pcs" : "kg",
     product: data.product || null,
     warehouse: warehouseId,
-    movementDate: data.movementDate || new Date(),
+    movementDate,
     notes: data.notes?.trim() || "Manual adjustment",
   });
 }

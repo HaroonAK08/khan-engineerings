@@ -16,6 +16,11 @@ const {
 } = require("./labour-groups");
 const mongoose = require("mongoose");
 const { withNetLineTotal } = require("../../utils/builty-discount");
+const {
+  dayRange,
+  wantsConfirmDuplicate,
+  sameDayDuplicateError,
+} = require("../../utils/sameDay");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -99,11 +104,30 @@ async function createEntry(data) {
   if (!Number.isFinite(amount) || amount <= 0) {
     throw httpError("Amount must be greater than 0", 400);
   }
+  const entryDate = parseDate(data.entryDate || new Date(), "Entry date");
+  if (!wantsConfirmDuplicate(data)) {
+    const { start, end } = dayRange(entryDate);
+    const existing = await FinanceEntry.findOne({
+      type: data.type,
+      category,
+      amount: roundMoney(amount),
+      entryDate: { $gte: start, $lte: end },
+    })
+      .select("_id")
+      .lean();
+    if (existing) {
+      const err = sameDayDuplicateError(
+        `Trying to create another ${data.type} entry for "${category}" on the same day. Do you want to continue?`
+      );
+      err.existingId = existing._id;
+      throw err;
+    }
+  }
   return FinanceEntry.create({
     type: data.type,
     category,
     amount: roundMoney(amount),
-    entryDate: parseDate(data.entryDate || new Date(), "Entry date"),
+    entryDate,
     notes: data.notes?.trim() || "",
     reference: data.reference?.trim() || "",
   });

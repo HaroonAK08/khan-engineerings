@@ -9,6 +9,11 @@ const inventoryService = require("../inventory/inventory.service");
 const builtyService = require("../builty/builty.service");
 const { materialTypeToItemType } = require("../domain/mfg.constants");
 const { applyDiscount } = require("../../utils/builty-discount");
+const {
+  dayRange,
+  wantsConfirmDuplicate,
+  sameDayDuplicateError,
+} = require("../../utils/sameDay");
 
 const DISPOSITIONS = ["returned", "rework"];
 
@@ -606,6 +611,25 @@ async function create(data) {
   const { items, refundTotal, mfgLossTotal } = await buildClaimItems(customerId, data, { builty });
   const claimDate = parseDate(data.claimDate || new Date(), "Claim date");
   const claimNo = data.claimNo?.trim() || (await nextClaimNo());
+
+  if (!wantsConfirmDuplicate(data)) {
+    const { start, end } = dayRange(claimDate);
+    const existing = await Claim.findOne({
+      customer: customerId,
+      builty: builty?._id || null,
+      claimDate: { $gte: start, $lte: end },
+      status: { $ne: "cancelled" },
+    })
+      .select("_id")
+      .lean();
+    if (existing) {
+      const err = sameDayDuplicateError(
+        "Trying to create another claim for the same party on the same day. Do you want to continue?"
+      );
+      err.existingId = existing._id;
+      throw err;
+    }
+  }
 
   const claim = await Claim.create({
     claimNo,

@@ -442,6 +442,7 @@ export type HandoutAudience = "party" | "group" | "supplier" | "builty";
 export async function getHandoutPreview(params: {
   audience: HandoutAudience;
   id: string;
+  language?: "en" | "ur";
   dateFrom?: string;
   dateTo?: string;
 }) {
@@ -451,6 +452,7 @@ export async function getHandoutPreview(params: {
   };
   if (params.dateFrom) query.dateFrom = params.dateFrom;
   if (params.dateTo) query.dateTo = params.dateTo;
+  if (params.language) query.language = params.language;
   const { data } = await api.get<{ report: CombinedReportPreview }>("/reports/handout", {
     params: query,
     timeout: 90_000,
@@ -462,6 +464,7 @@ export async function downloadHandout(params: {
   audience: HandoutAudience;
   id: string;
   format: "pdf" | "xlsx";
+  language?: "en" | "ur";
   dateFrom?: string;
   dateTo?: string;
   filename?: string;
@@ -473,6 +476,7 @@ export async function downloadHandout(params: {
   };
   if (params.dateFrom) query.dateFrom = params.dateFrom;
   if (params.dateTo) query.dateTo = params.dateTo;
+  if (params.language) query.language = params.language;
   const { data } = await api.get("/reports/export/handout", {
     params: query,
     responseType: "blob",

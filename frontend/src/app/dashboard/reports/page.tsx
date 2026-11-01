@@ -136,6 +136,7 @@ export default function ReportsHubPage() {
   const [groups, setGroups] = useState<PartyGroup[]>([]);
   const [suppliers, setSuppliers] = useState<Array<{ _id: string; name: string }>>([]);
   const [format, setFormat] = useState<"pdf" | "xlsx">("pdf");
+  const [reportLanguage, setReportLanguage] = useState<"en" | "ur">("en");
   const [summaryOnly, setSummaryOnly] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [customModules, setCustomModules] = useState<ExportKind[]>(
@@ -172,6 +173,7 @@ export default function ReportsHubPage() {
             id: handoutId,
             dateFrom: dateFrom || undefined,
             dateTo: dateTo || undefined,
+            language: reportLanguage,
           })
         );
       } catch (err) {
@@ -201,7 +203,7 @@ export default function ReportsHubPage() {
     } finally {
       setLoadingPreview(false);
     }
-  }, [mode, customModules, dateFrom, dateTo, hydrated, summaryOnly, handout, handoutId, audience]);
+  }, [mode, customModules, dateFrom, dateTo, hydrated, summaryOnly, handout, handoutId, audience, reportLanguage]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -314,6 +316,7 @@ export default function ReportsHubPage() {
           format,
           dateFrom: dateFrom || undefined,
           dateTo: dateTo || undefined,
+          language: reportLanguage,
           filename: handoutName,
         });
         toast.success(t("handout.download"));
@@ -578,6 +581,28 @@ export default function ReportsHubPage() {
           ) : null}
 
           {audience === "builty" && handout ? null : <DateRangeFilter />}
+
+          {handout ? (
+            <div className="flex max-w-xs flex-col gap-1.5">
+              <Label htmlFor="report-language">Report language</Label>
+              <select
+                id="report-language"
+                value={reportLanguage}
+                onChange={(event) =>
+                  setReportLanguage(event.target.value === "ur" ? "ur" : "en")
+                }
+                className="h-10 rounded-lg border border-input bg-background px-3 text-sm"
+              >
+                <option value="en">English</option>
+                <option value="ur">اردو (Urdu)</option>
+              </select>
+              {reportLanguage === "ur" ? (
+                <p className="text-xs text-muted-foreground">
+                  Add Urdu names in Products to show product names in Urdu.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
 
           {handout ? null : (
           <div>

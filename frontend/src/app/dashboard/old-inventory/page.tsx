@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Loader2, Pencil, Plus } from "lucide-react";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { ProductSearchSelect } from "@/components/products/product-search-select";
-import { apiError } from "@/lib/materials-api";
+import { apiError, withSameDayConfirm } from "@/lib/materials-api";
 import { todayInput } from "@/lib/date-range";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 import {
@@ -254,15 +254,19 @@ export default function OldInventoryPage() {
     setSaving(true);
     try {
       if (dialogMode === "add") {
-        await createAdjustment({
-          itemType: "finished_good",
-          direction: "in",
-          quantity: qty,
-          product: productId,
-          warehouse: oldWarehouseId,
-          movementDate: todayInput(),
-          notes: notes.trim() || "Old inventory stock add",
-        });
+        const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
+          createAdjustment({
+            itemType: "finished_good",
+            direction: "in",
+            quantity: qty,
+            product: productId,
+            warehouse: oldWarehouseId,
+            movementDate: todayInput(),
+            notes: notes.trim() || "Old inventory stock add",
+            confirmDuplicate,
+          })
+        );
+        if (cancelled) return;
         toast.success(t("oldInv.added"));
       } else if (editing) {
         const current = editing.quantity;
@@ -272,15 +276,19 @@ export default function OldInventoryPage() {
           setSaving(false);
           return;
         }
-        await createAdjustment({
-          itemType: "finished_good",
-          direction: delta > 0 ? "in" : "out",
-          quantity: Math.abs(delta),
-          product: editing.productId,
-          warehouse: editing.warehouseId || oldWarehouseId,
-          movementDate: todayInput(),
-          notes: notes.trim() || "Old inventory stock edit",
-        });
+        const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
+          createAdjustment({
+            itemType: "finished_good",
+            direction: delta > 0 ? "in" : "out",
+            quantity: Math.abs(delta),
+            product: editing.productId,
+            warehouse: editing.warehouseId || oldWarehouseId,
+            movementDate: todayInput(),
+            notes: notes.trim() || "Old inventory stock edit",
+            confirmDuplicate,
+          })
+        );
+        if (cancelled) return;
         toast.success(t("oldInv.updated"));
       }
       setDialogMode(null);

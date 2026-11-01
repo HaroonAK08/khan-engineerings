@@ -38,6 +38,7 @@ import { useI18n } from "@/hooks/use-i18n";
 
 const productSchema = z.object({
   name: z.string().min(1, "Name is required"),
+  nameUr: z.string().optional(),
   sku: z.string().optional(),
   description: z.string().optional(),
   unitLabel: z.string().optional(),
@@ -75,6 +76,7 @@ export default function ProductsPage() {
     resolver: zodResolver(productSchema),
     defaultValues: {
       name: "",
+      nameUr: "",
       sku: "",
       description: "",
       unitLabel: "pcs",
@@ -128,6 +130,7 @@ export default function ProductsPage() {
     setEditing(null);
     form.reset({
       name: "",
+      nameUr: "",
       sku: "",
       description: "",
       unitLabel: "pcs",
@@ -147,6 +150,7 @@ export default function ProductsPage() {
     setEditing(product);
     form.reset({
       name: product.name,
+      nameUr: product.nameUr || "",
       sku: product.sku || "",
       description: product.description || "",
       unitLabel: product.unitLabel || "pcs",
@@ -352,6 +356,10 @@ export default function ProductsPage() {
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="name">{t("common.name")}</Label>
               <Input id="name" {...form.register("name")} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="nameUr">نام اردو (Urdu name)</Label>
+              <Input id="nameUr" dir="rtl" {...form.register("nameUr")} />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="family">{t("prod.family")}</Label>

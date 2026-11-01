@@ -2,6 +2,23 @@ const ExcelJS = require("exceljs");
 const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
+const crypto = require("crypto");
+const { execFile } = require("child_process");
+const { promisify } = require("util");
+const execFileAsync = promisify(execFile);
+// FreeSerif includes both Urdu/Arabic and Latin glyphs, so mixed strings such
+// as a party name plus an Urdu label do not render as missing-glyph boxes.
+const URDU_FONT = "/usr/share/fonts/truetype/freefont/FreeSerif.ttf";
+const URDU_RE = /[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]/;
+
+function pdfFont(value, bold = false) {
+  return URDU_RE.test(String(value ?? ""))
+    ? "Urdu"
+    : bold
+      ? "Helvetica-Bold"
+      : "Helvetica";
+}
 
 let cachedLogo;
 function companyLogo() {
@@ -154,13 +171,150 @@ function isTotalRow(cells) {
   return first === "total" || first.startsWith("total ");
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function findChrome() {
+  return process.env.CHROME_PATH || "/usr/bin/google-chrome";
+}
+
+async function buildPdfWithChrome({
+  title,
+  subtitle,
+  columns,
+  rows,
+  metaLines = [],
+  metaPairs = null,
+  sections = null,
+  columnWidths = null,
+  columnAlign = null,
+  theme = "report",
+  layout = "portrait",
+}) {
+  const isLandscape = String(layout).toLowerCase() === "landscape";
+  const tableSections =
+    Array.isArray(sections) && sections.length > 0
+      ? sections
+      : [{ heading: null, columns: columns || [], rows: rows || [] }];
+  const logo = companyLogo();
+  const logoSrc = logo ? `data:image/png;base64,${logo.toString("base64")}` : "";
+  const pairs =
+    Array.isArray(metaPairs) && metaPairs.length > 0
+      ? metaPairs
+      : (metaLines || []).map((lineText) => {
+          const raw = String(lineText || "");
+          const idx = raw.indexOf(":");
+          return idx === -1
+            ? [raw, ""]
+            : [raw.slice(0, idx).trim(), raw.slice(idx + 1).trim()];
+        });
+
+  const renderCell = (value, align = "left", header = false) => {
+    const text = String(value ?? "");
+    const direction = URDU_RE.test(text) ? "rtl" : "ltr";
+    return `<${header ? "th" : "td"} dir="auto" style="text-align:${align};direction:${direction}">${escapeHtml(text).replace(/\n/g, "<br>")}</${header ? "th" : "td"}>`;
+  };
+  const renderRows = (section) =>
+    (section.rows || [])
+      .map((row, rowIndex) => {
+        const cells = Array.isArray(row) ? row : row?.cells || [];
+        const bold = Boolean(row && !Array.isArray(row) && row.bold) || isTotalRow(cells);
+        const bg = row && !Array.isArray(row) && row.bg ? row.bg : rowIndex % 2 ? "#f8fafb" : "#ffffff";
+        const aligns = section.columnAlign || columnAlign || [];
+        return `<tr style="background:${escapeHtml(bg)};${bold ? "font-weight:700;" : ""}">${cells
+          .map((cell, i) =>
+            renderCell(
+              cell,
+              cellAlign(aligns, i, i >= cells.length - 3 && (section.columns || []).length >= 4 ? "right" : "left")
+            )
+          )
+          .join("")}</tr>`;
+      })
+      .join("");
+
+  const sectionsHtml = tableSections
+    .map((section) => {
+      const cols = section.columns || [];
+      const widths = normalizeWidths(Math.max(cols.length, 1), section.columnWidths || columnWidths);
+      const aligns = section.columnAlign || columnAlign || [];
+      return `<section>${section.heading ? `<h3>${escapeHtml(section.heading)}</h3>` : ""}
+        <table><colgroup>${widths.map((width) => `<col style="width:${width * 100}%">`).join("")}</colgroup>
+        ${cols.length ? `<thead><tr>${cols.map((col, i) => renderCell(col, cellAlign(aligns, i), true)).join("")}</tr></thead>` : ""}
+        <tbody>${renderRows(section)}</tbody></table></section>`;
+    })
+    .join("");
+
+  const metaHtml = pairs.length
+    ? `<div class="meta">${pairs
+        .map(
+          ([key, value]) =>
+            `<div><small>${escapeHtml(key)}</small><strong dir="auto">${escapeHtml(value)}</strong></div>`
+        )
+        .join("")}</div>`
+    : "";
+  const html = `<!doctype html><html><head><meta charset="utf-8"><style>
+    @font-face{font-family:Urdu;src:url(file:///usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf)}
+    *{box-sizing:border-box} @page{size:A4 ${isLandscape ? "landscape" : "portrait"};margin:12mm 10mm 15mm}
+    body{margin:0;color:#1a1a1a;font-family:Arial,"Noto Naskh Arabic",sans-serif;font-size:${isLandscape ? 9 : 8.5}pt}
+    .top{border-top:3px solid #173c55;padding-top:5px;display:flex;align-items:flex-start;gap:10px}
+    .logo{width:32px;height:32px;object-fit:contain}.title{font-size:15pt;font-weight:700;flex:1}
+    .stamp{font-size:7pt;color:#5c5c5c;text-align:right}.subtitle{font-size:9pt;color:#5c5c5c;margin:3px 0 12px}
+    .meta{display:grid;grid-template-columns:repeat(${Math.min(3, Math.max(1, pairs.length))},1fr);gap:10px;background:#f7f9fa;border:1px solid #d7dee5;border-radius:4px;padding:8px;margin:6px 0 14px}
+    .meta small{display:block;color:#5c5c5c;font-size:7pt}.meta strong{display:block;font-size:9pt;margin-top:3px}
+    h3{font-size:10pt;background:#e6ecf2;padding:4px 8px;margin:10px 0 5px;border-radius:3px}
+    table{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:12px}
+    th,td{border:1px solid #d7dee5;padding:5px;vertical-align:middle;overflow-wrap:anywhere;line-height:1.35}
+    th{background:#eceff1;font-weight:700} thead{display:table-header-group} tr{page-break-inside:avoid}
+    </style></head><body>
+    ${theme === "report" ? `<div class="top">${logoSrc ? `<img class="logo" src="${logoSrc}">` : ""}<div class="title" dir="auto">${escapeHtml(title || "Report")}</div><div class="stamp">Generated ${escapeHtml(new Date().toISOString().slice(0, 16).replace("T", " "))}</div></div>${subtitle ? `<div class="subtitle" dir="auto">${escapeHtml(subtitle)}</div>` : ""}${metaHtml}` : `<h1 dir="auto">${escapeHtml(title || "Report")}</h1>${metaHtml}`}
+    ${sectionsHtml}</body></html>`;
+
+  const id = crypto.randomBytes(12).toString("hex");
+  const htmlPath = path.join(os.tmpdir(), `khan-report-${id}.html`);
+  const pdfPath = path.join(os.tmpdir(), `khan-report-${id}.pdf`);
+  try {
+    fs.writeFileSync(htmlPath, html);
+    await execFileAsync(findChrome(), [
+      "--headless=new",
+      "--no-sandbox",
+      "--disable-gpu",
+      "--disable-dev-shm-usage",
+      "--no-pdf-header-footer",
+      `--print-to-pdf=${pdfPath}`,
+      `file://${htmlPath}`,
+    ], { timeout: 120000 });
+    return fs.readFileSync(pdfPath);
+  } finally {
+    for (const file of [htmlPath, pdfPath]) {
+      try {
+        fs.unlinkSync(file);
+      } catch {}
+    }
+  }
+}
+
+async function buildPdf(options) {
+  try {
+    return await buildPdfWithChrome(options);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+    return buildPdfPdfKit(options);
+  }
+}
+
 /**
  * Stream a PDF table report into a buffer.
  * Pass either columns+rows, or sections: [{ heading, columns, rows, columnWidths?, columnAlign? }].
  * Options: theme "plain" | "report" (default report), columnWidths, columnAlign, metaPairs, layout.
  * Rows stay on one page (no orphan lines). Oversized item cells split into continuation rows.
  */
-function buildPdf({
+function buildPdfPdfKit({
   title,
   subtitle,
   columns,
@@ -195,6 +349,15 @@ function buildPdf({
     doc.on("data", (c) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
+    doc.registerFont("Urdu", URDU_FONT);
+    const originalText = doc.text.bind(doc);
+    doc.text = (value, ...args) => {
+      if (URDU_RE.test(String(value ?? ""))) {
+        doc.font("Urdu");
+        return originalText(value, ...args);
+      }
+      return originalText(value, ...args);
+    };
 
     const left = doc.page.margins.left;
     const right = doc.page.width - doc.page.margins.right;
@@ -334,13 +497,13 @@ function buildPdf({
 
       function measureHeaderHeight() {
         if (!cols.length) return 0;
-        doc.font("Helvetica-Bold").fontSize(headerSize);
-        const heights = cols.map((col, i) =>
-          doc.heightOfString(String(col), {
+        const heights = cols.map((col, i) => {
+          doc.font(pdfFont(col, true)).fontSize(headerSize);
+          return doc.heightOfString(String(col), {
             width: Math.max(widths[i] - padX * 2, 8),
             align: cellAlign(aligns, i),
-          })
-        );
+          });
+        });
         return Math.max(16, ...heights) + padY * 2;
       }
 
@@ -369,13 +532,13 @@ function buildPdf({
       }
 
       function measureCells(cells, bold) {
-        doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(bodySize);
-        const heights = cells.map((cell, i) =>
-          doc.heightOfString(String(cell ?? ""), {
+        const heights = cells.map((cell, i) => {
+          doc.font(pdfFont(cell, bold)).fontSize(bodySize);
+          return doc.heightOfString(String(cell ?? ""), {
             width: Math.max((widths[i] || usableWidth / Math.max(cells.length, 1)) - padX * 2, 8),
             align: cellAlign(aligns, i, i >= cells.length - 3 ? "right" : "left"),
-          })
-        );
+          });
+        });
         return Math.max(14, ...heights) + padY * 2;
       }
 
@@ -395,7 +558,7 @@ function buildPdf({
         const lines = raw.split("\n").filter((l) => l.length > 0);
         if (lines.length <= 1) return [raw];
         const w = Math.max((widths[colIndex] || usableWidth) - padX * 2, 8);
-        doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(bodySize);
+        doc.font(pdfFont(raw, bold)).fontSize(bodySize);
         const chunks = [];
         let current = [];
         for (const part of lines) {
@@ -425,6 +588,7 @@ function buildPdf({
         let tallest = 0;
         let tallIdx = 1;
         cells.forEach((cell, i) => {
+          doc.font(pdfFont(cell, bold)).fontSize(bodySize);
           const ch = doc.heightOfString(String(cell ?? ""), {
             width: Math.max((widths[i] || 40) - padX * 2, 8),
           });

@@ -7,7 +7,7 @@ import { History, Loader2, Pencil, Plus } from "lucide-react";
 import { InventorySubnav } from "@/components/layout/inventory-subnav";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { ProductSearchSelect } from "@/components/products/product-search-select";
-import { apiError, formatMoney } from "@/lib/materials-api";
+import { apiError, formatMoney, withSameDayConfirm } from "@/lib/materials-api";
 import { todayInput } from "@/lib/date-range";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 import {
@@ -254,15 +254,19 @@ export default function FinishedGoodsPage() {
     setSaving(true);
     try {
       if (dialogMode === "add") {
-        await createAdjustment({
-          itemType: "finished_good",
-          direction: "in",
-          quantity: qty,
-          product: productId,
-          warehouse: newWarehouseId || undefined,
-          movementDate: todayInput(),
-          notes: notes.trim() || "Finished goods stock add (no material deduction)",
-        });
+        const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
+          createAdjustment({
+            itemType: "finished_good",
+            direction: "in",
+            quantity: qty,
+            product: productId,
+            warehouse: newWarehouseId || undefined,
+            movementDate: todayInput(),
+            notes: notes.trim() || "Finished goods stock add (no material deduction)",
+            confirmDuplicate,
+          })
+        );
+        if (cancelled) return;
         toast.success(t("finished.added"));
       } else if (editing) {
         const current = editing.quantity;
@@ -272,15 +276,19 @@ export default function FinishedGoodsPage() {
           setSaving(false);
           return;
         }
-        await createAdjustment({
-          itemType: "finished_good",
-          direction: delta > 0 ? "in" : "out",
-          quantity: Math.abs(delta),
-          product: editing.productId,
-          warehouse: editing.warehouseId || newWarehouseId || undefined,
-          movementDate: todayInput(),
-          notes: notes.trim() || "Finished goods stock edit (no material deduction)",
-        });
+        const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
+          createAdjustment({
+            itemType: "finished_good",
+            direction: delta > 0 ? "in" : "out",
+            quantity: Math.abs(delta),
+            product: editing.productId,
+            warehouse: editing.warehouseId || newWarehouseId || undefined,
+            movementDate: todayInput(),
+            notes: notes.trim() || "Finished goods stock edit (no material deduction)",
+            confirmDuplicate,
+          })
+        );
+        if (cancelled) return;
         toast.success(t("finished.updated"));
       }
       setDialogMode(null);

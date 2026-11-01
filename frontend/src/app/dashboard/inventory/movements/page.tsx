@@ -11,7 +11,7 @@ import { TallyCell, TallyHead } from "@/components/tally-check";
 import { useI18n } from "@/hooks/use-i18n";
 import { useTallyChecks } from "@/hooks/use-tally-checks";
 import { todayInput } from "@/lib/date-range";
-import { apiError, formatDate } from "@/lib/materials-api";
+import { apiError, formatDate, withSameDayConfirm } from "@/lib/materials-api";
 import { listProducts } from "@/lib/production-api";
 import {
   createAdjustment,
@@ -104,11 +104,15 @@ export default function MovementsPage() {
     }
     setSaving(true);
     try {
-      await createAdjustment({
-        ...values,
-        product: values.product || undefined,
-        warehouse: values.warehouse || undefined,
-      });
+      const { cancelled } = await withSameDayConfirm((confirmDuplicate) =>
+        createAdjustment({
+          ...values,
+          product: values.product || undefined,
+          warehouse: values.warehouse || undefined,
+          confirmDuplicate,
+        })
+      );
+      if (cancelled) return;
       toast.success("Adjustment recorded");
       form.reset({
         itemType: values.itemType,

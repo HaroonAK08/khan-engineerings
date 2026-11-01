@@ -4112,9 +4112,12 @@ async function getCombinedPreview(query) {
   };
 }
 
-function productLabel(item) {
+function productLabel(item, language = "en") {
   const product = item?.product;
-  if (product && typeof product === "object" && product.name) return product.name;
+  if (product && typeof product === "object") {
+    if (language === "ur" && product.nameUr?.trim()) return product.nameUr.trim();
+    if (product.name) return product.name;
+  }
   return "Product";
 }
 
@@ -4135,8 +4138,26 @@ function splitProductWeight(rawName) {
 }
 
 /** Product name with the "kg" suffix stripped. */
-function productNameAndWeight(item) {
-  return splitProductWeight(productLabel(item));
+function productNameAndWeight(item, language = "en") {
+  return splitProductWeight(productLabel(item, language));
+}
+
+function productFamilyLabel(item, language = "en") {
+  const family = item?.product?.family || item?.family;
+  if (language === "ur") return family === "drum" ? "ڈرم" : "ہب";
+  return family === "drum" ? "Drum" : family === "hub" ? "Hub" : "—";
+}
+
+function reportText(language, english, urdu) {
+  return language === "ur" ? urdu : english;
+}
+
+function paymentReference(reference, language) {
+  const value = String(reference || "").trim();
+  if (language !== "ur") return value || "Party payment";
+  if (!value || /^party payment$/i.test(value)) return "فریق کی ادائیگی";
+  if (/^cheque received$/i.test(value)) return "چیک موصول";
+  return value;
 }
 
 function lineRate(item) {
@@ -4263,20 +4284,9 @@ const BUILTY_COLUMN_ALIGN = [
   "right",
 ];
 
-const PARTY_TRANSACTION_COLUMNS = [
-  "Date",
-  "Type",
-  "Builty",
-  "Bill No.",
-  "Product / Reference",
-  "Qty",
-  "Rate (Rs.)",
-  "Amount (Rs.)",
-  "Paid / Received (Rs.)",
-  "Remaining (Rs.)",
-];
-const PARTY_TRANSACTION_COLUMN_WIDTHS = [0.8, 0.9, 0.7, 0.75, 2.2, 0.5, 0.8, 1.0, 1.1, 1.0];
+const PARTY_TRANSACTION_COLUMN_WIDTHS = [0.8, 0.9, 0.7, 0.75, 0.8, 2.2, 0.5, 0.8, 1.0, 1.1, 1.0];
 const PARTY_TRANSACTION_COLUMN_ALIGN = [
+  "left",
   "left",
   "left",
   "left",
@@ -4290,12 +4300,13 @@ const PARTY_TRANSACTION_COLUMN_ALIGN = [
 ];
 
 async function partyHandout(customerId, query) {
+  const language = query.language === "ur" ? "ur" : "en";
   const statement = await customerStatement(customerId, query);
   const builties = await Builty.find({
     customer: customerId,
     ...dateRangeFilter("builtyDate", query.dateFrom, query.dateTo),
   })
-    .populate("items.product", "name")
+    .populate("items.product", "name nameUr family")
     .sort({ builtyDate: 1, createdAt: 1 });
   const payments = await CustomerPayment.find({
     customer: customerId,
@@ -4305,16 +4316,16 @@ async function partyHandout(customerId, query) {
   const billed = roundMoney(builties.reduce((sum, row) => sum + (Number(row.totalAmount) || 0), 0));
   const received = roundMoney(payments.reduce((sum, row) => sum + (Number(row.amount) || 0), 0));
   const meta = {
-    Party: statement.party.name,
-    Phone: statement.party.phone || "—",
-    Period: periodLabel(query.dateFrom, query.dateTo),
-    "Previous remaining": moneyRs(statement.openingBalance),
-    "Billed in period": moneyRs(billed),
-    "Received in period": moneyRs(received),
-    "Still to receive": moneyRs(statement.periodBalance),
+    [reportText(language, "Party", "فریق")]: statement.party.name,
+    [reportText(language, "Phone", "فون")]: statement.party.phone || "—",
+    [reportText(language, "Period", "مدت")]: periodLabel(query.dateFrom, query.dateTo),
+    [reportText(language, "Previous remaining", "پچھلا بقایا")]: moneyRs(statement.openingBalance),
+    [reportText(language, "Billed in period", "مدت کا بل")]: moneyRs(billed),
+    [reportText(language, "Received in period", "مدت میں وصولی")]: moneyRs(received),
+    [reportText(language, "Still to receive", "وصولی باقی")]: moneyRs(statement.periodBalance),
   };
   if (Math.abs(statement.periodBalance - statement.closingBalance) > 0.009) {
-    meta["Remaining now"] = moneyRs(statement.closingBalance);
+    meta[reportText(language, "Remaining now", "ابھی باقی")] = moneyRs(statement.closingBalance);
   }
 
   const transactionRows = [];
@@ -4328,10 +4339,11 @@ async function partyHandout(customerId, query) {
         transactionRows.push({
           cells: [
             fmtDate(line.date),
-            "Builty",
+            reportText(language, "Builty", "بلٹی"),
             line.builtyNo || "—",
             line.billNo || "—",
-            line.reference || "Builty",
+            "—",
+            line.reference || reportText(language, "Builty", "بلٹی"),
             "—",
             "—",
             money(line.debit),
@@ -4342,13 +4354,14 @@ async function partyHandout(customerId, query) {
         continue;
       }
       items.forEach((item, index) => {
-        const { name } = productNameAndWeight(item);
+        const { name } = productNameAndWeight(item, language);
         transactionRows.push({
           cells: [
             index === 0 ? fmtDate(line.date) : "",
-            index === 0 ? "Builty" : "",
+            index === 0 ? reportText(language, "Builty", "بلٹی") : "",
             index === 0 ? line.builtyNo || "—" : "",
             index === 0 ? line.billNo || "—" : "",
+            productFamilyLabel(item, language),
             name,
             item.quantity ?? "",
             money(lineRate(item)),
@@ -4365,11 +4378,12 @@ async function partyHandout(customerId, query) {
       transactionRows.push({
         cells: [
           fmtDate(line.date),
-          "Party payment",
+          reportText(language, "Party payment", "فریق کی ادائیگی"),
           "—",
           "—",
-          payment?.reference || line.reference || "Party payment",
-          payment?.method || "",
+          "—",
+          paymentReference(payment?.reference || line.reference, language),
+          "",
           "",
           "",
           money(line.credit),
@@ -4381,7 +4395,8 @@ async function partyHandout(customerId, query) {
       transactionRows.push({
         cells: [
           fmtDate(line.date),
-          "Adjustment",
+          reportText(language, "Adjustment", "ایڈجسٹمنٹ"),
+          "—",
           "—",
           "—",
           line.reference || line.notes || "Adjustment",
@@ -4399,7 +4414,8 @@ async function partyHandout(customerId, query) {
     transactionRows.push({
       cells: [
         "",
-        "Total",
+        reportText(language, "Total", "کل"),
+        "",
         "",
         "",
         "",
@@ -4416,8 +4432,20 @@ async function partyHandout(customerId, query) {
   const sections = [
     section(
       "transactions",
-      "Party transactions",
-      PARTY_TRANSACTION_COLUMNS,
+      reportText(language, "Party transactions", "فریق کے لین دین"),
+      [
+        reportText(language, "Date", "تاریخ"),
+        reportText(language, "Type", "قسم"),
+        reportText(language, "Builty", "بلٹی"),
+        reportText(language, "Bill No.", "بل نمبر"),
+        reportText(language, "H/D", "ہب/ڈرم"),
+        reportText(language, "Product / Reference", "پروڈکٹ / حوالہ"),
+        reportText(language, "Qty", "مقدار"),
+        reportText(language, "Rate (Rs.)", "ریٹ (روپے)"),
+        reportText(language, "Amount (Rs.)", "رقم (روپے)"),
+        reportText(language, "Paid / Received (Rs.)", "ادا / وصول (روپے)"),
+        reportText(language, "Remaining (Rs.)", "باقی (روپے)"),
+      ],
       transactionRows,
       meta,
       {
@@ -4428,7 +4456,7 @@ async function partyHandout(customerId, query) {
   ];
 
   return {
-    title: `Statement — ${statement.party.name}`,
+    title: `${reportText(language, "Statement", "فریق کا بیان")} — ${statement.party.name}`,
     filename: `party-${fileSlug(statement.party.name)}`,
     layout: "landscape",
     period: periodLabel(query.dateFrom, query.dateTo),

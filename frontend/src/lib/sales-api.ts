@@ -47,6 +47,7 @@ export type Salesman = {
 export type ProductRef = {
   _id: string;
   name: string;
+  nameUr?: string;
   sku?: string;
   unitLabel?: string;
   weightKg?: number;

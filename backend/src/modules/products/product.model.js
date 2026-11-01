@@ -4,6 +4,7 @@ const { PRODUCT_FAMILY_IDS } = require("../domain/mfg.constants");
 const productSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
+    nameUr: { type: String, trim: true, default: "" },
     sku: { type: String, trim: true, default: "" },
     description: { type: String, trim: true, default: "" },
     unitLabel: { type: String, trim: true, default: "pcs" },

@@ -145,6 +145,7 @@ export async function createAdjustment(body: {
   warehouse?: string;
   movementDate?: string;
   notes?: string;
+  confirmDuplicate?: boolean;
 }) {
   const { data } = await api.post<{ movement: StockMovement }>("/inventory/movements", body);
   return data.movement;
