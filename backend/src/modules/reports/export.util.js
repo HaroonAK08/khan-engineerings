@@ -268,15 +268,15 @@ async function buildPdfWithChrome({
   const html = `<!doctype html><html><head><meta charset="utf-8"><style>
     @font-face{font-family:Urdu;src:url(data:font/woff2;base64,${urduFontData}) format("woff2");font-weight:400}
     *{box-sizing:border-box} @page{size:A4 ${isLandscape ? "landscape" : "portrait"};margin:12mm 10mm 15mm}
-    body{margin:0;color:#1a1a1a;font-family:Arial,Urdu,sans-serif;font-size:${isLandscape ? 9 : 8.5}pt}
+    body{margin:0;color:#1a1a1a;font-family:Arial,Urdu,sans-serif;font-size:${isLandscape ? 9 : 8.5}pt;font-weight:500}
     .top{border-top:3px solid #173c55;padding-top:5px;display:flex;align-items:flex-start;gap:10px}
     .logo{width:32px;height:32px;object-fit:contain}.title{font-size:15pt;font-weight:700;flex:1}
-    .stamp{font-size:7pt;color:#5c5c5c;text-align:right}.subtitle{font-size:9pt;color:#5c5c5c;margin:3px 0 12px}
+    .stamp{font-size:7pt;color:#5c5c5c;text-align:right;font-weight:500}.subtitle{font-size:9pt;color:#5c5c5c;margin:3px 0 12px;font-weight:500}
     .meta{display:grid;grid-template-columns:repeat(${Math.min(3, Math.max(1, pairs.length))},1fr);gap:10px;background:#f7f9fa;border:1px solid #d7dee5;border-radius:4px;padding:8px;margin:6px 0 14px}
-    .meta small{display:block;color:#5c5c5c;font-size:7pt}.meta strong{display:block;font-size:9pt;margin-top:3px}
-    h3{font-size:10pt;background:#e6ecf2;padding:4px 8px;margin:10px 0 5px;border-radius:3px}
+    .meta small{display:block;color:#5c5c5c;font-size:7pt;font-weight:600}.meta strong{display:block;font-size:9pt;margin-top:3px;font-weight:700}
+    h3{font-size:10pt;background:#e6ecf2;padding:4px 8px;margin:10px 0 5px;border-radius:3px;font-weight:700}
     table{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:12px}
-    th,td{border:1px solid #d7dee5;padding:5px;vertical-align:middle;overflow-wrap:anywhere;line-height:1.35}
+    th,td{border:1px solid #d7dee5;padding:5px;vertical-align:middle;overflow-wrap:anywhere;line-height:1.35;font-weight:500}
     th{background:#eceff1;font-weight:700} thead{display:table-header-group} tr{page-break-inside:avoid}
     </style></head><body>
     ${theme === "report" ? `<div class="top">${logoSrc ? `<img class="logo" src="${logoSrc}">` : ""}<div class="title" dir="auto">${escapeHtml(title || "Report")}</div><div class="stamp">Generated ${escapeHtml(new Date().toISOString().slice(0, 16).replace("T", " "))}</div></div>${subtitle ? `<div class="subtitle" dir="auto">${escapeHtml(subtitle)}</div>` : ""}${metaHtml}` : `<h1 dir="auto">${escapeHtml(title || "Report")}</h1>${metaHtml}`}
