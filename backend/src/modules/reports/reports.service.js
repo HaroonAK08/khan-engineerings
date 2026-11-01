@@ -4223,26 +4223,8 @@ function productLabel(item, language = "en") {
   return "Product";
 }
 
-/**
- * Product names are sometimes typed with the weight baked in, e.g. "Nissan TK20 - 35kg",
- * "Tatra 42kg", or "نسان 34 کلو". Pull the trailing weight off so the Product column
- * stays short (e.g. "Nissan TK20"). Numbers that aren't followed by a weight unit
- * (e.g. "Hino SG 41", "cpb/12") are left untouched.
- */
-const TRAILING_WEIGHT_RE =
-  /\s*-?\s*(\d+(?:\.\d+)?)\s*(?:kgs?|کلوگرام|کلو)\.?\s*$/i;
-
-function splitProductWeight(rawName) {
-  const name = String(rawName || "").trim();
-  const match = name.match(TRAILING_WEIGHT_RE);
-  if (!match) return { name };
-  const cleanName = name.slice(0, match.index).trim();
-  return { name: cleanName || name };
-}
-
-/** Product name with the "kg" suffix stripped. */
 function productNameAndWeight(item, language = "en") {
-  return splitProductWeight(productLabel(item, language));
+  return { name: productLabel(item, language) };
 }
 
 function productFamilyLabel(item, language = "en") {
