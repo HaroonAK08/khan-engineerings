@@ -195,6 +195,7 @@ export default function ReportsHubPage() {
         dateFrom: dateFrom || undefined,
         dateTo: dateTo || undefined,
         summaryOnly,
+        language: reportLanguage,
       });
       setPreview(report);
     } catch (err) {
@@ -326,6 +327,7 @@ export default function ReportsHubPage() {
           dateFrom: dateFrom || undefined,
           dateTo: dateTo || undefined,
           summaryOnly,
+          language: reportLanguage,
         });
         toast.success(summaryOnly ? "Totals report downloaded" : "Full report downloaded");
       } else {
@@ -335,6 +337,7 @@ export default function ReportsHubPage() {
           dateFrom: dateFrom || undefined,
           dateTo: dateTo || undefined,
           summaryOnly,
+          language: reportLanguage,
         });
         toast.success(summaryOnly ? "Totals report downloaded" : "Custom report downloaded");
       }

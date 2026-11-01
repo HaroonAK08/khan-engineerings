@@ -422,11 +422,13 @@ export async function downloadFullReport(params: {
   dateFrom?: string;
   dateTo?: string;
   summaryOnly?: boolean;
+  language?: "en" | "ur";
 }) {
   const query: Record<string, string> = { format: params.format };
   if (params.dateFrom) query.dateFrom = params.dateFrom;
   if (params.dateTo) query.dateTo = params.dateTo;
   if (params.summaryOnly) query.summaryOnly = "1";
+  if (params.language) query.language = params.language;
   const { data } = await api.get("/reports/export/full", {
     params: query,
     responseType: "blob",
@@ -492,6 +494,7 @@ export async function downloadCustomReport(params: {
   dateFrom?: string;
   dateTo?: string;
   summaryOnly?: boolean;
+  language?: "en" | "ur";
 }) {
   const query: Record<string, string> = {
     format: params.format,
@@ -500,6 +503,7 @@ export async function downloadCustomReport(params: {
   if (params.dateFrom) query.dateFrom = params.dateFrom;
   if (params.dateTo) query.dateTo = params.dateTo;
   if (params.summaryOnly) query.summaryOnly = "1";
+  if (params.language) query.language = params.language;
   const { data } = await api.get("/reports/export/custom", {
     params: query,
     responseType: "blob",
@@ -537,12 +541,14 @@ export async function getCombinedReportPreview(params: {
   dateFrom?: string;
   dateTo?: string;
   summaryOnly?: boolean;
+  language?: "en" | "ur";
 }) {
   const query: Record<string, string> = {};
   if (params.modules?.length) query.modules = params.modules.join(",");
   if (params.dateFrom) query.dateFrom = params.dateFrom;
   if (params.dateTo) query.dateTo = params.dateTo;
   if (params.summaryOnly) query.summaryOnly = "1";
+  if (params.language) query.language = params.language;
   const { data } = await api.get<{ report: CombinedReportPreview }>("/reports/preview", {
     params: query,
     timeout: 90_000,
