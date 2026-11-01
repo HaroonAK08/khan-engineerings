@@ -283,7 +283,8 @@ async function buildPdfWithChrome({
     ${sectionsHtml}</body></html>`;
 
   const chrome = await findChrome();
-  const puppeteer = require("puppeteer-core");
+  const puppeteerModule = await import("puppeteer-core");
+  const puppeteer = puppeteerModule.default || puppeteerModule;
   let browser;
   try {
     browser = await puppeteer.launch({
