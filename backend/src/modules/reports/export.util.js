@@ -2,11 +2,6 @@ const ExcelJS = require("exceljs");
 const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const path = require("path");
-const os = require("os");
-const crypto = require("crypto");
-const { execFile } = require("child_process");
-const { promisify } = require("util");
-const execFileAsync = promisify(execFile);
 // FreeSerif includes both Urdu/Arabic and Latin glyphs, so mixed strings such
 // as a party name plus an Urdu label do not render as missing-glyph boxes.
 const URDU_FONT = "/usr/share/fonts/truetype/freefont/FreeSerif.ttf";
@@ -286,29 +281,41 @@ async function buildPdfWithChrome({
     ${theme === "report" ? `<div class="top">${logoSrc ? `<img class="logo" src="${logoSrc}">` : ""}<div class="title" dir="auto">${escapeHtml(title || "Report")}</div><div class="stamp">Generated ${escapeHtml(new Date().toISOString().slice(0, 16).replace("T", " "))}</div></div>${subtitle ? `<div class="subtitle" dir="auto">${escapeHtml(subtitle)}</div>` : ""}${metaHtml}` : `<h1 dir="auto">${escapeHtml(title || "Report")}</h1>${metaHtml}`}
     ${sectionsHtml}</body></html>`;
 
-  const id = crypto.randomBytes(12).toString("hex");
-  const htmlPath = path.join(os.tmpdir(), `khan-report-${id}.html`);
-  const pdfPath = path.join(os.tmpdir(), `khan-report-${id}.pdf`);
+  const chrome = await findChrome();
+  const puppeteer = require("puppeteer-core");
+  let browser;
   try {
-    fs.writeFileSync(htmlPath, html);
-    const chrome = await findChrome();
-    await execFileAsync(chrome.executablePath, [
-      "--headless=new",
+    browser = await puppeteer.launch({
+      executablePath: chrome.executablePath,
+      args: [
+      ...chrome.args,
       "--no-sandbox",
       "--disable-gpu",
       "--disable-dev-shm-usage",
-      "--no-pdf-header-footer",
-      ...chrome.args,
-      `--print-to-pdf=${pdfPath}`,
-      `file://${htmlPath}`,
-    ], { timeout: 120000 });
-    return fs.readFileSync(pdfPath);
+      ],
+      headless: true,
+    });
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: "networkidle0" });
+    return Buffer.from(
+      await page.pdf({
+      format: "A4",
+      landscape: isLandscape,
+      printBackground: true,
+      displayHeaderFooter: false,
+      preferCSSPageSize: true,
+      })
+    );
+  } catch (error) {
+    console.error("Browser PDF generation failed:", {
+      message: error.message,
+      name: error.name,
+      executablePath: chrome.executablePath,
+      vercel: Boolean(process.env.VERCEL),
+    });
+    throw error;
   } finally {
-    for (const file of [htmlPath, pdfPath]) {
-      try {
-        fs.unlinkSync(file);
-      } catch {}
-    }
+    if (browser) await browser.close();
   }
 }
 

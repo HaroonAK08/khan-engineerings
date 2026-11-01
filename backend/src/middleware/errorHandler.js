@@ -4,6 +4,14 @@ function notFound(req, res, next) {
 
 function errorHandler(err, req, res, next) {
   const status = err.statusCode || 500;
+  console.error("API request failed:", {
+    method: req.method,
+    path: req.originalUrl,
+    status,
+    name: err.name,
+    message: err.message,
+    stack: err.stack,
+  });
   const body = {
     message: err.message || "Internal server error",
   };
