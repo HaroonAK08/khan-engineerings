@@ -3981,6 +3981,90 @@ function buildConclusionSection(sections) {
   };
 }
 
+const COMBINED_URDU_LABELS = {
+  "Company position": "کمپنی کی پوزیشن",
+  "Sales": "فروخت",
+  "Purchases": "خریداری",
+  "Production": "پیداوار",
+  "Expenses": "اخراجات",
+  "Inventory": "اسٹاک",
+  "Finance": "مالی امور",
+  "Receivables": "وصول طلب",
+  "Payables": "قابل ادائیگی",
+  "Conclusion": "خلاصہ",
+  "Conclusion — totals": "خلاصہ — کل",
+  "Company position — totals": "کمپنی کی پوزیشن — کل",
+  "Sales — totals": "فروخت — کل",
+  "Purchases — totals": "خریداری — کل",
+  "Production — totals": "پیداوار — کل",
+  "Expenses — totals": "اخراجات — کل",
+  "Inventory — totals": "اسٹاک — کل",
+  "Finance — totals": "مالی امور — کل",
+  "Receivables — totals": "وصول طلب — کل",
+  "Payables — totals": "قابل ادائیگی — کل",
+  "Summary": "خلاصہ",
+  "Item": "آئٹم",
+  "Value": "قدر",
+  "Date": "تاریخ",
+  "Product": "پروڈکٹ",
+  "Quantity": "مقدار",
+  "Qty": "مقدار",
+  "Amount (Rs.)": "رقم (روپے)",
+  "Rate (Rs.)": "ریٹ (روپے)",
+  "Total": "کل",
+  "Period": "مدت",
+  "Modules": "ماڈیولز",
+  "Content": "مواد",
+  "full detail": "مکمل تفصیل",
+  "totals / conclusion only": "صرف کل / خلاصہ",
+};
+
+async function localizeCombinedReport(report, language) {
+  if (language !== "ur") return report;
+  const products = await Product.find({ nameUr: { $exists: true, $ne: "" } })
+    .select("name nameUr")
+    .lean();
+  const productNames = new Map(products.map((p) => [p.name, p.nameUr]));
+  const translate = (value) => {
+    const text = String(value ?? "");
+    if (COMBINED_URDU_LABELS[text]) return COMBINED_URDU_LABELS[text];
+    if (productNames.has(text)) return productNames.get(text);
+    return text
+      .replace(/ — Summary/g, " — خلاصہ")
+      .replace(/ — totals/g, " — کل")
+      .replace(/^Party$/, "فریق")
+      .replace(/^Supplier$/, "سپلائر")
+      .replace(/^Phone$/, "فون")
+      .replace(/^Records$/, "ریکارڈز")
+      .replace(/^Balance$/, "بقایا");
+  };
+  const translateRows = (rows) =>
+    (rows || []).map((row) => {
+      if (!Array.isArray(row)) {
+        return { ...row, cells: Array.isArray(row.cells) ? row.cells.map(translate) : row.cells };
+      }
+      return row.map(translate);
+    });
+  return {
+    ...report,
+    title: report.title.replace("Full company report", "مکمل کمپنی رپورٹ").replace("Custom report", "حسب ضرورت رپورٹ"),
+    sections: report.sections.map((section) => ({
+      ...section,
+      title: translate(section.title),
+      heading: translate(section.heading),
+      columns: (section.columns || []).map(translate),
+      rows: translateRows(section.rows),
+      meta: Object.fromEntries(Object.entries(section.meta || {}).map(([key, value]) => [translate(key), value])),
+      subsections: (section.subsections || null)?.map((sub) => ({
+        ...sub,
+        heading: translate(sub.heading),
+        columns: (sub.columns || []).map(translate),
+        rows: translateRows(sub.rows),
+      })),
+    })),
+  };
+}
+
 async function collectSections(modules, query) {
   const sections = [];
   for (const kind of modules) {
@@ -3993,23 +4077,40 @@ async function collectSections(modules, query) {
 }
 
 async function exportCombined(modules, query, format, res, filenameBase) {
-  const sections = await collectSections(modules, query);
+  let sections = await collectSections(modules, query);
+  const localized = await localizeCombinedReport(
+    { title: "", sections },
+    query.language === "ur" ? "ur" : "en"
+  );
+  sections = localized.sections;
   const summaryOnly = wantsSummaryOnly(query);
 
   const period = periodLabel(query.dateFrom, query.dateTo);
-  const title = summaryOnly
+  let title = summaryOnly
     ? modules.length === COMBINED_MODULES.length
       ? "Full company report — totals"
       : "Custom report — totals"
     : modules.length === COMBINED_MODULES.length
       ? "Full company report"
       : "Custom report";
-  const metaLines = [
-    `Period: ${period}`,
-    `Modules: ${modules.join(", ")}`,
-    summaryOnly ? "Content: totals / conclusion only" : "Content: full detail",
-    `Generated: ${new Date().toISOString().slice(0, 19)}`,
-  ];
+  if (query.language === "ur") {
+    title = summaryOnly
+      ? modules.length === COMBINED_MODULES.length
+        ? "مکمل کمپنی رپورٹ — کل"
+        : "حسب ضرورت رپورٹ — کل"
+      : modules.length === COMBINED_MODULES.length
+        ? "مکمل کمپنی رپورٹ"
+        : "حسب ضرورت رپورٹ";
+  }
+  const metaLines =
+    query.language === "ur"
+      ? [`مدت: ${period}`, `ماڈیولز: ${modules.join(", ")}`, summaryOnly ? "مواد: صرف کل / خلاصہ" : "مواد: مکمل تفصیل"]
+      : [
+          `Period: ${period}`,
+          `Modules: ${modules.join(", ")}`,
+          summaryOnly ? "Content: totals / conclusion only" : "Content: full detail",
+          `Generated: ${new Date().toISOString().slice(0, 19)}`,
+        ];
   const fileBase = summaryOnly ? `${filenameBase}-totals` : filenameBase;
 
   if (format === "pdf") {
@@ -4088,8 +4189,8 @@ async function getCombinedPreview(query) {
     ? parseModules(query.modules)
     : COMBINED_MODULES;
   const summaryOnly = wantsSummaryOnly(query);
-  const sections = await collectSections(modules, query);
-  return {
+  const rawSections = await collectSections(modules, query);
+  const report = {
     title: summaryOnly
       ? modules.length === COMBINED_MODULES.length
         ? "Full company report — totals"
@@ -4100,7 +4201,7 @@ async function getCombinedPreview(query) {
     period: periodLabel(query.dateFrom, query.dateTo),
     modules,
     summaryOnly,
-    sections: sections.map((s) => ({
+    sections: rawSections.map((s) => ({
       id: s.id,
       title: s.title,
       heading: s.heading,
@@ -4110,6 +4211,7 @@ async function getCombinedPreview(query) {
       meta: s.meta || {},
     })),
   };
+  return localizeCombinedReport(report, query.language === "ur" ? "ur" : "en");
 }
 
 function productLabel(item, language = "en") {
