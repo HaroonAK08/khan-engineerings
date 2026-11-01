@@ -4224,12 +4224,13 @@ function productLabel(item, language = "en") {
 }
 
 /**
- * Product names are sometimes typed with the weight baked in, e.g. "Nissan TK20 - 35kg"
- * or "Tatra 42kg". Pull the trailing "<number>kg" off so the Product column stays short
- * (e.g. "Nissan TK20"). Numbers that aren't followed by "kg" (e.g. "Hino SG 41", "cpb/12")
- * are left untouched.
+ * Product names are sometimes typed with the weight baked in, e.g. "Nissan TK20 - 35kg",
+ * "Tatra 42kg", or "نسان 34 کلو". Pull the trailing weight off so the Product column
+ * stays short (e.g. "Nissan TK20"). Numbers that aren't followed by a weight unit
+ * (e.g. "Hino SG 41", "cpb/12") are left untouched.
  */
-const TRAILING_WEIGHT_RE = /\s*-?\s*(\d+(?:\.\d+)?)\s*kgs?\.?\s*$/i;
+const TRAILING_WEIGHT_RE =
+  /\s*-?\s*(\d+(?:\.\d+)?)\s*(?:kgs?|کلوگرام|کلو)\.?\s*$/i;
 
 function splitProductWeight(rawName) {
   const name = String(rawName || "").trim();
