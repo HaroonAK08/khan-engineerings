@@ -344,8 +344,23 @@ async function deletePayrollPeriod(month) {
   return { deleted: true, month: m };
 }
 
+async function getNotes() {
+  const doc = await getAppSettings();
+  return doc.notes || "";
+}
+
+async function setNotes(value) {
+  if (typeof value !== "string") throw httpError("Notes must be text", 400);
+  if (value.length > 50000) throw httpError("Notes must be 50,000 characters or fewer", 400);
+  const doc = await getAppSettings();
+  doc.notes = value;
+  await doc.save();
+  return doc.notes;
+}
+
 module.exports = {
-  listPayrollPeriods,
+  getNotes,
+  setNotes,
   getPayrollPeriod,
   resolveSalaryBounds,
   expenseMatchWithSalaryWindow,

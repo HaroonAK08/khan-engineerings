@@ -25,6 +25,7 @@ const wasteHistorySchema = new mongoose.Schema(
 const settingsSchema = new mongoose.Schema(
   {
     key: { type: String, required: true, unique: true, default: "app" },
+    notes: { type: String, default: "", maxlength: 50000 },
     payrollPeriods: { type: [payrollPeriodSchema], default: [] },
     wasteHubPercent: { type: Number, min: 0, max: 99, default: 6 },
     wasteDrumPercent: { type: Number, min: 0, max: 99, default: 6 },

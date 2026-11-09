@@ -6,6 +6,9 @@ const router = Router();
 
 router.use(requireAuth);
 
+router.get("/notes", controller.getNotes);
+router.put("/notes", controller.setNotes);
+
 router.get("/waste-percent", controller.getWasteSettings);
 router.put("/waste-percent", controller.setWastePercent);
 

@@ -35,6 +35,7 @@ import { NAV_ITEMS } from "./nav-items";
 import { SidebarBrand, SidebarNav } from "./sidebar";
 import { VoiceHeaderControl } from "@/components/voice/voice-header-control";
 import { SimpleCalculator } from "./simple-calculator";
+import { QuickNotes } from "./quick-notes";
 
 function currentTitleKey(pathname: string | null): MessageKey {
   if (!pathname) return "nav.dashboard";
@@ -101,6 +102,7 @@ export function Topbar() {
 
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
         <SimpleCalculator />
+        <QuickNotes />
         <ChequePromiseDueBell />
         <VoiceHeaderControl />
         {user && (

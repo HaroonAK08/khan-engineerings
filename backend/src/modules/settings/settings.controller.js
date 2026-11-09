@@ -1,5 +1,23 @@
 const settingsService = require("./settings.service");
 
+async function getNotes(req, res, next) {
+  try {
+    const notes = await settingsService.getNotes();
+    res.json({ notes });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function setNotes(req, res, next) {
+  try {
+    const notes = await settingsService.setNotes(req.body.notes);
+    res.json({ notes });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function listPayrollPeriods(req, res, next) {
   try {
     const periods = await settingsService.listPayrollPeriods();
@@ -107,6 +125,8 @@ async function setWastePercent(req, res, next) {
 }
 
 module.exports = {
+  getNotes,
+  setNotes,
   listPayrollPeriods,
   getPayrollPeriod,
   upsertPayrollPeriod,
