@@ -4352,8 +4352,8 @@ const BUILTY_COLUMNS = [
   "Qty",
   "Rate (Rs.)",
   "Amount (Rs.)",
-  "Paid (Rs.)",
-  "Remaining (Rs.)",
+  "Allocated (current, Rs.)",
+  "Remaining (current, Rs.)",
 ];
 const BUILTY_COLUMN_WIDTHS = [1.2, 0.8, 0.7, 0.75, 2.0, 0.5, 0.8, 0.95, 0.95, 0.95];
 const BUILTY_COLUMN_ALIGN = [
@@ -4413,6 +4413,7 @@ async function partyHandout(customerId, query) {
     meta[reportText(language, "Remaining now", "ابھی باقی")] = moneyRs(statement.closingBalance);
   }
 
+  // Receipts belong to payment ledger rows, never to invoice allocation snapshots.
   const transactionRows = [];
   for (const line of statement.lines) {
     if (line.type === "invoice") {
@@ -4432,7 +4433,7 @@ async function partyHandout(customerId, query) {
             "—",
             "—",
             money(line.debit),
-            "—",
+            "",
             money(line.balance),
           ],
         });
@@ -4451,7 +4452,7 @@ async function partyHandout(customerId, query) {
             item.quantity ?? "",
             money(lineRate(item)),
             money(item.lineTotal),
-            index === 0 ? money(builty?.amountPaid || 0) : "",
+            "",
             index === 0 ? money(line.balance) : "",
           ],
         });
@@ -4657,6 +4658,7 @@ async function supplierHandout(supplierId, query) {
     meta["Remaining now"] = moneyRs(statement.closingBalance);
   }
 
+  // Payments are listed below; purchase rows show charges and current outstanding only.
   const purchaseRows = purchases.map((row) => [
     fmtDate(row.purchaseDate),
     row.invoiceNo || "",
@@ -4665,24 +4667,21 @@ async function supplierHandout(supplierId, query) {
     money(row.ratePerKg),
     money(row.freightAmount),
     money((Number(row.totalAmount) || 0) + (Number(row.freightAmount) || 0)),
-    money(row.amountPaid),
     money(row.balance),
   ]);
   if (purchases.length) {
     let kg = 0;
     let freight = 0;
     let amount = 0;
-    let paidTotal = 0;
     let remaining = 0;
     for (const row of purchases) {
       kg += Number(row.quantityKg) || 0;
       freight += Number(row.freightAmount) || 0;
       amount += (Number(row.totalAmount) || 0) + (Number(row.freightAmount) || 0);
-      paidTotal += Number(row.amountPaid) || 0;
       remaining += Number(row.balance) || 0;
     }
     purchaseRows.push({
-      cells: ["", "", "Total", kg, "", money(freight), money(amount), money(paidTotal), money(remaining)],
+      cells: ["", "", "Total", kg, "", money(freight), money(amount), money(remaining)],
       bold: true,
     });
   }
@@ -4696,11 +4695,11 @@ async function supplierHandout(supplierId, query) {
       section(
         "purchases",
         "Purchases",
-        ["Date", "Invoice", "Material", "Kg", "Rate (Rs.)", "Freight (Rs.)", "Amount (Rs.)", "Paid (Rs.)", "Remaining (Rs.)"],
+        ["Date", "Invoice", "Material", "Kg", "Rate (Rs.)", "Freight (Rs.)", "Amount (Rs.)", "Current remaining (Rs.)"],
         purchaseRows,
         meta,
         {
-          columnAlign: ["left", "left", "left", "right", "right", "right", "right", "right", "right"],
+          columnAlign: ["left", "left", "left", "right", "right", "right", "right", "right"],
         }
       ),
       section(
@@ -4741,8 +4740,8 @@ async function builtyHandout(builtyId) {
     Builty: builty.builtyNo || "",
     "Bill no": builty.billNo || "—",
     Total: moneyRs(builty.totalAmount),
-    Paid: moneyRs(builty.amountPaid),
-    "Still to receive": moneyRs(builty.balance),
+    "Allocated (current)": moneyRs(builty.amountPaid),
+    "Still to receive (current)": moneyRs(builty.balance),
   };
   if (Number(builty.discountAmount) > 0) meta.Discount = moneyRs(builty.discountAmount);
   if (Number(builty.previousPending) > 0) meta["Previous pending"] = moneyRs(builty.previousPending);
@@ -4757,7 +4756,7 @@ async function builtyHandout(builtyId) {
     sections.push(
       section(
         "payments",
-        "Payments on this builty",
+        "Direct payments on this builty",
         ["Date", "Method", "Reference", "Amount", "Notes"],
         payments.map((row) => [
           fmtDate(row.paymentDate),

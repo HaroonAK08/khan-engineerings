@@ -13,7 +13,7 @@
     "migrate:mfg": "node src/scripts/migrate-to-mfg-erp.js",
     "rebuild:stock": "node src/scripts/rebuild-finished-stock.js",
     "resync:payments": "node src/scripts/resync-party-payments.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test"
   },
   "keywords": [],
   "author": "",
