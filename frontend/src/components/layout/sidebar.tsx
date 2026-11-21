@@ -251,7 +251,7 @@ export function SidebarBrand() {
 
 export function Sidebar() {
   return (
-    <aside className="hidden h-svh w-56 shrink-0 flex-col border-e border-sidebar-border bg-sidebar text-sidebar-foreground shadow-[4px_0_24px_-12px_rgba(0,0,0,0.08)] md:flex lg:w-60">
+    <aside className="hidden h-svh w-52 shrink-0 flex-col border-e border-sidebar-border bg-sidebar text-sidebar-foreground shadow-[4px_0_24px_-12px_rgba(0,0,0,0.08)] md:flex lg:w-56">
       <SidebarBrand />
       <SidebarNav />
       <div className="border-t border-sidebar-border px-3 py-3">

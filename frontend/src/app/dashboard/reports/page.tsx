@@ -44,6 +44,23 @@ import { ReportsSubnav } from "@/components/layout/reports-subnav";
 type ReportMode = "full" | "custom";
 type Audience = "company" | HandoutAudience;
 
+function previewTableClass(columnCount: number) {
+  return columnCount >= 10 ? "w-full table-fixed text-[11px]" : undefined;
+}
+
+function previewColumnLabel(column: string) {
+  const labels: Record<string, string> = {
+    "Product / Reference": "Product",
+    "Paid / Received (Rs.)": "Received",
+    "Rate (Rs.)": "Rate",
+    "Freight (Rs.)": "Freight",
+    "Amount (Rs.)": "Amount",
+    "Paid (Rs.)": "Paid",
+    "Remaining (Rs.)": "Remaining",
+  };
+  return labels[column] || column;
+}
+
 function SearchablePickList({
   query,
   onQueryChange,
@@ -773,7 +790,7 @@ export default function ReportsHubPage() {
                 </h3>
                 {Object.keys(section.meta || {}).length > 0 && (
                   <div className="overflow-hidden rounded-lg border border-border/60">
-                    <Table>
+                    <Table className={previewTableClass(section.columns.length)}>
                       <TableHeader>
                         <TableRow>
                           <TableHead>Item</TableHead>
@@ -803,11 +820,11 @@ export default function ReportsHubPage() {
                         </p>
                       ) : (
                         <div className="overflow-hidden rounded-lg border border-border/60">
-                          <Table>
+                          <Table className={previewTableClass(sub.columns.length)}>
                             <TableHeader>
                               <TableRow>
-                                {sub.columns.map((col) => (
-                                  <TableHead key={col}>{col}</TableHead>
+                                {sub.columns.map((col, columnIndex) => (
+                                  <TableHead className="px-1.5 py-2" key={col}>{previewColumnLabel(col)}</TableHead>
                                 ))}
                               </TableRow>
                             </TableHeader>
@@ -817,7 +834,7 @@ export default function ReportsHubPage() {
                                   {(Array.isArray(row) ? row : row.cells).map((cell, cellIndex) => (
                                     <TableCell
                                       key={`${section.id}-${sub.heading}-${rowIndex}-${cellIndex}`}
-                                      className="font-data text-xs"
+                                      className="break-words px-1.5 py-1.5 font-data text-xs"
                                     >
                                       {cell == null || cell === "" ? "—" : String(cell)}
                                     </TableCell>
@@ -839,8 +856,8 @@ export default function ReportsHubPage() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          {section.columns.map((col) => (
-                            <TableHead key={col}>{col}</TableHead>
+                          {section.columns.map((col, columnIndex) => (
+                            <TableHead className="px-1.5 py-2" key={col}>{previewColumnLabel(col)}</TableHead>
                           ))}
                         </TableRow>
                       </TableHeader>
@@ -859,7 +876,7 @@ export default function ReportsHubPage() {
                             {(Array.isArray(row) ? row : row.cells).map((cell, cellIndex) => (
                               <TableCell
                                 key={`${section.id}-${rowIndex}-${cellIndex}`}
-                                className="font-data text-xs"
+                                className="break-words px-1.5 py-1.5 font-data text-xs"
                               >
                                 {cell == null || cell === "" ? "—" : String(cell)}
                               </TableCell>
