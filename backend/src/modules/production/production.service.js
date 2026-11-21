@@ -899,7 +899,6 @@ async function update(id, data) {
 
 async function getReport({ dateFrom, dateTo, family } = {}) {
   const match = { status: { $ne: "cancelled" } };
-  if (family) match.family = family;
   if (dateFrom || dateTo) {
     match.productionDate = {};
     if (dateFrom) match.productionDate.$gte = parseDate(dateFrom, "dateFrom");
@@ -910,11 +909,22 @@ async function getReport({ dateFrom, dateTo, family } = {}) {
     }
   }
 
-  const batches = await ProductionBatch.find(match)
+  let batches = await ProductionBatch.find(match)
     .populate("outputs.product", "name sku family")
     .populate("outputProgress.product", "name sku family")
     .populate("product", "name sku family")
     .lean();
+  if (family) {
+    batches = batches.filter((batch) => {
+      const families = [
+        ...(batch.outputs || []).map((o) => o.product?.family || o.family),
+        ...(batch.outputProgress || []).map((o) => o.product?.family),
+        batch.product?.family,
+        batch.family,
+      ].filter(Boolean);
+      return families.includes(family);
+    });
+  }
 
   let batchCount = 0;
   let totalInputKg = 0;
@@ -924,12 +934,20 @@ async function getReport({ dateFrom, dateTo, family } = {}) {
   let goodUnits = 0;
   let brokenUnits = 0;
   let finishedUnits = 0;
-  const byFamily = { hub: 0, drum: 0 };
+  const byFamily = { hub: 0, drum: 0, other: 0 };
   const byProductMap = new Map();
 
   for (const b of batches) {
     batchCount += 1;
-    byFamily[b.family] = (byFamily[b.family] || 0) + 1;
+    const batchFamilies = new Set([
+      ...(b.outputs || []).map((o) => o.product?.family || o.family),
+      ...(b.outputProgress || []).map((o) => o.product?.family),
+      b.product?.family,
+      b.family,
+    ].filter(Boolean));
+    for (const currentFamily of batchFamilies) {
+      byFamily[currentFamily] = (byFamily[currentFamily] || 0) + 1;
+    }
     if (Array.isArray(b.inputs) && b.inputs.length) {
       for (const inp of b.inputs) {
         const qty = inp.quantityKg || 0;

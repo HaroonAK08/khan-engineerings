@@ -11,6 +11,7 @@
     "seed:prod-db": "node --env-file=.env.production src/scripts/seedAdmin.js",
     "migrate:product-urdu": "node src/scripts/migrate-product-urdu.js",
     "migrate:product-material": "node src/scripts/migrate-product-material-types.js",
+    "sync:product-families": "node src/scripts/sync-product-family-history.js",
     "migrate:mfg": "node src/scripts/migrate-to-mfg-erp.js",
     "rebuild:stock": "node src/scripts/rebuild-finished-stock.js",
     "resync:payments": "node src/scripts/resync-party-payments.js",

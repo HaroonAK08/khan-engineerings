@@ -994,7 +994,7 @@ async function getSalesReport({ dateFrom, dateTo, groupId, customerId } = {}) {
     return {
       productId: row._id ? String(row._id) : "",
       name: row.name || "Unknown",
-      family: row.family === "drum" ? "drum" : "hub",
+      family: ["hub", "drum", "other"].includes(row.family) ? row.family : "hub",
       quantity: Math.round(quantity),
       avgUnitPrice: quantity > 0 ? roundMoney(revenue / quantity) : 0,
       revenue,

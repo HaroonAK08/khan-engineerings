@@ -42,6 +42,45 @@ function roundMoney(n) {
   return Math.round(n * 100) / 100;
 }
 
+/** Repair family snapshots without changing historical quantities, costs, or inputs. */
+async function syncHistoricalFamily(productId, family) {
+  const ProductionBatch = require("../production/production.model");
+  const batches = await ProductionBatch.find({
+    $or: [{ product: productId }, { "outputs.product": productId }, { "outputProgress.product": productId }],
+  });
+  let updatedBatches = 0;
+  let updatedOutputs = 0;
+
+  for (const batch of batches) {
+    let changed = false;
+    const matchingOutputs = (batch.outputs || []).filter(
+      (output) => String(output.product) === String(productId)
+    );
+    for (const output of matchingOutputs) {
+      if (output.family !== family) {
+        output.family = family;
+        updatedOutputs += 1;
+        changed = true;
+      }
+    }
+
+    const outputFamilies = (batch.outputs || []).map((output) => output.family).filter(Boolean);
+    const homogeneous = outputFamilies.length > 0 && new Set(outputFamilies).size === 1;
+    const legacyOnly = !batch.outputs?.length && String(batch.product || "") === String(productId);
+    if ((homogeneous && matchingOutputs.length === (batch.outputs || []).length) || legacyOnly) {
+      if (batch.family !== family) {
+        batch.family = family;
+        changed = true;
+      }
+    }
+    if (changed) {
+      await batch.save();
+      updatedBatches += 1;
+    }
+  }
+  return { batches: updatedBatches, outputs: updatedOutputs };
+}
+
 function materialForFamily(family, value) {
   if (value !== undefined && value !== null && value !== "") {
     if (!MATERIAL_TYPE_IDS.includes(value)) throw httpError("Invalid material type", 400);
@@ -113,6 +152,7 @@ async function getById(id) {
 async function update(id, data) {
   const product = await Product.findById(id);
   if (!product) throw httpError("Product not found", 404);
+  const previousFamily = product.family;
 
   if (data.name !== undefined) {
     const name = data.name.trim();
@@ -182,6 +222,9 @@ async function update(id, data) {
   }
   if (data.isActive !== undefined) product.isActive = Boolean(data.isActive);
   await product.save();
+  if (data.family !== undefined && previousFamily !== product.family) {
+    await syncHistoricalFamily(product._id, product.family);
+  }
   return Product.findById(product._id).populate(POPULATE);
 }
 
@@ -196,4 +239,4 @@ async function remove(id) {
   return { ok: true };
 }
 
-module.exports = { create, list, getById, update, remove };
+module.exports = { create, list, getById, update, remove, syncHistoricalFamily };

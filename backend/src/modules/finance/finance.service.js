@@ -1064,7 +1064,7 @@ function mergeChannelFamilyLine(parts, channelKey, fam, finishedKgKey) {
 
 function mergeProductionMarginReports(parts, { from, to }) {
   const productMap = new Map();
-  const byFamily = { hub: emptyFamilyTotals(), drum: emptyFamilyTotals() };
+  const byFamily = { hub: emptyFamilyTotals(), drum: emptyFamilyTotals(), other: emptyFamilyTotals() };
   const expenseMap = new Map();
   const purchased = {
     scrapKg: 0,
@@ -1211,7 +1211,7 @@ function mergeProductionMarginReports(parts, { from, to }) {
       }
     }
 
-    for (const fam of ["hub", "drum"]) {
+    for (const fam of ["hub", "drum", "other"]) {
       addNumberFields(byFamily[fam], part.byFamily?.[fam] || {}, [
         "pieces",
         "finishedKg",
@@ -1598,7 +1598,7 @@ async function computeProductionMarginForPeriod(query = {}) {
           productId: pid,
           quantity: qty,
           name: prodObj?.name || "Product",
-          family: out.family || prodObj?.family || b.family || "hub",
+          family: prodObj?.family || out.family || b.family || "hub",
           sellPrice: prodObj?.sellingPrice,
         });
       }
@@ -1697,11 +1697,12 @@ async function computeProductionMarginForPeriod(query = {}) {
     const byFamily = {
       hub: { revenue: 0, units: 0, builtyIds: new Set() },
       drum: { revenue: 0, units: 0, builtyIds: new Set() },
+      other: { revenue: 0, units: 0, builtyIds: new Set() },
     };
     const allBuiltyIds = new Set();
     for (const r of rows) {
       const pid = r._id?.productId ? String(r._id.productId) : "";
-      const fam = r._id?.family === "drum" ? "drum" : "hub";
+      const fam = ["hub", "drum", "other"].includes(r._id?.family) ? r._id.family : "hub";
       const revenue = r.revenue || 0;
       const units = r.units || 0;
       if (pid) {
@@ -1729,7 +1730,7 @@ async function computeProductionMarginForPeriod(query = {}) {
         units,
         avgSellPerPiece: units > 0 ? revenue / units : 0,
       };
-      const fam = claimRow.family === "drum" ? "drum" : "hub";
+      const fam = ["hub", "drum", "other"].includes(claimRow.family) ? claimRow.family : "hub";
       byFamily[fam].revenue = roundMoney(byFamily[fam].revenue - (claimRow.refund || 0));
       byFamily[fam].units = byFamily[fam].units - (claimRow.units || 0);
     }
@@ -2006,7 +2007,7 @@ async function computeProductionMarginForPeriod(query = {}) {
     const daigCost =
       row.daigCost != null ? row.daigCost : (row.daigKg || 0) * avgDaigRate;
     const materialCost = scrapCost + daigCost;
-    const fam = row.family === "drum" ? "drum" : "hub";
+    const fam = ["hub", "drum", "other"].includes(row.family) ? row.family : "hub";
     const finishedKg = row.finishedKg || 0;
     let overhead = 0;
     if (finishedKg > 0) {
@@ -2085,7 +2086,7 @@ async function computeProductionMarginForPeriod(query = {}) {
       .map(buildProductCostRow),
   ];
 
-  const byFamily = { hub: emptyFamilyTotals(), drum: emptyFamilyTotals() };
+  const byFamily = { hub: emptyFamilyTotals(), drum: emptyFamilyTotals(), other: emptyFamilyTotals() };
   for (const row of productRows) {
     const fam = byFamily[row.family] ? row.family : "hub";
     const t = byFamily[fam];
@@ -2124,7 +2125,7 @@ async function computeProductionMarginForPeriod(query = {}) {
   // (opening / other SKUs) use this period's family mfg $/kg × weight first — catalog
   // standardCost is often stale and understates overhead, which inflated ranking profit.
   for (const row of productRows) {
-    const fam = row.family === "drum" ? "drum" : "hub";
+    const fam = ["hub", "drum", "other"].includes(row.family) ? row.family : "hub";
     const familyCostPerKg = byFamily[fam].costPerKg;
     const saleOnly = !(row.pieces > 0);
     row.saleOnly = saleOnly;
@@ -3071,7 +3072,7 @@ async function computePartySalesMarginForPeriod(query = {}) {
   for (const row of salesRows) {
     const pid = String(row.customerId || "unknown");
     const product = productMap.get(String(row.productId)) || {};
-    const family = product.family === "drum" ? "drum" : "hub";
+    const family = ["hub", "drum", "other"].includes(product.family) ? product.family : "hub";
     const weightKg = Number(row.itemWeightKg) > 0 ? Number(row.itemWeightKg) : 0;
     const qty = Number(row.quantity) || 0;
     const kg = weightKg * qty;
@@ -3088,10 +3089,13 @@ async function computePartySalesMarginForPeriod(query = {}) {
         salesmanChannel,
         hubQty: 0,
         drumQty: 0,
+        otherQty: 0,
         hubKg: 0,
         drumKg: 0,
+        otherKg: 0,
         hubSale: 0,
         drumSale: 0,
+        otherSale: 0,
       });
     }
     const p = partyMap.get(pid);
@@ -3099,6 +3103,10 @@ async function computePartySalesMarginForPeriod(query = {}) {
       p.drumQty += qty;
       p.drumKg += kg;
       p.drumSale += amount;
+    } else if (family === "other") {
+      p.otherQty += qty;
+      p.otherKg += kg;
+      p.otherSale += amount;
     } else {
       p.hubQty += qty;
       p.hubKg += kg;
@@ -3671,7 +3679,7 @@ async function getFamilyFinishedKg(from, to) {
         pieceLines.push({
           productId: pid,
           quantity: qty,
-          family: out.family || prodObj?.family || b.family || "hub",
+          family: prodObj?.family || out.family || b.family || "hub",
         });
       }
     } else {
