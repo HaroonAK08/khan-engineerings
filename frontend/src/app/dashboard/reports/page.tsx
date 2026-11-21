@@ -147,6 +147,7 @@ export default function ReportsHubPage() {
 
   const selectedModules = customModules.length ? customModules : undefined;
   const previewModules = selectedModules ?? COMBINED_REPORT_MODULES.map((m) => m.id);
+  const fullReportSideBySide = mode === "full" && previewModules.length > 1;
   const handout = mode === "custom" && audience !== "company";
   const handoutId =
     audience === "party"
@@ -747,7 +748,7 @@ export default function ReportsHubPage() {
                   : ""}
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-6 md:grid-cols-2">
+        <CardContent className={fullReportSideBySide ? "grid gap-6 md:grid-cols-2" : "flex flex-col gap-6"}>
           {loadingPreview ? (
             <div className="flex justify-center py-12">
               <Loader2 className="size-6 animate-spin text-primary" />
@@ -763,7 +764,13 @@ export default function ReportsHubPage() {
           ) : (
             preview.sections.map((section) => (
               <div key={section.id} className="min-w-0 flex flex-col gap-3">
-                <h3 className="text-nameplate text-sm">{section.heading || section.title}</h3>
+                <h3 className={cn(
+                  "text-nameplate text-sm",
+                  fullReportSideBySide &&
+                    "rounded-lg bg-slate-800 px-3 py-2 text-white shadow-sm dark:bg-slate-700"
+                )}>
+                  {section.heading || section.title}
+                </h3>
                 {Object.keys(section.meta || {}).length > 0 && (
                   <div className="overflow-hidden rounded-lg border border-border/60">
                     <Table>
