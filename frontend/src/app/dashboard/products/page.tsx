@@ -42,7 +42,8 @@ const productSchema = z.object({
   sku: z.string().optional(),
   description: z.string().optional(),
   unitLabel: z.string().optional(),
-  family: z.enum(["hub", "drum"]),
+  family: z.enum(["hub", "drum", "other"]),
+  materialType: z.enum(["scrap", "daig"]).nullable().optional(),
   weightKg: z.number().min(0.001, "Weight (kg) is required"),
   weightEffectiveFrom: z.string().optional(),
   pricePerKg: z.number().min(0).optional(),
@@ -67,7 +68,7 @@ export default function ProductsPage() {
   const [stockByProduct, setStockByProduct] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState(() => searchParams.get("q") || "");
-  const [familyFilter, setFamilyFilter] = useState<"all" | "hub" | "drum">("all");
+  const [familyFilter, setFamilyFilter] = useState<"all" | "hub" | "drum" | "other">("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [saving, setSaving] = useState(false);
@@ -81,6 +82,7 @@ export default function ProductsPage() {
       description: "",
       unitLabel: "pcs",
       family: "hub",
+      materialType: "scrap",
       weightKg: 0,
       weightEffectiveFrom: todayInput(),
       pricePerKg: 0,
@@ -135,6 +137,7 @@ export default function ProductsPage() {
       description: "",
       unitLabel: "pcs",
       family: "hub",
+      materialType: "scrap",
       weightKg: 0,
       weightEffectiveFrom: todayInput(),
       pricePerKg: 0,
@@ -155,6 +158,7 @@ export default function ProductsPage() {
       description: product.description || "",
       unitLabel: product.unitLabel || "pcs",
       family: product.family || "hub",
+      materialType: product.materialType || (product.family === "drum" ? "daig" : "scrap"),
       weightKg: product.weightKg ?? 0,
       weightEffectiveFrom: todayInput(),
       pricePerKg: product.pricePerKg ?? 0,
@@ -234,7 +238,9 @@ export default function ProductsPage() {
                     ? t("prod.filter.all")
                     : familyFilter === "hub"
                       ? t("prod.hub")
-                      : t("prod.drum")}
+                      : familyFilter === "drum"
+                        ? t("prod.drum")
+                        : "Other"}
                 </span>
               </p>
               <div
@@ -247,6 +253,7 @@ export default function ProductsPage() {
                     { value: "all", label: t("prod.filter.all") },
                     { value: "hub", label: t("prod.hub") },
                     { value: "drum", label: t("prod.drum") },
+                    { value: "other", label: "Other" },
                   ] as const
                 ).map((opt) => {
                   const active = familyFilter === opt.value;
@@ -370,6 +377,18 @@ export default function ProductsPage() {
               >
                 <option value="hub">{t("prod.hub")}</option>
                 <option value="drum">{t("prod.drum")}</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="materialType">Raw material</Label>
+              <select
+                id="materialType"
+                className="h-11 rounded-lg border border-input bg-transparent px-3 text-base dark:bg-input/30"
+                {...form.register("materialType")}
+              >
+                <option value="scrap">Scrap</option>
+                <option value="daig">Daig</option>
               </select>
             </div>
             <div className="flex flex-col gap-1.5">

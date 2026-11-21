@@ -44,7 +44,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-type FamilyFilter = "all" | "hub" | "drum";
+type FamilyFilter = "all" | "hub" | "drum" | "other";
 type StockDialogMode = "add" | "edit" | null;
 type DateMode = "range" | "asOf";
 
@@ -81,6 +81,7 @@ export default function FinishedGoodsPage() {
   const [totalUnits, setTotalUnits] = useState(0);
   const [hubUnits, setHubUnits] = useState(0);
   const [drumUnits, setDrumUnits] = useState(0);
+  const [otherUnits, setOtherUnits] = useState(0);
   const [products, setProducts] = useState<Product[]>([]);
   const [newWarehouseId, setNewWarehouseId] = useState("");
   const [q, setQ] = useState("");
@@ -141,6 +142,7 @@ export default function FinishedGoodsPage() {
       setTotalUnits(stock.totalUnits);
       setHubUnits(stock.hubUnits ?? 0);
       setDrumUnits(stock.drumUnits ?? 0);
+      setOtherUnits(stock.otherUnits ?? 0);
       setProducts(productList);
     } catch (err) {
       toast.error(apiError(err, t("finished.loadFailed")));
@@ -192,6 +194,13 @@ export default function FinishedGoodsPage() {
       accent: "bg-yellow-300",
       cardClass: "bg-yellow-400/10",
     },
+    {
+      key: "other",
+      label: "Other",
+      value: otherUnits,
+      accent: "bg-violet-500",
+      cardClass: "bg-violet-500/10",
+    },
   ];
 
   function selectFilter(next: FamilyFilter) {
@@ -201,6 +210,7 @@ export default function FinishedGoodsPage() {
   function familyLabel(family: FinishedStockItem["family"]) {
     if (family === "hub") return t("finished.stat.hub");
     if (family === "drum") return t("finished.stat.drum");
+    if (family === "other") return "Other";
     return "—";
   }
 

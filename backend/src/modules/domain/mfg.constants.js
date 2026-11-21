@@ -16,11 +16,19 @@ const PRODUCT_FAMILIES = [
     id: "hub",
     label: "Hub",
     stages: ["furnace", "turning", "drilling", "painting", "polishing", "finished"],
+    defaultMaterialType: "scrap",
   },
   {
     id: "drum",
     label: "Drum",
     stages: ["furnace", "turning", "drilling", "painting", "finished"],
+    defaultMaterialType: "daig",
+  },
+  {
+    id: "other",
+    label: "Other",
+    stages: ["furnace", "turning", "drilling", "painting", "finished"],
+    defaultMaterialType: null,
   },
 ];
 

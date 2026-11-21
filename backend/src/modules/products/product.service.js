@@ -1,5 +1,8 @@
 const Product = require("./product.model");
-const { PRODUCT_FAMILY_IDS } = require("../domain/mfg.constants");
+const {
+  PRODUCT_FAMILY_IDS,
+  MATERIAL_TYPE_IDS,
+} = require("../domain/mfg.constants");
 const { parseEffectiveFrom } = require("../../utils/product-weight");
 const { applyProductWeightFromDate } = require("./apply-product-weight");
 
@@ -39,13 +42,27 @@ function roundMoney(n) {
   return Math.round(n * 100) / 100;
 }
 
+function materialForFamily(family, value) {
+  if (value !== undefined && value !== null && value !== "") {
+    if (!MATERIAL_TYPE_IDS.includes(value)) throw httpError("Invalid material type", 400);
+    return value;
+  }
+  if (family === "hub") return "scrap";
+  if (family === "drum") return "daig";
+  return null;
+}
+
 async function create(data) {
   const name = data.name?.trim();
   if (!name) throw httpError("Name is required", 400);
 
   const family = data.family || "hub";
   if (!PRODUCT_FAMILY_IDS.includes(family)) {
-    throw httpError("Family must be hub or drum", 400);
+    throw httpError("Family must be hub, drum, or other", 400);
+  }
+  const materialType = materialForFamily(family, data.materialType);
+  if (family === "other" && !materialType) {
+    throw httpError("Choose Scrap or Daig as the raw material for Other products", 400);
   }
 
   const weightKg = requirePositive(data.weightKg, "Weight (kg)");
@@ -58,6 +75,7 @@ async function create(data) {
     description: data.description?.trim() || "",
     unitLabel: data.unitLabel?.trim() || "pcs",
     family,
+    materialType,
     weightKg,
     standardCost: optionalNonNeg(data.standardCost, "Standard cost") ?? 0,
     pricePerKg,
@@ -107,9 +125,16 @@ async function update(id, data) {
   if (data.unitLabel !== undefined) product.unitLabel = data.unitLabel.trim() || "pcs";
   if (data.family !== undefined) {
     if (!PRODUCT_FAMILY_IDS.includes(data.family)) {
-      throw httpError("Family must be hub or drum", 400);
+      throw httpError("Family must be hub, drum, or other", 400);
     }
     product.family = data.family;
+  }
+  if (data.materialType !== undefined || data.family !== undefined) {
+    const materialType = materialForFamily(product.family, data.materialType ?? product.materialType);
+    if (product.family === "other" && !materialType) {
+      throw httpError("Choose Scrap or Daig as the raw material for Other products", 400);
+    }
+    product.materialType = materialType;
   }
   if (data.weightKg !== undefined) {
     const nextWeight = requirePositive(data.weightKg, "Weight (kg)");

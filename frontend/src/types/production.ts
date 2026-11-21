@@ -1,4 +1,4 @@
-export type ProductFamily = "hub" | "drum";
+export type ProductFamily = "hub" | "drum" | "other";
 
 export type Product = {
   _id: string;
@@ -8,6 +8,7 @@ export type Product = {
   description: string;
   unitLabel: string;
   family: ProductFamily;
+  materialType?: "scrap" | "daig" | null;
   weightKg?: number | null;
   weightEffectiveFrom?: string | null;
   weightHistory?: Array<{

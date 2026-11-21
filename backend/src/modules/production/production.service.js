@@ -236,10 +236,10 @@ async function produce(data) {
 
   const family = product.family;
   if (!PRODUCT_FAMILY_IDS.includes(family)) {
-    throw httpError("Product family must be hub or drum", 400);
+    throw httpError("Product family must be hub, drum, or other", 400);
   }
 
-  let materialType = data.materialType || (family === "drum" ? "daig" : "scrap");
+  let materialType = data.materialType || product.materialType || (family === "drum" ? "daig" : "scrap");
   if (!INPUT_MATERIAL_TYPE_IDS.includes(materialType)) {
     throw httpError("Invalid material type", 400);
   }
@@ -340,10 +340,13 @@ async function create(data) {
   // Legacy start-batch path kept for API compat; prefer produce()
   const family = data.family;
   if (!PRODUCT_FAMILY_IDS.includes(family)) {
-    throw httpError("Family must be hub or drum", 400);
+    throw httpError("Family must be hub, drum, or other", 400);
   }
 
-  let materialType = data.materialType || (family === "drum" ? "daig" : "scrap");
+  let materialType = data.materialType || (family === "drum" ? "daig" : family === "hub" ? "scrap" : null);
+  if (family === "other" && !materialType) {
+    throw httpError("Other batches require a Scrap or Daig material type", 400);
+  }
   if (!INPUT_MATERIAL_TYPE_IDS.includes(materialType)) {
     throw httpError("Invalid material type", 400);
   }

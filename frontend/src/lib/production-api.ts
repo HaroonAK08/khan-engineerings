@@ -89,7 +89,7 @@ export async function produce(body: {
 }
 
 export async function createBatch(body: {
-  family: "hub" | "drum";
+  family: "hub" | "drum" | "other";
   materialType?: "scrap" | "daig";
   productionDate: string;
   notes?: string;

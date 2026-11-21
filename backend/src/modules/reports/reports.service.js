@@ -432,6 +432,16 @@ async function supplierStatement(supplierId, { dateFrom, dateTo } = {}) {
       date: e.entryDate,
       type: e.type,
       reference: e.purchase?.invoiceNo || e.notes || e.type,
+      purchase: e.purchase
+        ? {
+            invoiceNo: e.purchase.invoiceNo || "",
+            materialType: e.purchase.materialType || "",
+            quantityKg: e.purchase.quantityKg ?? "",
+            ratePerKg: e.purchase.ratePerKg ?? 0,
+            freightAmount: e.purchase.freightAmount ?? 0,
+            totalAmount: e.purchase.totalAmount ?? 0,
+          }
+        : null,
       debit: Math.round(debit * 100) / 100,
       credit: Math.round(credit * 100) / 100,
       balance: Math.round(bal * 100) / 100,
@@ -4176,7 +4186,8 @@ async function exportCombined(modules, query, format, res, filenameBase) {
 }
 
 async function exportFull(query, format, res) {
-  return exportCombined(COMBINED_MODULES, query, format, res, "full-report");
+  const modules = query.modules ? parseModules(query.modules) : COMBINED_MODULES;
+  return exportCombined(modules, query, format, res, "full-report");
 }
 
 async function exportCustom(query, format, res) {
@@ -4658,30 +4669,62 @@ async function supplierHandout(supplierId, query) {
     meta["Remaining now"] = moneyRs(statement.closingBalance);
   }
 
-  // Payments are listed below; purchase rows show charges and current outstanding only.
-  const purchaseRows = purchases.map((row) => [
-    fmtDate(row.purchaseDate),
-    row.invoiceNo || "",
-    row.materialType || "",
-    row.quantityKg ?? "",
-    money(row.ratePerKg),
-    money(row.freightAmount),
-    money((Number(row.totalAmount) || 0) + (Number(row.freightAmount) || 0)),
-    money(row.balance),
-  ]);
-  if (purchases.length) {
-    let kg = 0;
-    let freight = 0;
-    let amount = 0;
-    let remaining = 0;
-    for (const row of purchases) {
-      kg += Number(row.quantityKg) || 0;
-      freight += Number(row.freightAmount) || 0;
-      amount += (Number(row.totalAmount) || 0) + (Number(row.freightAmount) || 0);
-      remaining += Number(row.balance) || 0;
+  const purchaseByInvoice = new Map(
+    purchases.map((purchase) => [String(purchase.invoiceNo || ""), purchase])
+  );
+  const transactionRows = statement.lines.map((line) => {
+    const listedPurchase = purchaseByInvoice.get(String(line.reference || ""));
+    const purchase = { ...(listedPurchase || {}) };
+    for (const key of [
+      "invoiceNo",
+      "materialType",
+      "quantityKg",
+      "ratePerKg",
+      "freightAmount",
+      "totalAmount",
+    ]) {
+      const value = line.purchase?.[key];
+      if (value !== undefined && value !== null && value !== "") purchase[key] = value;
     }
-    purchaseRows.push({
-      cells: ["", "", "Total", kg, "", money(freight), money(amount), money(remaining)],
+    const hasPurchase = Boolean(purchase.invoiceNo);
+    const isPayment = line.type === "payment";
+    const isPurchase = line.type === "purchase";
+    const cells = [
+      fmtDate(line.date),
+      isPayment ? "Supplier payment" : isPurchase ? "Purchase" : line.type,
+      purchase?.invoiceNo || "—",
+      purchase?.materialType || "—",
+      purchase?.quantityKg ?? "—",
+      hasPurchase ? money(purchase.ratePerKg) : "—",
+      hasPurchase ? money(purchase.freightAmount) : "—",
+      isPurchase && line.debit ? money(line.debit) : "—",
+      line.credit ? money(line.credit) : "—",
+      money(line.balance),
+      line.reference || line.notes || "—",
+    ];
+    return {
+      cells,
+      ...(isPayment ? { bg: "#e8f5e9" } : {}),
+    };
+  });
+
+  if (transactionRows.length) {
+    const totalDebit = statement.lines.reduce((sum, line) => sum + (line.debit || 0), 0);
+    const totalCredit = statement.lines.reduce((sum, line) => sum + (line.credit || 0), 0);
+    transactionRows.push({
+      cells: [
+        "",
+        "Total",
+        "",
+        "",
+        "",
+        "",
+        "",
+        money(totalDebit),
+        money(totalCredit),
+        money(statement.periodBalance),
+        "",
+      ],
       bold: true,
     });
   }
@@ -4693,27 +4736,38 @@ async function supplierHandout(supplierId, query) {
     period: periodLabel(query.dateFrom, query.dateTo),
     sections: [
       section(
-        "purchases",
-        "Purchases",
-        ["Date", "Invoice", "Material", "Kg", "Rate (Rs.)", "Freight (Rs.)", "Amount (Rs.)", "Current remaining (Rs.)"],
-        purchaseRows,
+        "transactions",
+        "Transactions",
+        [
+          "Date",
+          "Type",
+          "Invoice",
+          "Material",
+          "Kg",
+          "Rate (Rs.)",
+          "Freight (Rs.)",
+          "Amount (Rs.)",
+          "Paid (Rs.)",
+          "Remaining (Rs.)",
+          "Reference",
+        ],
+        transactionRows,
         meta,
         {
-          columnAlign: ["left", "left", "left", "right", "right", "right", "right", "right"],
+          columnAlign: [
+            "left",
+            "left",
+            "left",
+            "left",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "left",
+          ],
         }
-      ),
-      section(
-        "payments",
-        "Party payments",
-        ["Date", "Reference", "Amount", "Notes"],
-        statement.lines
-          .filter((line) => line.type === "payment")
-          .map((line) => ({
-            cells: [fmtDate(line.date), line.reference || "Party payment", money(line.credit), line.notes || ""],
-            bg: "#e8f5e9",
-          })),
-        null,
-        { columnAlign: ["left", "left", "right", "left"] }
       ),
     ],
   };

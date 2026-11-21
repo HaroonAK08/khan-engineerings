@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-const { PRODUCT_FAMILY_IDS } = require("../domain/mfg.constants");
+const { PRODUCT_FAMILY_IDS, MATERIAL_TYPE_IDS } = require("../domain/mfg.constants");
 
 const productSchema = new mongoose.Schema(
   {
@@ -8,6 +8,12 @@ const productSchema = new mongoose.Schema(
     sku: { type: String, trim: true, default: "" },
     description: { type: String, trim: true, default: "" },
     unitLabel: { type: String, trim: true, default: "pcs" },
+    materialType: {
+      type: String,
+      enum: MATERIAL_TYPE_IDS,
+      default: null,
+      index: true,
+    },
     family: {
       type: String,
       enum: PRODUCT_FAMILY_IDS,

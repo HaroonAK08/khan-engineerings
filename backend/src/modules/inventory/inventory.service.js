@@ -425,10 +425,16 @@ async function avgSoldPrices() {
   ]);
 
   const byProduct = new Map();
-  const byFamily = { hub: { revenue: 0, units: 0 }, drum: { revenue: 0, units: 0 } };
+  const byFamily = {
+    hub: { revenue: 0, units: 0 },
+    drum: { revenue: 0, units: 0 },
+    other: { revenue: 0, units: 0 },
+  };
   for (const row of rows) {
     const pid = row._id?.productId ? String(row._id.productId) : "";
-    const family = row._id?.family === "drum" ? "drum" : "hub";
+    const family = ["hub", "drum", "other"].includes(row._id?.family)
+      ? row._id.family
+      : "hub";
     const units = Number(row.units) || 0;
     const revenue = Number(row.revenue) || 0;
     if (pid && units > 0) {
@@ -443,6 +449,7 @@ async function avgSoldPrices() {
     familyAvg: {
       hub: byFamily.hub.units > 0 ? byFamily.hub.revenue / byFamily.hub.units : 0,
       drum: byFamily.drum.units > 0 ? byFamily.drum.revenue / byFamily.drum.units : 0,
+      other: byFamily.other.units > 0 ? byFamily.other.revenue / byFamily.other.units : 0,
     },
   };
 }
@@ -535,7 +542,9 @@ async function getFinishedStock({ warehouse, category, q, asOf } = {}) {
           ? roundMoney(weightKg * pricePerKg)
           : 0;
     const pid = row.product ? String(row.product) : "";
-    const family = row.productDoc?.family === "drum" ? "drum" : "hub";
+    const family = ["hub", "drum", "other"].includes(row.productDoc?.family)
+      ? row.productDoc.family
+      : "hub";
     const productSold = pid ? sold.byProduct.get(pid) : 0;
     const familySold = sold.familyAvg[family] || 0;
     const salePrice = roundMoney(
@@ -581,6 +590,7 @@ async function getFinishedStock({ warehouse, category, q, asOf } = {}) {
   const totalUnits = rows.reduce((s, r) => s + r.quantity, 0);
   const hubRows = rows.filter((r) => r.family === "hub");
   const drumRows = rows.filter((r) => r.family === "drum");
+  const otherRows = rows.filter((r) => r.family === "other");
   const hubUnits = hubRows.reduce((s, r) => s + r.quantity, 0);
   const drumUnits = drumRows.reduce((s, r) => s + r.quantity, 0);
   const sumField = (list, key) =>
@@ -591,12 +601,15 @@ async function getFinishedStock({ warehouse, category, q, asOf } = {}) {
     totalUnits: roundQty(totalUnits),
     hubUnits: roundQty(hubUnits),
     drumUnits: roundQty(drumUnits),
+    otherUnits: roundQty(otherRows.reduce((s, r) => s + r.quantity, 0)),
     skuCount: rows.length,
     values: {
       hubMfg: sumField(hubRows, "mfgValue"),
       hubSale: sumField(hubRows, "saleValue"),
       drumMfg: sumField(drumRows, "mfgValue"),
       drumSale: sumField(drumRows, "saleValue"),
+      otherMfg: sumField(otherRows, "mfgValue"),
+      otherSale: sumField(otherRows, "saleValue"),
       finishedMfg: sumField(rows, "mfgValue"),
       finishedSale: sumField(rows, "saleValue"),
     },

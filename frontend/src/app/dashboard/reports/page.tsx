@@ -145,7 +145,8 @@ export default function ReportsHubPage() {
   const [preview, setPreview] = useState<CombinedReportPreview | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
 
-  const previewModules = mode === "full" ? COMBINED_REPORT_MODULES.map((m) => m.id) : customModules;
+  const selectedModules = customModules.length ? customModules : undefined;
+  const previewModules = selectedModules ?? COMBINED_REPORT_MODULES.map((m) => m.id);
   const handout = mode === "custom" && audience !== "company";
   const handoutId =
     audience === "party"
@@ -191,7 +192,7 @@ export default function ReportsHubPage() {
     setLoadingPreview(true);
     try {
       const report = await getCombinedReportPreview({
-        modules: mode === "full" ? undefined : customModules,
+        modules: mode === "full" ? selectedModules : customModules,
         dateFrom: dateFrom || undefined,
         dateTo: dateTo || undefined,
         summaryOnly,
@@ -204,7 +205,7 @@ export default function ReportsHubPage() {
     } finally {
       setLoadingPreview(false);
     }
-  }, [mode, customModules, dateFrom, dateTo, hydrated, summaryOnly, handout, handoutId, audience, reportLanguage]);
+  }, [mode, customModules, selectedModules, dateFrom, dateTo, hydrated, summaryOnly, handout, handoutId, audience, reportLanguage]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -280,6 +281,7 @@ export default function ReportsHubPage() {
   function openCustom(next: Audience = "party") {
     setMode("custom");
     setAudience(next);
+    setCustomModules(COMBINED_REPORT_MODULES.map((m) => m.id));
     setFormat("pdf");
   }
 
@@ -324,6 +326,7 @@ export default function ReportsHubPage() {
       } else if (mode === "full") {
         await downloadFullReport({
           format,
+          modules: selectedModules,
           dateFrom: dateFrom || undefined,
           dateTo: dateTo || undefined,
           summaryOnly,
@@ -645,24 +648,10 @@ export default function ReportsHubPage() {
           </div>
           )}
 
-          {handout ? null : mode === "full" ? (
+          {handout ? null : (
             <div>
               <Label className="mb-2 block">Included modules</Label>
-              <div className="flex flex-wrap gap-2">
-                {COMBINED_REPORT_MODULES.map((m) => (
-                  <span
-                    key={m.id}
-                    className="rounded-md border border-border bg-muted/40 px-2.5 py-1 text-xs font-medium"
-                  >
-                    {m.label}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div>
-              <Label className="mb-2 block">Modules</Label>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
                 {COMBINED_REPORT_MODULES.map((m) => {
                   const active = customModules.includes(m.id);
                   return (
@@ -682,7 +671,7 @@ export default function ReportsHubPage() {
                   );
                 })}
               </div>
-              <div className="mt-2 flex gap-2">
+              <div className="mt-2 flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
                   size="sm"
@@ -694,6 +683,11 @@ export default function ReportsHubPage() {
                 <Button type="button" size="sm" variant="ghost" onClick={() => setCustomModules([])}>
                   Clear
                 </Button>
+                {mode === "full" && customModules.length === 0 ? (
+                  <span className="text-xs text-muted-foreground">
+                    No modules selected — the full report includes all modules.
+                  </span>
+                ) : null}
               </div>
             </div>
           )}
@@ -753,7 +747,7 @@ export default function ReportsHubPage() {
                   : ""}
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-6">
+        <CardContent className="grid gap-6 md:grid-cols-2">
           {loadingPreview ? (
             <div className="flex justify-center py-12">
               <Loader2 className="size-6 animate-spin text-primary" />
@@ -768,7 +762,7 @@ export default function ReportsHubPage() {
             </p>
           ) : (
             preview.sections.map((section) => (
-              <div key={section.id} className="flex flex-col gap-3">
+              <div key={section.id} className="min-w-0 flex flex-col gap-3">
                 <h3 className="text-nameplate text-sm">{section.heading || section.title}</h3>
                 {Object.keys(section.meta || {}).length > 0 && (
                   <div className="overflow-hidden rounded-lg border border-border/60">

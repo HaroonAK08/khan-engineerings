@@ -183,22 +183,28 @@ test("a later allocated receipt does not leak into an earlier reporting period",
   assert.equal(transactions.rows.filter(row => row.bg === "#e8f5e9").length, 0);
 });
 
-test("supplier cash is shown only in payment history, not purchase rows or subtotals", async () => {
+test("supplier cash is shown inline with purchases and highlighted without changing charges", async () => {
   const preview = await reports.getHandoutPreview({ audience: "supplier", id: supplier._id, ...period });
-  const purchase = section(preview, "purchases");
-  assert.equal(purchase.columns.length, 8);
-  assert.equal(purchase.columns.at(-1), "Current remaining (Rs.)");
-  assert.ok(!purchase.columns.some(column => /paid/i.test(column)));
-  assert.equal(cells(purchase.rows[0]).at(-1), "850.00");
-  assert.ok(purchase.rows.every(row => !cells(row).includes("200.00")));
-  assert.equal(purchase.meta["Paid in period"], "Rs 200.00");
-  assert.equal(purchase.meta["Still to pay"], "Rs 5,850.00");
-  assert.equal(section(preview, "payments").rows[0].cells[2], "200.00");
-  assert.equal(section(preview, "payments").rows[0].bg, "#e8f5e9");
+  const transactions = section(preview, "transactions");
+  assert.equal(transactions.columns.length, 11);
+  assert.equal(transactions.rows[0].cells.slice(0, 4).join("|"), "2026-11-09|Purchase|P-1|Steel");
+  assert.equal(transactions.rows[0].cells[7], "1,050.00");
+  assert.equal(transactions.rows[0].cells[8], "—");
+  assert.equal(transactions.rows[0].cells[9], "6,050.00");
+  const payment = transactions.rows.find(row => row.cells[1] === "Supplier payment");
+  assert.ok(payment);
+  assert.equal(payment.cells[0], "2026-11-12");
+  assert.equal(payment.cells[8], "200.00");
+  assert.equal(payment.cells[9], "5,850.00");
+  assert.equal(payment.bg, "#e8f5e9");
+  assert.equal(transactions.rows.filter(row => row.bg === "#e8f5e9").length, 1);
+  assert.equal(transactions.meta["Paid in period"], "Rs 200.00");
+  assert.equal(transactions.meta["Still to pay"], "Rs 5,850.00");
+  assert.equal(transactions.rows.at(-1).cells[7], "1,050.00");
+  assert.equal(transactions.rows.at(-1).cells[8], "200.00");
   assertAligned(preview);
   const earlier = await reports.getHandoutPreview({ audience: "supplier", id: supplier._id, dateFrom: "2026-11-09", dateTo: "2026-11-09" });
-  assert.equal(section(earlier, "purchases").meta["Paid in period"], "Rs 0.00");
-  assert.equal(section(earlier, "payments").rows.length, 0);
+  assert.equal(section(earlier, "transactions").rows.some(row => row.bg === "#e8f5e9"), false);
 });
 
 test("group handout preserves current allocation status separately from period receipts", async () => {

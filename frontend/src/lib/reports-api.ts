@@ -419,12 +419,14 @@ export async function downloadReportExport(
 
 export async function downloadFullReport(params: {
   format: "pdf" | "xlsx";
+  modules?: ExportKind[];
   dateFrom?: string;
   dateTo?: string;
   summaryOnly?: boolean;
   language?: "en" | "ur";
 }) {
   const query: Record<string, string> = { format: params.format };
+  if (params.modules?.length) query.modules = params.modules.join(",");
   if (params.dateFrom) query.dateFrom = params.dateFrom;
   if (params.dateTo) query.dateTo = params.dateTo;
   if (params.summaryOnly) query.summaryOnly = "1";

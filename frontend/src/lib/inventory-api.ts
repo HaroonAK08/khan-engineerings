@@ -19,7 +19,7 @@ export type FinishedStockItem = {
   productId: string;
   name: string;
   sku: string;
-  family: "hub" | "drum" | null;
+  family: "hub" | "drum" | "other" | null;
   unitLabel: string;
   lowStockThreshold: number;
   category: { id: string; name: string } | null;
@@ -107,6 +107,7 @@ export async function getFinishedStock(params?: {
     totalUnits: number;
     hubUnits: number;
     drumUnits: number;
+    otherUnits?: number;
     skuCount: number;
   }>("/inventory/finished", { params });
   return data;

@@ -130,7 +130,7 @@ function BuiltyForm() {
   const [customerSearch, setCustomerSearch] = useState("");
   const [productPickerIndex, setProductPickerIndex] = useState<number | null>(null);
   const [productSearch, setProductSearch] = useState("");
-  const [productFamilyFilter, setProductFamilyFilter] = useState<"all" | "hub" | "drum">("all");
+  const [productFamilyFilter, setProductFamilyFilter] = useState<"all" | "hub" | "drum" | "other">("all");
   const [partyPriceHint, setPartyPriceHint] = useState<Record<number, boolean>>({});
   const [castingRates, setCastingRates] = useState<CastingRatesReport | null>(null);
   const [stockSource, setStockSource] = useState<"new" | "old">("new");
@@ -365,6 +365,7 @@ function BuiltyForm() {
   const familySummary = useMemo(() => {
     const hub = { qty: 0, amount: 0 };
     const drum = { qty: 0, amount: 0 };
+    const other = { qty: 0, amount: 0 };
     for (const line of lines) {
       if (!line.product || !(Number(line.quantity) > 0)) continue;
       const product = products.find((p) => p._id === line.product);
@@ -374,6 +375,9 @@ function BuiltyForm() {
       if (product.family === "drum") {
         drum.qty += qty;
         drum.amount += amount;
+      } else if (product.family === "other") {
+        other.qty += qty;
+        other.amount += amount;
       } else {
         hub.qty += qty;
         hub.amount += amount;
@@ -388,7 +392,11 @@ function BuiltyForm() {
         qty: drum.qty,
         amount: Math.round(drum.amount * 100) / 100,
       },
-      totalQty: hub.qty + drum.qty,
+      other: {
+        qty: other.qty,
+        amount: Math.round(other.amount * 100) / 100,
+      },
+      totalQty: hub.qty + drum.qty + other.qty,
     };
   }, [lines, products, builtyDate]);
 
@@ -806,6 +814,7 @@ function BuiltyForm() {
                                   { value: "all", label: t("prod.filter.all") },
                                   { value: "hub", label: t("prod.hub") },
                                   { value: "drum", label: t("prod.drum") },
+                                  { value: "other", label: "Other" },
                                 ] as const
                               ).map((option) => (
                                 <button
@@ -820,7 +829,7 @@ function BuiltyForm() {
                                   )}
                                   onClick={() => setProductFamilyFilter(option.value)}
                                 >
-                                  {option.label}
+                                  {option.label === "Other" ? "Other" : option.label}
                                 </button>
                               ))}
                             </div>
@@ -1039,7 +1048,7 @@ function BuiltyForm() {
             <CardTitle className="text-nameplate text-sm">{t("builtyNew.summary")}</CardTitle>
             <CardDescription>{t("builtyNew.summaryDesc")}</CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-3 sm:grid-cols-3">
+          <CardContent className="grid gap-3 sm:grid-cols-4">
             <div className="rounded-lg border border-border p-3">
               <p className="text-xs text-muted-foreground">{t("builtyNew.totalQty")}</p>
               <p className="font-data mt-1 text-xl">{familySummary.totalQty}</p>
@@ -1059,6 +1068,13 @@ function BuiltyForm() {
               <p className="font-data mt-1 text-xl">{familySummary.drum.qty}</p>
               <p className="font-data mt-1 text-sm text-muted-foreground">
                 {formatMoney(familySummary.drum.amount)}
+              </p>
+            </div>
+            <div className="rounded-lg border border-violet-500/30 bg-violet-500/10 p-3">
+              <p className="text-xs text-violet-700 dark:text-violet-300">Other</p>
+              <p className="font-data mt-1 text-xl">{familySummary.other.qty}</p>
+              <p className="font-data mt-1 text-sm text-muted-foreground">
+                {formatMoney(familySummary.other.amount)}
               </p>
             </div>
           </CardContent>

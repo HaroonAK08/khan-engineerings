@@ -113,7 +113,7 @@ function NewProductionForm() {
   const [saving, setSaving] = useState(false);
   const [pickerIndex, setPickerIndex] = useState<number | null>(null);
   const [productSearch, setProductSearch] = useState("");
-  const [familyFilter, setFamilyFilter] = useState<"all" | "hub" | "drum">("all");
+  const [familyFilter, setFamilyFilter] = useState<"all" | "hub" | "drum" | "other">("all");
   const [wasteSettings, setWasteSettings] = useState<WasteSettings | null>(null);
   const [productionDate, setProductionDate] = useState(todayInput());
 
@@ -261,11 +261,17 @@ function NewProductionForm() {
   const totals = useMemo(() => {
     let scrap = 0;
     let daig = 0;
-    let quantity = 0;
+    let hubQuantity = 0;
+    let drumQuantity = 0;
 
     for (const line of lines) {
-      quantity += Number(line.quantity) || 0;
       const product = products.find((item) => item._id === line.productId) || null;
+      if (!product) continue;
+
+      const quantity = Number(line.quantity) || 0;
+      if (product.family === "drum") drumQuantity += quantity;
+      else if (product.family === "hub") hubQuantity += quantity;
+
       const preview = linePreview(
         product,
         line.quantity,
@@ -273,12 +279,14 @@ function NewProductionForm() {
         line.productionDate,
         line.metalKg
       );
-      if (product?.family === "drum") daig += preview.chargedKg;
-      else if (product?.family === "hub") scrap += preview.chargedKg;
+      if (product.family === "drum") daig += preview.chargedKg;
+      else if (product.family === "hub") scrap += preview.chargedKg;
     }
 
     return {
-      quantity,
+      quantity: hubQuantity + drumQuantity,
+      hubQuantity,
+      drumQuantity,
       scrap: Math.round(scrap * 1000) / 1000,
       daig: Math.round(daig * 1000) / 1000,
     };
@@ -533,6 +541,7 @@ function NewProductionForm() {
                                 ["all", "prod.filter.all"],
                                 ["hub", "prod.hub"],
                                 ["drum", "prod.drum"],
+                                ["other", "Other"],
                               ] as const
                             ).map(([value, labelKey]) => (
                               <Button
@@ -546,7 +555,7 @@ function NewProductionForm() {
                                 )}
                                 onClick={() => setFamilyFilter(value)}
                               >
-                                {t(labelKey)}
+                                {labelKey === "Other" ? "Other" : t(labelKey)}
                               </Button>
                             ))}
                           </div>
@@ -725,10 +734,18 @@ function NewProductionForm() {
             <CardTitle className="text-nameplate text-sm">Material summary</CardTitle>
             <CardDescription>Total pieces and material that will be deducted from this submission.</CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-3 sm:grid-cols-3">
+          <CardContent className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <div className="rounded-lg border border-border p-3">
               <p className="text-xs text-muted-foreground">Total qty</p>
               <p className="font-data mt-1 text-xl">{totals.quantity}</p>
+            </div>
+            <div className="rounded-lg border border-border p-3">
+              <p className="text-xs text-muted-foreground">{t("salesReportsHub.hubUnits")}</p>
+              <p className="font-data mt-1 text-xl">{totals.hubQuantity}</p>
+            </div>
+            <div className="rounded-lg border border-border p-3">
+              <p className="text-xs text-muted-foreground">{t("salesReportsHub.drumUnits")}</p>
+              <p className="font-data mt-1 text-xl">{totals.drumQuantity}</p>
             </div>
             <div className="rounded-lg border border-border p-3">
               <p className="text-xs text-muted-foreground">{t("prod.scrap")}</p>
