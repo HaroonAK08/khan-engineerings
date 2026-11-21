@@ -49,6 +49,10 @@
 }
 
 :root {
+  --font-plex-sans: Arial, "Noto Sans", sans-serif;
+  --font-plex-mono: "DejaVu Sans Mono", Consolas, monospace;
+  --font-big-shoulders: Impact, "Arial Narrow", sans-serif;
+  --font-urdu: "Noto Nastaliq Urdu", "Noto Naskh Arabic", serif;
   /* Clean light workshop — white surfaces, soft slate text, steel-blue accent */
   --background: oklch(0.985 0.004 240);
   --foreground: oklch(0.24 0.02 255);

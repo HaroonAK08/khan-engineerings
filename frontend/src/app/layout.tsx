@@ -1,34 +1,9 @@
 import type { Metadata } from "next";
-import { Big_Shoulders, IBM_Plex_Sans, IBM_Plex_Mono, Noto_Nastaliq_Urdu } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toaster";
 import { DuplicateConfirmDialog } from "@/components/duplicate-confirm-dialog";
 import { AppProviders } from "@/providers/app-providers";
 import "./globals.css";
-
-const bigShoulders = Big_Shoulders({
-  variable: "--font-big-shoulders",
-  subsets: ["latin"],
-  weight: ["600", "700", "800"],
-});
-
-const plexSans = IBM_Plex_Sans({
-  variable: "--font-plex-sans",
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-});
-
-const plexMono = IBM_Plex_Mono({
-  variable: "--font-plex-mono",
-  subsets: ["latin"],
-  weight: ["400", "500"],
-});
-
-const notoNastaliq = Noto_Nastaliq_Urdu({
-  variable: "--font-urdu",
-  subsets: ["arabic"],
-  weight: ["400", "500", "600", "700"],
-});
 
 export const metadata: Metadata = {
   title: "Khan Engineerings",
@@ -75,9 +50,7 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
-      <body
-        className={`${bigShoulders.variable} ${plexSans.variable} ${plexMono.variable} ${notoNastaliq.variable} antialiased`}
-      >
+      <body className="antialiased">
         <AppProviders>
           <TooltipProvider delay={200}>{children}</TooltipProvider>
           <Toaster />
