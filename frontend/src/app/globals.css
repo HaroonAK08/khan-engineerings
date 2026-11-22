@@ -386,13 +386,44 @@ html.locale-ur .gap-1\.5 {
     box-shadow: 4px 0 8px -6px rgba(0, 0, 0, 0.35);
   }
 
+  /*
+   * Backing for the sticky first column, in two layers.
+   *
+   * The cell carries a z-index, so it forms a stacking context, and inside one
+   * a negative-z-index pseudo-element paints ON TOP of the element's own
+   * background. One layer therefore cannot do both jobs:
+   *
+   *   ::before - an OPAQUE base. Required because some rows use a translucent
+   *              tint (e.g. bg-muted/40 in the party ledger); without a solid
+   *              layer the columns scrolling underneath show through and read
+   *              as overlapping text.
+   *   ::after  - the row's OWN colour, composited over that base. Required
+   *              because rows that set a solid background (the colour-coded
+   *              per-product tables) would otherwise be covered by the card
+   *              colour, rendering their white text on white.
+   *
+   * Both sit at z-index -1; ::after paints after ::before because it comes
+   * later in tree order, and the cell's text paints above both.
+   */
   [data-slot="table-container"] [data-slot="table-head"]:first-child::before,
-  [data-slot="table-container"] [data-slot="table-cell"]:first-child::before {
+  [data-slot="table-container"] [data-slot="table-cell"]:first-child::before,
+  [data-slot="table-container"] [data-slot="table-head"]:first-child::after,
+  [data-slot="table-container"] [data-slot="table-cell"]:first-child::after {
     content: "";
     position: absolute;
     inset: 0;
     z-index: -1;
+    pointer-events: none;
+  }
+
+  [data-slot="table-container"] [data-slot="table-head"]:first-child::before,
+  [data-slot="table-container"] [data-slot="table-cell"]:first-child::before {
     background-color: var(--card);
+  }
+
+  [data-slot="table-container"] [data-slot="table-head"]:first-child::after,
+  [data-slot="table-container"] [data-slot="table-cell"]:first-child::after {
+    background-color: inherit;
   }
 
   [data-slot="table-container"] [data-slot="table-head"]:first-child {

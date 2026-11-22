@@ -12,6 +12,7 @@ import { useI18n } from "@/hooks/use-i18n";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 import { useTallyChecks } from "@/hooks/use-tally-checks";
 import { calendarDay, todayInput } from "@/lib/date-range";
+import { confirmAction } from "@/lib/confirm-action";
 import { apiError, formatDate, formatKg, getStock } from "@/lib/materials-api";
 import {
   deleteBatch,
@@ -285,7 +286,8 @@ export default function ProductionHistoryPage() {
         dateFrom?: string;
         dateTo?: string;
         family?: string;
-      } = { status: "completed" };
+        all: true;
+      } = { status: "completed", all: true };
       if (dateFrom) params.dateFrom = dateFrom;
       if (dateTo) params.dateTo = dateTo;
       if (listFamily !== "all") params.family = listFamily;
@@ -421,7 +423,17 @@ export default function ProductionHistoryPage() {
   }
 
   async function onDeleteDay(group: DayTotals) {
-    if (!confirm(t("prod.dayDeleteConfirm", { count: group.batches.length }))) return;
+    if (
+      !(await confirmAction({
+        title: t("prod.dayDeleteConfirm", { count: group.batches.length }),
+        consequences: [
+          t("confirm.prodDay.batches", { count: group.batches.length }),
+          t("confirm.prodDay.rawReturned"),
+          t("confirm.prodDay.finishedRemoved"),
+        ],
+      }))
+    )
+      return;
     setDeletingDay(group.day);
     try {
       const result = await deleteBatches(group.batches.map((b) => b._id));
@@ -440,7 +452,16 @@ export default function ProductionHistoryPage() {
   }
 
   async function onDelete(batch: ProductionBatch) {
-    if (!confirm(t("prod.deleteConfirm"))) return;
+    if (
+      !(await confirmAction({
+        title: t("prod.deleteConfirm"),
+        consequences: [
+          t("confirm.prodDay.rawReturned"),
+          t("confirm.prodDay.finishedRemoved"),
+        ],
+      }))
+    )
+      return;
     setDeletingId(batch._id);
     try {
       await deleteBatch(batch._id);

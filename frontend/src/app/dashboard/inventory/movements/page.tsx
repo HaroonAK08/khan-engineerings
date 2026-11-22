@@ -11,11 +11,14 @@ import { TallyCell, TallyHead } from "@/components/tally-check";
 import { useI18n } from "@/hooks/use-i18n";
 import { useTallyChecks } from "@/hooks/use-tally-checks";
 import { todayInput } from "@/lib/date-range";
+import { TablePagination } from "@/components/data/table-pagination";
 import { apiError, formatDate, withSameDayConfirm } from "@/lib/materials-api";
 import { listProducts } from "@/lib/production-api";
 import {
   createAdjustment,
-  listMovements,
+  listMovementsPage,
+  type ListMovementsParams,
+  type MovementPage,
   listWarehouses,
   type CatalogItem,
   type StockMovement,
@@ -55,6 +58,9 @@ export default function MovementsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [warehouses, setWarehouses] = useState<CatalogItem[]>([]);
   const [itemType, setItemType] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(100);
+  const [pageInfo, setPageInfo] = useState<MovementPage | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -76,14 +82,15 @@ export default function MovementsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const params: { itemType?: string } = {};
+      const params: ListMovementsParams = { page, limit: pageSize };
       if (itemType) params.itemType = itemType;
       const [m, p, w] = await Promise.all([
-        listMovements(params),
+        listMovementsPage(params),
         listProducts({ active: "true" }),
         listWarehouses(),
       ]);
-      setMovements(m);
+      setMovements(m.movements);
+      setPageInfo(m.page);
       setProducts(p);
       setWarehouses(w);
     } catch (err) {
@@ -91,11 +98,17 @@ export default function MovementsPage() {
     } finally {
       setLoading(false);
     }
-  }, [itemType]);
+  }, [itemType, page, pageSize]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  // A filter change resets paging — otherwise a narrower result set can leave
+  // the user stranded on a page that no longer exists.
+  useEffect(() => {
+    setPage(1);
+  }, [itemType]);
 
   async function onSubmit(values: AdjustForm) {
     if (values.itemType === "finished_good" && !values.product) {
@@ -296,6 +309,17 @@ export default function MovementsPage() {
               </TableBody>
             </Table>
           )}
+
+          <TablePagination
+            className="mt-3"
+            page={pageInfo}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setPage(1);
+            }}
+            label={t("common.records")}
+          />
         </CardContent>
       </Card>
     </div>

@@ -11,6 +11,7 @@ import { useI18n } from "@/hooks/use-i18n";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 import { useTallyChecks } from "@/hooks/use-tally-checks";
 import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
+import { confirmAction } from "@/lib/confirm-action";
 import {
   customerName,
   deleteBuilty,
@@ -70,7 +71,7 @@ export default function BuiltyHistoryPage() {
   }, [load]);
 
   async function onDelete(row: BuiltyRow) {
-    if (!confirm(t("builty.confirmDelete"))) return;
+    if (!(await confirmAction({ title: t("builty.confirmDelete") }))) return;
     setDeletingId(row._id);
     try {
       await deleteBuilty(row._id);

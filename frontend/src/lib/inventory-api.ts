@@ -91,8 +91,8 @@ export type InventoryReport = {
   lowStock: FinishedStockItem[];
 };
 
-export async function getInventoryOverview() {
-  const { data } = await api.get<{ overview: InventoryOverview }>("/inventory/overview");
+export async function getInventoryOverview(signal?: AbortSignal) {
+  const { data } = await api.get<{ overview: InventoryOverview }>("/inventory/overview", { signal });
   return data.overview;
 }
 
@@ -124,16 +124,48 @@ export async function getInventoryAlerts() {
   return data.alerts;
 }
 
-export async function listMovements(params?: {
+export type MovementPage = {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  hasMore: boolean;
+  returned: number;
+};
+
+export type ListMovementsParams = {
   itemType?: string;
   product?: string;
   warehouse?: string;
   dateFrom?: string;
   dateTo?: string;
   reason?: string;
-}) {
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortDir?: "asc" | "desc";
+};
+
+/**
+ * Paginated stock movements. The server now sends a `total` alongside the rows,
+ * so the screen can say how many records exist instead of silently showing a
+ * clipped list (docs/audit/06, UX-008).
+ */
+export async function listMovementsPage(
+  params?: ListMovementsParams,
+  signal?: AbortSignal
+) {
+  const { data } = await api.get<{ movements: StockMovement[]; page?: MovementPage }>(
+    "/inventory/movements",
+    { params, signal }
+  );
+  return { movements: data.movements, page: data.page };
+}
+
+export async function listMovements(params?: ListMovementsParams, signal?: AbortSignal) {
   const { data } = await api.get<{ movements: StockMovement[] }>("/inventory/movements", {
     params,
+    signal,
   });
   return data.movements;
 }
@@ -152,12 +184,18 @@ export async function createAdjustment(body: {
   return data.movement;
 }
 
-export async function getLiveInventoryReport(params?: {
-  asOf?: string;
-  dateFrom?: string;
-  dateTo?: string;
-}) {
-  const { data } = await api.get<{ report: InventoryReport }>("/inventory/reports", { params });
+export async function getLiveInventoryReport(
+  params?: {
+    asOf?: string;
+    dateFrom?: string;
+    dateTo?: string;
+  },
+  signal?: AbortSignal
+) {
+  const { data } = await api.get<{ report: InventoryReport }>("/inventory/reports", {
+    params,
+    signal,
+  });
   return data.report;
 }
 

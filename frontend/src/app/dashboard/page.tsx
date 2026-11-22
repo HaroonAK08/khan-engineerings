@@ -1,24 +1,38 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
 import { FinanceSubnav } from "@/components/layout/finance-subnav";
 import { apiError, formatKg, formatMoney } from "@/lib/materials-api";
 import {
-  getPartySalesMargin,
-  getProductionMargin,
-  type PartySalesMarginReport,
   type ProductionMarginFamily,
   type ProductionMarginProduct,
-  type ProductionMarginReport,
 } from "@/lib/finance-api";
-import { getLiveInventoryReport, type InventoryReport } from "@/lib/inventory-api";
+import {
+  useInventoryReport,
+  usePartySalesMargin,
+  useProductionMargin,
+} from "@/lib/query";
 import { splitCastingKhrad } from "@/lib/casting-khrad";
 import { useTaxSplitStore } from "@/stores/tax-split-store";
 import { channelColors } from "@/lib/channel-colors";
 import { DateRangeFilter } from "@/components/date-range-filter";
-import { ChargesCalculator } from "@/components/finance/charges-calculator";
+import {
+  ErrorState,
+  RefreshingBar,
+  StatCardsSkeleton,
+  TableSkeleton,
+} from "@/components/data/states";
+import dynamic from "next/dynamic";
+
+// A 550-line panel below the fold on one screen — loaded on demand.
+const ChargesCalculator = dynamic(
+  () =>
+    import("@/components/finance/charges-calculator").then(
+      (m) => m.ChargesCalculator
+    ),
+  { ssr: false }
+);
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -496,34 +510,42 @@ export default function ProductionMarginPage() {
   const { t } = useI18n();
   const taxMode = useTaxSplitStore((s) => s.mode);
   const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
-  const [report, setReport] = useState<ProductionMarginReport | null>(null);
-  const [partyMargin, setPartyMargin] = useState<PartySalesMarginReport | null>(null);
-  const [inventoryAsOf, setInventoryAsOf] = useState<InventoryReport | null>(null);
-  const [loading, setLoading] = useState(true);
+  // These three were previously fetched by hand in a useEffect with a 200ms
+  // debounce and no cancellation, so a slow wide-range response could land
+  // after a fast narrow one and overwrite it. React Query gives each request an
+  // AbortSignal and keys the result by range, so a superseded request is
+  // cancelled and a revisited range is served from cache.
+  const marginParams = { dateFrom, dateTo, taxSplit: taxMode };
+  const marginQuery = useProductionMargin(marginParams, hydrated);
+  const partyQuery = usePartySalesMargin(marginParams, hydrated);
+  const inventoryQuery = useInventoryReport(
+    { asOf: dateTo, dateFrom, dateTo },
+    hydrated
+  );
 
-  const load = useCallback(async () => {
-    if (!hydrated) return;
-    setLoading(true);
-    try {
-      const [data, party, inventory] = await Promise.all([
-        getProductionMargin({ dateFrom, dateTo, taxSplit: taxMode }),
-        getPartySalesMargin({ dateFrom, dateTo, taxSplit: taxMode }),
-        getLiveInventoryReport({ asOf: dateTo, dateFrom, dateTo }),
-      ]);
-      setReport(data);
-      setPartyMargin(party);
-      setInventoryAsOf(inventory);
-    } catch (err) {
-      toast.error(apiError(err, t("prodMargin.loadFailed")));
-    } finally {
-      setLoading(false);
-    }
-  }, [dateFrom, dateTo, taxMode, hydrated, t]);
+  const report = marginQuery.data ?? null;
+  const partyMargin = partyQuery.data ?? null;
+  const inventoryAsOf = inventoryQuery.data ?? null;
+
+  // First paint only — a background refresh keeps the previous figures visible
+  // instead of flashing the whole page back to a spinner.
+  const loading =
+    !hydrated ||
+    (marginQuery.isPending && !report) ||
+    (partyQuery.isPending && !partyMargin) ||
+    (inventoryQuery.isPending && !inventoryAsOf);
+  const refreshing =
+    marginQuery.isFetching || partyQuery.isFetching || inventoryQuery.isFetching;
+  const loadError = marginQuery.error ?? partyQuery.error ?? inventoryQuery.error;
+  const retry = useCallback(() => {
+    void marginQuery.refetch();
+    void partyQuery.refetch();
+    void inventoryQuery.refetch();
+  }, [marginQuery, partyQuery, inventoryQuery]);
 
   useEffect(() => {
-    const timer = setTimeout(load, 200);
-    return () => clearTimeout(timer);
-  }, [load]);
+    if (loadError) toast.error(apiError(loadError, t("prodMargin.loadFailed")));
+  }, [loadError, t]);
 
   const summary = report?.summary;
   const partyTotals = partyMargin?.totals;
@@ -598,11 +620,22 @@ export default function ProductionMarginPage() {
     <div className="flex flex-col gap-6">
       <FinanceSubnav />
 
-      <DateRangeFilter />
+      <div className="flex items-center justify-between gap-3">
+        <DateRangeFilter />
+        <RefreshingBar active={refreshing && !loading} label={t("common.updating")} />
+      </div>
 
-      {loading || !report || !summary || !partyTotals ? (
-        <div className="flex justify-center py-16">
-          <Loader2 className="size-6 animate-spin text-primary" />
+      {loadError && !report ? (
+        <ErrorState
+          title={t("prodMargin.loadFailed")}
+          description={apiError(loadError, "")}
+          onRetry={retry}
+          retryLabel={t("common.retry")}
+        />
+      ) : loading || !report || !summary || !partyTotals ? (
+        <div className="flex flex-col gap-4">
+          <StatCardsSkeleton count={4} />
+          <TableSkeleton rows={6} columns={6} />
         </div>
       ) : (
         <>

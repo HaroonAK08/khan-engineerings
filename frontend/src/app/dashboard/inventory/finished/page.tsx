@@ -20,6 +20,11 @@ import {
 import { listProducts } from "@/lib/production-api";
 import type { Product } from "@/types/production";
 import { useI18n } from "@/hooks/use-i18n";
+import {
+  SortableHead,
+  useClientSort,
+  useSortState,
+} from "@/components/data/sortable-table";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -72,6 +77,8 @@ function readStoredMode(): DateMode {
   }
   return "range";
 }
+
+type StockSortKey = "name" | "family" | "size" | "quantity";
 
 export default function FinishedGoodsPage() {
   const { t } = useI18n();
@@ -156,10 +163,29 @@ export default function FinishedGoodsPage() {
     return () => clearTimeout(timer);
   }, [load]);
 
-  const filteredItems = useMemo(() => {
+  const baseItems = useMemo(() => {
     if (familyFilter === "all") return items;
     return items.filter((item) => item.family === familyFilter);
   }, [items, familyFilter]);
+
+  // Column sorting. Rows for this screen are already fully loaded (one row per
+  // SKU), so sorting happens client-side and composes with the family filter
+  // rather than replacing it.
+  const sortLabels = useMemo(
+    () => ({ asc: t("common.sortAsc"), desc: t("common.sortDesc") }),
+    [t]
+  );
+  const { sort, toggle } = useSortState<StockSortKey>(null);
+  const sortAccessors = useMemo(
+    () => ({
+      name: (row: FinishedStockItem) => row.name,
+      family: (row: FinishedStockItem) => row.family ?? "",
+      size: (row: FinishedStockItem) => row.size?.name ?? "",
+      quantity: (row: FinishedStockItem) => row.quantity,
+    }),
+    []
+  );
+  const filteredItems = useClientSort(baseItems, sort, sortAccessors);
 
   const visibleUnits = useMemo(
     () => filteredItems.reduce((sum, item) => sum + item.quantity, 0),
@@ -449,10 +475,25 @@ export default function FinishedGoodsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>{t("finished.col.product")}</TableHead>
-                  <TableHead>{t("finished.col.family")}</TableHead>
-                  <TableHead>{t("finished.col.size")}</TableHead>
-                  <TableHead className="text-end">{t("finished.col.qty")}</TableHead>
+                  <SortableHead columnKey="name" sort={sort} onToggle={toggle} labels={sortLabels}>
+                    {t("finished.col.product")}
+                  </SortableHead>
+                  <SortableHead columnKey="family" sort={sort} onToggle={toggle} labels={sortLabels}>
+                    {t("finished.col.family")}
+                  </SortableHead>
+                  <SortableHead columnKey="size" sort={sort} onToggle={toggle} labels={sortLabels}>
+                    {t("finished.col.size")}
+                  </SortableHead>
+                  <SortableHead
+                    columnKey="quantity"
+                    sort={sort}
+                    onToggle={toggle}
+                    align="right"
+                    className="text-end"
+                    labels={sortLabels}
+                  >
+                    {t("finished.col.qty")}
+                  </SortableHead>
                   <TableHead>{t("finished.col.status")}</TableHead>
                   <TableHead className="text-end">{t("common.actions")}</TableHead>
                 </TableRow>

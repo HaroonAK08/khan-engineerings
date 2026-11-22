@@ -8,6 +8,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { Loader2, Plus, Search } from "lucide-react";
 import { apiError } from "@/lib/materials-api";
+import { confirmAction } from "@/lib/confirm-action";
 import {
   createCustomer,
   customerGroupId,
@@ -150,7 +151,7 @@ export function CustomersPanel() {
   }
 
   async function onDelete(c: Customer) {
-    if (!confirm(t("cus.confirmDelete"))) return;
+    if (!(await confirmAction({ title: t("cus.confirmDelete") }))) return;
     setDeletingId(c._id);
     try {
       await deleteCustomer(c._id);

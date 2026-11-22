@@ -8,6 +8,7 @@ import { History, Loader2, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
 import { useTallyChecks } from "@/hooks/use-tally-checks";
 import { todayInput, calendarDay } from "@/lib/date-range";
+import { confirmAction } from "@/lib/confirm-action";
 import { api } from "@/lib/api";
 import { apiError, formatDate, formatMoney, withSameDayConfirm } from "@/lib/materials-api";
 import { listProducts } from "@/lib/production-api";
@@ -593,7 +594,6 @@ export default function ClaimsPage() {
       window.clearTimeout(t2);
     };
     // scroll whenever an edit session starts
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingId]);
 
   useEffect(() => {
@@ -610,7 +610,7 @@ export default function ClaimsPage() {
   }, [searchParams, loading, claims]);
 
   async function onDeleteClaim(claim: Claim) {
-    if (!window.confirm(t("claims.confirmDelete"))) return;
+    if (!(await confirmAction({ title: t("claims.confirmDelete") }))) return;
     setDeletingId(claim._id);
     try {
       await api.delete(`/claims/${claim._id}`);

@@ -14,6 +14,7 @@ const {
   wantsConfirmDuplicate,
   sameDayDuplicateError,
 } = require("../../utils/sameDay");
+const { memo } = require("../../utils/request-cache");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -397,7 +398,16 @@ async function removeWarehouse(id) {
   return { ok: true };
 }
 
+/**
+ * Average realised price per product / family across all sales. Unbounded by
+ * design (it is an all-time average) and identical for every caller within a
+ * request, so it is memoised per request.
+ */
 async function avgSoldPrices() {
+  return memo("inventory:avgSoldPrices", computeAvgSoldPrices);
+}
+
+async function computeAvgSoldPrices() {
   const Builty = require("../builty/builty.model");
   const { withNetLineTotal } = require("../../utils/builty-discount");
   const rows = await Builty.aggregate([
@@ -454,7 +464,13 @@ async function avgSoldPrices() {
   };
 }
 
-async function getFinishedStock({ warehouse, category, q, asOf } = {}) {
+async function getFinishedStock(options = {}) {
+  const { warehouse, category, q, asOf } = options;
+  const key = `inventory:finished:${warehouse || ""}|${category || ""}|${q || ""}|${asOf || ""}`;
+  return memo(key, () => computeFinishedStock({ warehouse, category, q, asOf }));
+}
+
+async function computeFinishedStock({ warehouse, category, q, asOf } = {}) {
   const mongoose = require("mongoose");
   const match = { itemType: "finished_good" };
 
@@ -667,10 +683,18 @@ async function getRawStockAsOf(asOf) {
   };
 }
 
-async function getAlerts() {
-  const { items } = await getFinishedStock();
+/**
+ * Low-stock alerts. Accepts already-loaded figures so a caller that has just
+ * computed finished and raw stock does not pay for them twice; called with no
+ * arguments it loads them itself.
+ */
+async function getAlerts({ finished, raw: preloadedRaw } = {}) {
+  const [finishedStock, raw] = await Promise.all([
+    finished || getFinishedStock(),
+    preloadedRaw || purchaseService.getStock(),
+  ]);
+  const items = finishedStock.items;
   const alerts = items.filter((i) => i.isLow);
-  const raw = await purchaseService.getStock();
   const scrap = raw.byMaterial?.scrap || raw;
   const daig = raw.byMaterial?.daig;
   const scrapLow = (scrap.availableKg ?? scrap.totalKg) <= 0;
@@ -698,7 +722,27 @@ async function getAlerts() {
   };
 }
 
-async function listMovements({ itemType, product, warehouse, dateFrom, dateTo, reason } = {}) {
+const MOVEMENT_SORT_FIELDS = {
+  movementDate: "movementDate",
+  quantity: "quantity",
+  itemType: "itemType",
+  reason: "reason",
+  direction: "direction",
+  createdAt: "createdAt",
+};
+
+const MOVEMENT_PAGE_SIZE = 100;
+const MOVEMENT_MAX_PAGE_SIZE = 500;
+
+/**
+ * Stock movement ledger, paginated.
+ *
+ * This previously returned a bare `.limit(500)` with no total, so the screen
+ * silently showed a truncated ledger. It now reports `total` alongside the rows
+ * so the UI can say how many records exist.
+ */
+async function listMovements(query = {}) {
+  const { itemType, product, warehouse, dateFrom, dateTo, reason } = query;
   const filter = {};
   if (itemType) filter.itemType = itemType;
   if (product) filter.product = product;
@@ -714,11 +758,45 @@ async function listMovements({ itemType, product, warehouse, dateFrom, dateTo, r
     }
   }
 
-  return StockMovement.find(filter)
-    .populate("product", "name sku")
-    .populate("warehouse", "name code")
-    .sort({ movementDate: -1, createdAt: -1 })
-    .limit(500);
+  const sortField = MOVEMENT_SORT_FIELDS[query.sortBy] || "movementDate";
+  const sortDir = String(query.sortDir).toLowerCase() === "asc" ? 1 : -1;
+  const sort =
+    sortField === "createdAt"
+      ? { createdAt: sortDir, _id: sortDir }
+      : { [sortField]: sortDir, createdAt: sortDir, _id: sortDir };
+
+  const requestedSize = Number(query.limit ?? query.pageSize);
+  const pageSize = Math.min(
+    MOVEMENT_MAX_PAGE_SIZE,
+    Math.max(
+      1,
+      Number.isFinite(requestedSize) && requestedSize > 0 ? requestedSize : MOVEMENT_PAGE_SIZE
+    )
+  );
+  const requestedPage = Number(query.page);
+  const page = Number.isFinite(requestedPage) && requestedPage > 0 ? Math.floor(requestedPage) : 1;
+
+  const [movements, total] = await Promise.all([
+    StockMovement.find(filter)
+      .populate("product", "name sku")
+      .populate("warehouse", "name code")
+      .sort(sort)
+      .skip((page - 1) * pageSize)
+      .limit(pageSize),
+    StockMovement.countDocuments(filter),
+  ]);
+
+  return {
+    movements,
+    page: {
+      page,
+      pageSize,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      hasMore: page * pageSize < total,
+      returned: movements.length,
+    },
+  };
 }
 
 async function createAdjustment(data) {
@@ -780,12 +858,14 @@ async function createAdjustment(data) {
 }
 
 async function getOverview() {
-  const [raw, finished, alerts, movementCount] = await Promise.all([
+  // Raw and finished stock are loaded once and handed to getAlerts, which
+  // previously re-derived both of them independently.
+  const [raw, finished, movementCount] = await Promise.all([
     purchaseService.getStock(),
     getFinishedStock(),
-    getAlerts(),
     StockMovement.countDocuments(),
   ]);
+  const alerts = await getAlerts({ finished, raw });
 
   return {
     raw,

@@ -17,7 +17,11 @@
     "resync:payments": "node src/scripts/resync-party-payments.js",
     "test": "node --test",
     "recalc:claim-losses": "node src/scripts/recalc-claim-losses.js",
-    "recalc:product-costs": "node src/scripts/recalc-product-costs.js"
+    "recalc:product-costs": "node src/scripts/recalc-product-costs.js",
+    "indexes:check": "node src/scripts/ensure-indexes.js",
+    "indexes:apply": "node src/scripts/ensure-indexes.js --apply",
+    "bench": "node scripts/bench.js",
+    "snapshot": "node scripts/snapshot-responses.js"
   },
   "keywords": [],
   "author": "",

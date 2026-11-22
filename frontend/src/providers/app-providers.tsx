@@ -1,23 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { clearAuthToken } from "@/lib/auth-token";
 import { LocaleBootstrap } from "@/components/layout/locale-bootstrap";
 import { useAuthStore } from "@/stores/auth-store";
 import { useTaxSplitStore } from "@/stores/tax-split-store";
 import type { AuthUser } from "@/types/auth";
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 30_000,
-      retry: 1,
-      refetchOnWindowFocus: false,
-    },
-  },
-});
 
 function AuthBootstrap({ children }: { children: React.ReactNode }) {
   const setUser = useAuthStore((s) => s.setUser);
@@ -64,14 +53,14 @@ function TaxSplitBootstrap() {
 }
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
+  // The React Query provider lives in the dashboard layout, not here — see
+  // providers/query-provider.tsx.
   return (
-    <QueryClientProvider client={queryClient}>
-      <LocaleBootstrap>
-        <AuthBootstrap>
-          <TaxSplitBootstrap />
-          {children}
-        </AuthBootstrap>
-      </LocaleBootstrap>
-    </QueryClientProvider>
+    <LocaleBootstrap>
+      <AuthBootstrap>
+        <TaxSplitBootstrap />
+        {children}
+      </AuthBootstrap>
+    </LocaleBootstrap>
   );
 }

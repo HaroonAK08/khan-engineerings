@@ -11,6 +11,7 @@ import {
   updateFactoryExpense,
 } from "@/lib/expenses-api";
 import { apiError, formatDate, formatMoney, withSameDayConfirm } from "@/lib/materials-api";
+import { confirmAction } from "@/lib/confirm-action";
 import type { BatchExpense } from "@/types/production";
 import { toDateInput, todayInput } from "@/lib/date-range";
 import { Button } from "@/components/ui/button";
@@ -278,7 +279,7 @@ export function ExpenseCalendar({
 
   async function removeEntry() {
     if (!editing) return;
-    if (!confirm(t("exp.confirmDeleteEntry"))) return;
+    if (!(await confirmAction({ title: t("exp.confirmDeleteEntry") }))) return;
     setDeleting(true);
     try {
       await deleteFactoryExpense(editing._id);
@@ -293,7 +294,7 @@ export function ExpenseCalendar({
   }
 
   async function deleteEntryDirect(e: BatchExpense) {
-    if (!confirm(t("exp.confirmDeleteEntry"))) return;
+    if (!(await confirmAction({ title: t("exp.confirmDeleteEntry") }))) return;
     try {
       await deleteFactoryExpense(e._id);
       toast.success(t("exp.entryDeleted"));

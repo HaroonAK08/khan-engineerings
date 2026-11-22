@@ -15,6 +15,7 @@ import {
 } from "@/lib/materials-api";
 import type { LedgerEntry } from "@/types/materials";
 import { toDateInput } from "@/lib/date-range";
+import { confirmAction } from "@/lib/confirm-action";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -402,7 +403,7 @@ export function SupplierHistoryCalendar({
         : editing.type === "adjustment"
           ? t("supplierDetail.confirmDeletePreviousPending")
           : t("supplierDetail.confirmDeletePurchase");
-    if (!confirm(confirmMsg)) return;
+    if (!(await confirmAction({ title: confirmMsg }))) return;
     setDeleting(true);
     try {
       if (editing.type === "payment" || editing.type === "adjustment") {
@@ -432,7 +433,7 @@ export function SupplierHistoryCalendar({
         : e.type === "adjustment"
           ? t("supplierDetail.confirmDeletePreviousPending")
           : t("supplierDetail.confirmDeletePurchase");
-    if (!confirm(confirmMsg)) return;
+    if (!(await confirmAction({ title: confirmMsg }))) return;
     try {
       if (e.type === "payment" || e.type === "adjustment") {
         await deleteLedgerEntry(supplierId || supplierIdOf(e), e._id);
@@ -534,7 +535,8 @@ export function SupplierHistoryCalendar({
               <TableHeader>
                 <TableRow>
                   <TallyHead label={t("common.tally")} />
-                  <TableHead className="w-[7.5rem]">{t("common.date")}</TableHead>
+                  {/* See the note in party-history-calendar.tsx. */}
+                  <TableHead className="w-[10.5rem]">{t("common.date")}</TableHead>
                   {showSupplierNames ? (
                     <TableHead className="w-[8rem]">{t("purchases.col.supplier")}</TableHead>
                   ) : null}

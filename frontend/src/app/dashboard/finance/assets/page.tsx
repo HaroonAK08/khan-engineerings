@@ -45,6 +45,7 @@ import {
   type AssetItem,
 } from "@/lib/assets-api";
 import { calendarDay, todayInput } from "@/lib/date-range";
+import { confirmAction } from "@/lib/confirm-action";
 import { apiError, formatDate } from "@/lib/materials-api";
 import { cn } from "@/lib/utils";
 
@@ -206,7 +207,7 @@ export default function AssetsPage() {
   }
 
   async function onDeleteCategory(cat: AssetCategory) {
-    if (!window.confirm(t("assets.confirmDeleteCategory"))) return;
+    if (!(await confirmAction({ title: t("assets.confirmDeleteCategory") }))) return;
     setBusy(true);
     try {
       await deleteAssetCategory(cat._id);
@@ -279,7 +280,7 @@ export default function AssetsPage() {
   }
 
   async function onDeleteItem(item: AssetItem) {
-    if (!window.confirm(t("assets.confirmDeleteItem"))) return;
+    if (!(await confirmAction({ title: t("assets.confirmDeleteItem") }))) return;
     setBusy(true);
     try {
       await deleteAssetItem(item._id);

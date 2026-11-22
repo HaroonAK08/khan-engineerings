@@ -1,5 +1,6 @@
 const AppSetting = require("./settings.model");
 const { startOfLocalDay, parseEffectiveFrom } = require("../../utils/product-weight");
+const { memo, invalidate } = require("../../utils/request-cache");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -41,6 +42,17 @@ async function getAppSettings() {
   return doc;
 }
 
+/**
+ * Read-only accessor for the single settings document.
+ *
+ * Every write path keeps using getAppSettings() so it always loads and saves a
+ * fresh mongoose document; only read paths share this one. The request cache is
+ * never installed for non-GET requests, so a write can never observe a stale doc.
+ */
+async function readAppSettings() {
+  return memo("settings:doc", getAppSettings);
+}
+
 async function listPayrollPeriods() {
   const doc = await getAppSettings();
   return [...(doc.payrollPeriods || [])].sort((a, b) => b.month.localeCompare(a.month));
@@ -48,8 +60,10 @@ async function listPayrollPeriods() {
 
 async function getPayrollPeriod(month) {
   if (!isMonthKey(month)) return null;
-  const doc = await getAppSettings();
-  return (doc.payrollPeriods || []).find((p) => p.month === month) || null;
+  return memo(`settings:payroll:${month}`, async () => {
+    const doc = await readAppSettings();
+    return (doc.payrollPeriods || []).find((p) => p.month === month) || null;
+  });
 }
 
 /**
@@ -170,9 +184,16 @@ function resolveWastePercent(settings, family, asOfDate) {
   return Number.isFinite(percent) ? percent : defaultWastePercent();
 }
 
+/**
+ * Read-only settings projections are memoised per request. There is exactly one
+ * settings document, and a twelve-month report previously re-read it ~36 times.
+ *
+ * Only these derived snapshots are cached — never the mongoose document itself,
+ * so every write path still loads and saves a fresh doc. The cache is not
+ * installed for non-GET requests at all (see utils/request-cache.js).
+ */
 async function getWasteSettings() {
-  const doc = await getAppSettings();
-  return wasteSnapshot(doc);
+  return memo("settings:waste", async () => wasteSnapshot(await readAppSettings()));
 }
 
 async function getWastePercentFor(family, asOfDate) {
@@ -214,6 +235,7 @@ async function setWastePercent({ family, percent, effectiveFrom }) {
     },
   ].slice(-80);
   await doc.save();
+  invalidate("settings:");
 
   const productionService = require("../production/production.service");
   const applied = await productionService.applyFamilyWasteFromDate(family, next, from);
@@ -264,7 +286,11 @@ function assertPercentPair(hubRaw, drumRaw) {
 }
 
 async function getTaxSplit() {
-  const doc = await getAppSettings();
+  return memo("settings:taxSplit", computeTaxSplit);
+}
+
+async function computeTaxSplit() {
+  const doc = await readAppSettings();
   const mode = normalizeTaxSplit(doc.taxSplitMode);
   const percents = normalizePercentPair(doc.taxHubPercent, doc.taxDrumPercent, {
     hub: 50,
@@ -296,7 +322,11 @@ async function setTaxSplit({ mode, hubPercent, drumPercent }) {
 }
 
 async function getElectricitySplit() {
-  const doc = await getAppSettings();
+  return memo("settings:electricitySplit", computeElectricitySplit);
+}
+
+async function computeElectricitySplit() {
+  const doc = await readAppSettings();
   const mode = doc.electricitySplitMode === "percent" ? "percent" : "intensity";
   const percents = normalizePercentPair(
     doc.electricityHubPercent,

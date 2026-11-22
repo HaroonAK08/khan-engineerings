@@ -5,6 +5,7 @@ import { FilePenLine, Loader2, NotebookPen, Plus, Search, Trash2 } from "lucide-
 import { toast } from "sonner";
 import { useI18n } from "@/hooks/use-i18n";
 import { createNote, deleteNote, listNotes, updateNote, type Note } from "@/lib/notes-api";
+import { confirmAction } from "@/lib/confirm-action";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -100,7 +101,7 @@ export default function NotesPage() {
   }
 
   async function remove(note: Note) {
-    if (!window.confirm(t("notes.confirmDelete"))) return;
+    if (!(await confirmAction({ title: t("notes.confirmDelete") }))) return;
     try {
       await deleteNote(note.id);
       setNotes((current) => current.filter((item) => item.id !== note.id));

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { apiError, formatDate, formatMoney, withSameDayConfirm } from "@/lib/materials-api";
+import { confirmAction } from "@/lib/confirm-action";
 import { deleteFactoryExpense, updateFactoryExpense } from "@/lib/expenses-api";
 import {
   listSalaryPayments,
@@ -211,7 +212,7 @@ export default function AllSalariesLedgerPage() {
 
   async function removePayment() {
     if (!editingPayment) return;
-    if (!confirm(t("sal.confirmDeletePayment"))) return;
+    if (!(await confirmAction({ title: t("sal.confirmDeletePayment") }))) return;
     setDeleting(true);
     try {
       await deleteFactoryExpense(editingPayment._id);
@@ -226,7 +227,7 @@ export default function AllSalariesLedgerPage() {
   }
 
   async function deletePaymentDirect(p: BatchExpense) {
-    if (!confirm(t("sal.confirmDeletePayment"))) return;
+    if (!(await confirmAction({ title: t("sal.confirmDeletePayment") }))) return;
     try {
       await deleteFactoryExpense(p._id);
       toast.success(t("sal.paymentDeleted"));

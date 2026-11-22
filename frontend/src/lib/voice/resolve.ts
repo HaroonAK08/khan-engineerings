@@ -973,7 +973,7 @@ async function resolveBuiltyNavigate(
   // Also try matching by customer name on recent/all filtered builties
   const customers = await resolveCustomers(q);
   for (const customer of customers.slice(0, 5)) {
-    const rows = await listBuilties({ customer: customer.id });
+    const rows = await listBuilties({ customer: customer.id, all: true });
     for (const row of rows.slice(0, 8)) {
       const party = customerNameFromBuilty(row.customer) || customer.label;
       options.push({

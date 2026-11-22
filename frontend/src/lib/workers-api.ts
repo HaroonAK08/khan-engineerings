@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { cachedGet, invalidateReference, referenceKey } from "@/lib/reference-cache";
 import type { BatchExpense } from "@/types/production";
 
 export type PayType = "weekly" | "monthly" | "per_unit";
@@ -23,8 +24,10 @@ export type Worker = {
 };
 
 export async function listWorkers(params?: { active?: string; scope?: ExpenseScope }) {
-  const { data } = await api.get<{ workers: Worker[] }>("/workers", { params });
-  return data.workers;
+  return cachedGet(referenceKey("workers", params), async () => {
+    const { data } = await api.get<{ workers: Worker[] }>("/workers", { params });
+    return data.workers;
+  });
 }
 
 export async function getWorker(id: string) {
@@ -43,6 +46,8 @@ export async function createWorker(body: {
   job?: string;
   notes?: string;
 }) {
+  // Writes change this list — drop the shared reference cache.
+  invalidateReference("workers");
   const { data } = await api.post<{ worker: Worker }>("/workers", body);
   return data.worker;
 }
@@ -62,6 +67,8 @@ export async function updateWorker(
     isActive: boolean;
   }>
 ) {
+  // Writes change this list — drop the shared reference cache.
+  invalidateReference("workers");
   const { data } = await api.patch<{ worker: Worker }>(`/workers/${id}`, body);
   return data.worker;
 }

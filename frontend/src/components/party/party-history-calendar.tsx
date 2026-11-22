@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Check, Loader2, Pencil, Printer, Trash2 } from "lucide-react";
 import { apiError, formatDate, formatMoney, withSameDayConfirm } from "@/lib/materials-api";
+import { confirmAction } from "@/lib/confirm-action";
 import {
   deleteBuilty,
   deleteCustomerInstrument,
@@ -430,7 +431,7 @@ export function PartyHistoryCalendar({
       editing.type === "payment"
         ? t("customerDetail.confirmDeletePayment")
         : t("customerDetail.confirmDeletePreviousPending");
-    if (!confirm(confirmMsg)) return;
+    if (!(await confirmAction({ title: confirmMsg }))) return;
     setDeleting(true);
     try {
       await deleteCustomerLedgerEntry(customerId, editing._id);
@@ -451,7 +452,7 @@ export function PartyHistoryCalendar({
         toast.error(t("customerDetail.builtyMissing"));
         return;
       }
-      if (!confirm(t("customerDetail.confirmDeleteBuilty"))) return;
+      if (!(await confirmAction({ title: t("customerDetail.confirmDeleteBuilty") }))) return;
       try {
         await deleteBuilty(bid);
         toast.success(t("customerDetail.entryDeleted"));
@@ -466,7 +467,7 @@ export function PartyHistoryCalendar({
       e.type === "payment"
         ? t("customerDetail.confirmDeletePayment")
         : t("customerDetail.confirmDeletePreviousPending");
-    if (!confirm(confirmMsg)) return;
+    if (!(await confirmAction({ title: confirmMsg }))) return;
     try {
       await deleteCustomerLedgerEntry(customerId, e._id);
       toast.success(t("customerDetail.entryDeleted"));
@@ -550,7 +551,7 @@ export function PartyHistoryCalendar({
   }
 
   async function deleteInstrument(instrument: CustomerInstrument) {
-    if (!confirm(t("customerDetail.confirmDeleteChequePromise"))) return;
+    if (!(await confirmAction({ title: t("customerDetail.confirmDeleteChequePromise") }))) return;
     try {
       await deleteCustomerInstrument(customerId, instrument._id);
       toast.success(t("customerDetail.entryDeleted"));
@@ -715,7 +716,11 @@ export function PartyHistoryCalendar({
             <Table className="table-fixed" containerClassName="overflow-x-hidden">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[7.5rem]">{t("common.date")}</TableHead>
+                  {/* Slightly wider than the other compact columns: the
+                      low-vision font floor in globals.css makes the monospace
+                      date wider than Tailwind's defaults assume, and at 7.5rem
+                      it overflowed into the next column. */}
+                  <TableHead className="w-[10.5rem]">{t("common.date")}</TableHead>
                   <TableHead className="w-[9.5rem]">{t("customerDetail.chequePromiseCol")}</TableHead>
                   <TableHead>{t("exp.colDetail")}</TableHead>
                   <TableHead className="w-[8rem] text-end">

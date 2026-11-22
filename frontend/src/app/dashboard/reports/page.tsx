@@ -259,7 +259,7 @@ export default function ReportsHubPage() {
     setBuiltyId("");
     setBuiltyQuery("");
     setLoadingPartyBuilties(true);
-    void listBuilties({ customer: partyId })
+    void listBuilties({ customer: partyId, all: true })
       .then((rows) => {
         if (!cancelled) setPartyBuilties(rows);
       })

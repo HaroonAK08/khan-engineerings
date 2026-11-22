@@ -33,8 +33,28 @@ import { ThemeToggle } from "./theme-toggle";
 import { LanguageToggle } from "./language-toggle";
 import { NAV_ITEMS } from "./nav-items";
 import { SidebarBrand, SidebarNav } from "./sidebar";
-import { VoiceHeaderControl } from "@/components/voice/voice-header-control";
-import { SimpleCalculator } from "./simple-calculator";
+import dynamic from "next/dynamic";
+
+/**
+ * The topbar renders on every dashboard page, so anything imported here ships
+ * in every route's bundle. The voice stack (speech recognition, a ~1,800-line
+ * intent parser, the entity resolver and an on-device model) and the calculator
+ * are used by a minority of sessions, so they load on demand instead.
+ *
+ * ssr:false because both touch browser-only APIs.
+ */
+const VoiceHeaderControl = dynamic(
+  () =>
+    import("@/components/voice/voice-header-control").then(
+      (m) => m.VoiceHeaderControl
+    ),
+  { ssr: false }
+);
+
+const SimpleCalculator = dynamic(
+  () => import("./simple-calculator").then((m) => m.SimpleCalculator),
+  { ssr: false }
+);
 import { QuickNotes } from "./quick-notes";
 
 function currentTitleKey(pathname: string | null): MessageKey {

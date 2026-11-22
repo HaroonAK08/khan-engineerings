@@ -24,6 +24,9 @@ import {
   Mic,
   History,
   Archive,
+  AlertTriangle,
+  ArrowLeftRight,
+  SlidersHorizontal,
 } from "lucide-react";
 import type { MessageKey } from "@/lib/i18n/messages";
 
@@ -76,6 +79,51 @@ export const INVENTORY_CHILDREN: NavChild[] = [
     href: "/dashboard/inventory/reports",
     icon: BarChart3,
   },
+  {
+    labelKey: "nav.inventory.alerts",
+    href: "/dashboard/inventory/alerts",
+    icon: AlertTriangle,
+  },
+  {
+    labelKey: "nav.inventory.movements",
+    href: "/dashboard/inventory/movements",
+    icon: ArrowLeftRight,
+  },
+  {
+    labelKey: "nav.inventory.settings",
+    href: "/dashboard/inventory/settings",
+    icon: SlidersHorizontal,
+  },
+];
+
+/** Production has its own sub-pages that were previously URL-only. */
+export const PRODUCTION_CHILDREN: NavChild[] = [
+  {
+    labelKey: "nav.production.runs",
+    href: "/dashboard/production",
+    icon: Factory,
+    exact: true,
+  },
+  {
+    labelKey: "nav.production.history",
+    href: "/dashboard/production/history",
+    icon: History,
+  },
+  {
+    labelKey: "nav.production.byProduct",
+    href: "/dashboard/production/products",
+    icon: Package,
+  },
+  {
+    labelKey: "nav.production.costs",
+    href: "/dashboard/production/costs",
+    icon: Receipt,
+  },
+  {
+    labelKey: "nav.production.reports",
+    href: "/dashboard/production/reports",
+    icon: BarChart3,
+  },
 ];
 
 export const FINANCE_CHILDREN: NavChild[] = [
@@ -105,6 +153,11 @@ export const FINANCE_CHILDREN: NavChild[] = [
     href: "/dashboard/finance/assets",
     icon: Landmark,
   },
+  {
+    labelKey: "nav.overview",
+    href: "/dashboard/overview",
+    icon: LayoutDashboard,
+  },
 ];
 
 export const NAV_ITEMS: NavItem[] = [
@@ -124,7 +177,13 @@ export const NAV_ITEMS: NavItem[] = [
     children: INVENTORY_CHILDREN,
   },
   { labelKey: "nav.products", href: "/dashboard/products", icon: Package, ready: true },
-  { labelKey: "nav.production", href: "/dashboard/production", icon: Factory, ready: true },
+  {
+    labelKey: "nav.production",
+    href: "/dashboard/production",
+    icon: Factory,
+    ready: true,
+    children: PRODUCTION_CHILDREN,
+  },
   {
     labelKey: "nav.expenses",
     href: "/dashboard/expenses",

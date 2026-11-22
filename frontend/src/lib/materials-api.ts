@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { cachedGet, invalidateReference, referenceKey } from "@/lib/reference-cache";
 import { openDuplicateConfirm } from "@/lib/duplicate-confirm";
 import { useLocaleStore } from "@/stores/locale-store";
 import type { LedgerEntry, Purchase, PurchaseReport, StockSummary, Supplier } from "@/types/materials";
@@ -53,8 +54,10 @@ export async function withSameDayConfirm<T>(
 }
 
 export async function listSuppliers(params?: { q?: string; active?: string }) {
-  const { data } = await api.get<{ suppliers: Supplier[] }>("/suppliers", { params });
-  return data.suppliers;
+  return cachedGet(referenceKey("suppliers", params), async () => {
+    const { data } = await api.get<{ suppliers: Supplier[] }>("/suppliers", { params });
+    return data.suppliers;
+  });
 }
 
 export async function getSupplier(id: string) {
@@ -73,16 +76,22 @@ export async function getSupplier(id: string) {
 }
 
 export async function createSupplier(body: Partial<Supplier>) {
+  // Writes change this list — drop the shared reference cache.
+  invalidateReference("suppliers");
   const { data } = await api.post<{ supplier: Supplier }>("/suppliers", body);
   return data.supplier;
 }
 
 export async function updateSupplier(id: string, body: Partial<Supplier>) {
+  // Writes change this list — drop the shared reference cache.
+  invalidateReference("suppliers");
   const { data } = await api.patch<{ supplier: Supplier }>(`/suppliers/${id}`, body);
   return data.supplier;
 }
 
 export async function deleteSupplier(id: string) {
+  // Writes change this list — drop the shared reference cache.
+  invalidateReference("suppliers");
   await api.delete(`/suppliers/${id}`);
 }
 
@@ -226,9 +235,16 @@ export function formatKg(n: number) {
   }).format(n);
 }
 
+/**
+ * Compact display date, e.g. "Nov 15, 26".
+ *
+ * A 2-digit year keeps dense ledger tables on one line. With the low-vision
+ * font floor in globals.css a monospace "Nov 15, 2026" needs ~165px, which
+ * overflowed the date column and collided with the next one.
+ */
 export function formatDate(value: string) {
   return new Date(value).toLocaleDateString(undefined, {
-    year: "numeric",
+    year: "2-digit",
     month: "short",
     day: "numeric",
   });

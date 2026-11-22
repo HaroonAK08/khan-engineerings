@@ -2,8 +2,9 @@ const builtyService = require("./builty.service");
 
 async function list(req, res, next) {
   try {
-    const builties = await builtyService.listBuilties(req.query);
-    res.json({ builties });
+    // `page` is additive: clients reading only `builties` are unaffected.
+    const { rows, page } = await builtyService.listBuilties(req.query);
+    res.json({ builties: rows, page });
   } catch (err) {
     next(err);
   }

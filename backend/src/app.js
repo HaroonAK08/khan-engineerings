@@ -23,6 +23,7 @@ const assetRoutes = require("./modules/assets/asset.routes");
 const personalBanksRoutes = require("./modules/personal-banks/personal-banks.routes");
 const notesRoutes = require("./modules/notes/note.routes");
 const { notFound, errorHandler } = require("./middleware/errorHandler");
+const { requestCache } = require("./utils/request-cache");
 
 const app = express();
 
@@ -66,6 +67,10 @@ app.use((req, _res, next) => {
 });
 
 app.use(cookieParser());
+
+// Collapses repeated identical reads within a single GET (settings, stock
+// aggregates, purchase rates). Not installed for writes — see request-cache.js.
+app.use(requestCache);
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 app.use("/api/auth", authRoutes);

@@ -17,6 +17,7 @@ import {
 } from "@/lib/materials-api";
 import type { Purchase, Supplier } from "@/types/materials";
 import { toDateInput } from "@/lib/date-range";
+import { confirmAction } from "@/lib/confirm-action";
 import { useI18n } from "@/hooks/use-i18n";
 import { useTallyChecks } from "@/hooks/use-tally-checks";
 import { Button } from "@/components/ui/button";
@@ -191,7 +192,7 @@ export default function InventoryHistoryPage() {
 
   async function removeFromDialog() {
     if (!editing) return;
-    if (!confirm(t("purchases.deleteConfirm"))) return;
+    if (!(await confirmAction({ title: t("purchases.deleteConfirm") }))) return;
     setDeleting(true);
     try {
       await deletePurchase(editing._id);
@@ -206,7 +207,7 @@ export default function InventoryHistoryPage() {
   }
 
   async function deleteDirect(p: Purchase) {
-    if (!confirm(t("purchases.deleteConfirm"))) return;
+    if (!(await confirmAction({ title: t("purchases.deleteConfirm") }))) return;
     try {
       await deletePurchase(p._id);
       toast.success(t("purchases.deleted"));

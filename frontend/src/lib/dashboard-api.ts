@@ -89,9 +89,10 @@ export type DashboardData = {
   };
 };
 
-export async function getDashboard() {
+export async function getDashboard(signal?: AbortSignal) {
   const { data } = await api.get<{ dashboard: DashboardData }>("/dashboard", {
     timeout: 30_000,
+    signal,
   });
   return data.dashboard;
 }

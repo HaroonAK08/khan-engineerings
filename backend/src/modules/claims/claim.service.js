@@ -14,6 +14,7 @@ const {
   wantsConfirmDuplicate,
   sameDayDuplicateError,
 } = require("../../utils/sameDay");
+const { memo } = require("../../utils/request-cache");
 
 const DISPOSITIONS = ["returned", "rework"];
 
@@ -178,6 +179,12 @@ function soldUnitPrice(soldLine, product, weightKg) {
 }
 
 async function avgMaterialRate(materialType) {
+  return memo(`claims:avgMaterialRate:${materialType}`, () =>
+    computeAvgMaterialRate(materialType)
+  );
+}
+
+async function computeAvgMaterialRate(materialType) {
   const rateRow = await Purchase.aggregate([
     { $match: { materialType } },
     {

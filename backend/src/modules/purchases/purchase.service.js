@@ -8,6 +8,7 @@ const {
   sameDayDuplicateError,
 } = require("../../utils/sameDay");
 const { allocateThisMonthFirst } = require("../../utils/allocate-payments");
+const { memo } = require("../../utils/request-cache");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -296,7 +297,18 @@ async function remove(id) {
   return { ok: true };
 }
 
+/**
+ * Purchased / consumed / available kg for one material type.
+ * Memoised per request: inventory overview, alerts and several finance paths
+ * all ask for the same two material types while building one response.
+ */
 async function aggregateStockForMaterial(materialType) {
+  return memo(`purchases:stock:${materialType}`, () =>
+    computeStockForMaterial(materialType)
+  );
+}
+
+async function computeStockForMaterial(materialType) {
   const productionService = require("../production/production.service");
   const result = await Purchase.aggregate([
     { $match: { materialType } },

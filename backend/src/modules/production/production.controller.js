@@ -20,8 +20,9 @@ async function create(req, res, next) {
 
 async function list(req, res, next) {
   try {
-    const batches = await productionService.list(req.query);
-    res.json({ batches });
+    // `page` is additive: existing clients that only read `batches` are unaffected.
+    const { batches, page } = await productionService.list(req.query);
+    res.json({ batches, page });
   } catch (err) {
     next(err);
   }

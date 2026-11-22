@@ -1,21 +1,30 @@
 import { AuthGuard } from "@/components/auth/auth-guard";
+import { QueryProvider } from "@/providers/query-provider";
+import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { ChequePromiseDueBanner } from "@/components/party/cheque-promise-due-banner";
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <AuthGuard>
-      <div className="flex h-svh overflow-hidden">
-        <Sidebar />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <Topbar />
-          <main className="flex-1 overflow-y-auto bg-background p-3 sm:p-4 lg:p-6">
-            <ChequePromiseDueBanner />
-            {children}
-          </main>
+      <QueryProvider>
+        <div className="flex h-svh overflow-hidden">
+          <Sidebar />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <Topbar />
+            <main className="flex-1 overflow-y-auto bg-background p-3 sm:p-4 lg:p-6">
+              <ChequePromiseDueBanner />
+              {children}
+            </main>
+          </div>
         </div>
-      </div>
+        <ConfirmActionDialog />
+      </QueryProvider>
     </AuthGuard>
   );
 }

@@ -55,11 +55,20 @@ async function normalizeItems(items, { asOfDate, useAsOfWeight = false } = {}) {
   if (!Array.isArray(items) || items.length === 0) {
     throw httpError("Add at least one product", 400);
   }
+  // Load every referenced product in one query instead of one per line.
+  // Validation order is unchanged: the "Product is required" check still runs
+  // per line, in order, before any "Product not found".
+  for (const raw of items) {
+    if (!raw.product) throw httpError("Product is required on each line", 400);
+  }
+  const productIds = [...new Set(items.map((raw) => String(raw.product)))];
+  const productDocs = await Product.find({ _id: { $in: productIds } });
+  const productsById = new Map(productDocs.map((doc) => [String(doc._id), doc]));
+
   const normalized = [];
   let totalAmount = 0;
   for (const raw of items) {
-    if (!raw.product) throw httpError("Product is required on each line", 400);
-    const product = await Product.findById(raw.product);
+    const product = productsById.get(String(raw.product));
     if (!product) throw httpError("Product not found", 404);
 
     const quantity = Number(raw.quantity);
@@ -267,7 +276,34 @@ function toRow(builty) {
   };
 }
 
-async function listBuilties({ q, customer, paymentStatus, dateFrom, dateTo } = {}) {
+/** Fields a client may sort the builty list by. */
+const BUILTY_SORT_FIELDS = {
+  builtyDate: "builtyDate",
+  builtyNo: "builtyNo",
+  billNo: "billNo",
+  totalAmount: "totalAmount",
+  balance: "balance",
+  paymentStatus: "paymentStatus",
+  createdAt: "createdAt",
+};
+
+const BUILTY_PAGE_SIZE = 50;
+const BUILTY_MAX_PAGE_SIZE = 200;
+
+/** User input reaching a RegExp must be escaped. */
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Builty list.
+ *
+ * Returns `{ rows, page }`. `page` is additive — callers that only read the
+ * array keep working. `all=true` opts out of paging for the day-grouped and
+ * export screens, which need whole date ranges.
+ */
+async function listBuilties(query = {}) {
+  const { q, customer, paymentStatus, dateFrom, dateTo } = query;
   const filter = {};
   if (customer) filter.customer = customer;
   if (paymentStatus) filter.paymentStatus = paymentStatus;
@@ -281,17 +317,59 @@ async function listBuilties({ q, customer, paymentStatus, dateFrom, dateTo } = {
     }
   }
   if (q?.trim()) {
-    const term = q.trim();
+    const term = escapeRegex(q.trim());
     filter.$or = [{ builtyNo: new RegExp(term, "i") }, { billNo: new RegExp(term, "i") }];
   }
 
-  const builties = await Builty.find(filter)
+  const sortField = BUILTY_SORT_FIELDS[query.sortBy] || "builtyDate";
+  const dir = String(query.sortDir).toLowerCase() === "asc" ? 1 : -1;
+  // createdAt and _id are always tiebreakers so paging cannot skip or repeat.
+  const sort =
+    sortField === "createdAt"
+      ? { createdAt: dir, _id: dir }
+      : { [sortField]: dir, createdAt: dir, _id: dir };
+
+  const wantsAll = query.all === true || query.all === "true";
+  const requestedSize = Number(query.limit ?? query.pageSize);
+  const pageSize = wantsAll
+    ? 0
+    : Math.min(
+        BUILTY_MAX_PAGE_SIZE,
+        Math.max(
+          1,
+          Number.isFinite(requestedSize) && requestedSize > 0
+            ? requestedSize
+            : BUILTY_PAGE_SIZE
+        )
+      );
+  const requestedPage = Number(query.page);
+  const page =
+    Number.isFinite(requestedPage) && requestedPage > 0 ? Math.floor(requestedPage) : 1;
+
+  const cursor = Builty.find(filter)
     .populate("customer", "name phone")
     .populate({ path: "items.product", select: "name sku" })
-    .sort({ builtyDate: -1, createdAt: -1 })
-    .lean();
+    .sort(sort);
+  if (!wantsAll) cursor.skip((page - 1) * pageSize).limit(pageSize);
 
-  return builties.map(toRow);
+  const [builties, total] = await Promise.all([
+    cursor.lean(),
+    Builty.countDocuments(filter),
+  ]);
+
+  const effectiveSize = wantsAll ? total || builties.length : pageSize;
+  return {
+    rows: builties.map(toRow),
+    page: {
+      page: wantsAll ? 1 : page,
+      pageSize: effectiveSize,
+      total,
+      totalPages: effectiveSize > 0 ? Math.max(1, Math.ceil(total / effectiveSize)) : 1,
+      hasMore: wantsAll ? false : page * pageSize < total,
+      returned: builties.length,
+      all: wantsAll,
+    },
+  };
 }
 
 async function getBuilty(id) {

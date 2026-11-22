@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { cachedGet, invalidateReference, referenceKey } from "@/lib/reference-cache";
 import type { BatchExpense } from "@/types/production";
 
 export type PartyGroupRef = {
@@ -254,8 +255,10 @@ export type SalesReport = {
 };
 
 export async function listCustomers(params?: { q?: string; active?: string; group?: string }) {
-  const { data } = await api.get<{ customers: Customer[] }>("/customers", { params });
-  return data.customers;
+  return cachedGet(referenceKey("customers", params), async () => {
+    const { data } = await api.get<{ customers: Customer[] }>("/customers", { params });
+    return data.customers;
+  });
 }
 
 export async function listPartyGroups(params?: {
@@ -263,8 +266,10 @@ export async function listPartyGroups(params?: {
   active?: string;
   channel?: PartyGroupChannel;
 }) {
-  const { data } = await api.get<{ groups: PartyGroup[] }>("/party-groups", { params });
-  return data.groups;
+  return cachedGet(referenceKey("party-groups", params), async () => {
+    const { data } = await api.get<{ groups: PartyGroup[] }>("/party-groups", { params });
+    return data.groups;
+  });
 }
 
 export async function getPartyGroup(id: string) {
@@ -291,6 +296,8 @@ export async function createPartyGroup(body: {
   partyIds?: string[];
   isActive?: boolean;
 }) {
+  // Writes change this list — drop the shared reference cache.
+  invalidateReference("party-groups");
   const { data } = await api.post<{ group: PartyGroup }>("/party-groups", body);
   return data.group;
 }
@@ -305,11 +312,15 @@ export async function updatePartyGroup(
     isActive?: boolean;
   }
 ) {
+  // Writes change this list — drop the shared reference cache.
+  invalidateReference("party-groups");
   const { data } = await api.patch<{ group: PartyGroup }>(`/party-groups/${id}`, body);
   return data.group;
 }
 
 export async function deletePartyGroup(id: string) {
+  // Writes change this list — drop the shared reference cache.
+  invalidateReference("party-groups");
   await api.delete(`/party-groups/${id}`);
 }
 
@@ -364,16 +375,22 @@ export async function listPartyProductPrices(customerId: string) {
 }
 
 export async function createCustomer(body: Partial<Customer>) {
+  // Writes change this list — drop the shared reference cache.
+  invalidateReference("customers");
   const { data } = await api.post<{ customer: Customer }>("/customers", body);
   return data.customer;
 }
 
 export async function updateCustomer(id: string, body: Partial<Customer>) {
+  // Writes change this list — drop the shared reference cache.
+  invalidateReference("customers");
   const { data } = await api.patch<{ customer: Customer }>(`/customers/${id}`, body);
   return data.customer;
 }
 
 export async function deleteCustomer(id: string) {
+  // Writes change this list — drop the shared reference cache.
+  invalidateReference("customers");
   await api.delete(`/customers/${id}`);
 }
 
@@ -418,11 +435,20 @@ export async function recordCustomerAdjustment(
   return data;
 }
 
+/**
+ * Cheques and promises falling due.
+ *
+ * Both the banner (dashboard layout) and the bell (topbar) ask for this on
+ * every page, and each was issuing its own request — measured at ×4 per page
+ * load. Cached so they share one.
+ */
 export async function listDueCustomerInstruments() {
-  const { data } = await api.get<{ instruments: CustomerInstrument[] }>(
-    "/customers/instruments/due"
-  );
-  return data.instruments || [];
+  return cachedGet("instruments-due", async () => {
+    const { data } = await api.get<{ instruments: CustomerInstrument[] }>(
+      "/customers/instruments/due"
+    );
+    return data.instruments || [];
+  });
 }
 
 export async function createCustomerInstrument(
@@ -435,6 +461,7 @@ export async function createCustomerInstrument(
     notes?: string;
   }
 ) {
+  invalidateReference("instruments-due");
   const { data } = await api.post<{ instrument: CustomerInstrument }>(
     `/customers/${customerId}/instruments`,
     body
@@ -453,6 +480,7 @@ export async function updateCustomerInstrument(
     notes?: string;
   }
 ) {
+  invalidateReference("instruments-due");
   const { data } = await api.patch<{ instrument: CustomerInstrument }>(
     `/customers/${customerId}/instruments/${instrumentId}`,
     body
@@ -470,6 +498,7 @@ export async function receiveCustomerInstrument(
     confirmDuplicate?: boolean;
   }
 ) {
+  invalidateReference("instruments-due");
   const { data } = await api.post<{
     instrument: CustomerInstrument;
     balance: number;
@@ -478,6 +507,7 @@ export async function receiveCustomerInstrument(
 }
 
 export async function deleteCustomerInstrument(customerId: string, instrumentId: string) {
+  invalidateReference("instruments-due");
   await api.delete(`/customers/${customerId}/instruments/${instrumentId}`);
 }
 
@@ -511,8 +541,10 @@ export async function recordCustomerPayment(
 }
 
 export async function listSalesmen(params?: { q?: string; active?: string }) {
-  const { data } = await api.get<{ salesmen: Salesman[] }>("/salesmen", { params });
-  return data.salesmen;
+  return cachedGet(referenceKey("salesmen", params), async () => {
+    const { data } = await api.get<{ salesmen: Salesman[] }>("/salesmen", { params });
+    return data.salesmen;
+  });
 }
 
 export async function getSalesman(id: string) {
@@ -521,11 +553,15 @@ export async function getSalesman(id: string) {
 }
 
 export async function createSalesman(body: Partial<Salesman>) {
+  // Writes change this list — drop the shared reference cache.
+  invalidateReference("salesmen");
   const { data } = await api.post<{ salesman: Salesman }>("/salesmen", body);
   return data.salesman;
 }
 
 export async function updateSalesman(id: string, body: Partial<Salesman>) {
+  // Writes change this list — drop the shared reference cache.
+  invalidateReference("salesmen");
   const { data } = await api.patch<{ salesman: Salesman }>(`/salesmen/${id}`, body);
   return data.salesman;
 }
@@ -556,15 +592,46 @@ export async function listSalesmanPayments(params?: {
   return data.payments;
 }
 
-export async function listBuilties(params?: {
+export type BuiltyPage = {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  hasMore: boolean;
+  returned: number;
+  all?: boolean;
+};
+
+export type ListBuiltiesParams = {
   q?: string;
   customer?: string;
   paymentStatus?: string;
   dateFrom?: string;
   dateTo?: string;
-}) {
-  const { data } = await api.get<{ builties: BuiltyRow[] }>("/builty", { params });
-  return data.builties;
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortDir?: "asc" | "desc";
+  /** Opt out of paging where a screen needs the whole range (day grouping, pickers). */
+  all?: boolean;
+};
+
+/** Paginated builty list — rows plus the page metadata the server sends. */
+export async function listBuiltiesPage(
+  params?: ListBuiltiesParams,
+  signal?: AbortSignal
+) {
+  const { data } = await api.get<{ builties: BuiltyRow[]; page?: BuiltyPage }>("/builty", {
+    params,
+    signal,
+  });
+  return { rows: data.builties, page: data.page };
+}
+
+/** Rows only — for callers that do not page. */
+export async function listBuilties(params?: ListBuiltiesParams, signal?: AbortSignal) {
+  const { rows } = await listBuiltiesPage(params, signal);
+  return rows;
 }
 
 export async function getBuilty(id: string) {

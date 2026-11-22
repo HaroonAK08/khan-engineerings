@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { BookOpen, ChevronRight, Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { apiError, formatDate, formatKg, formatMoney, withSameDayConfirm } from "@/lib/materials-api";
+import { confirmAction } from "@/lib/confirm-action";
 import {
   createWorker,
   deactivateWorker,
@@ -693,7 +694,7 @@ export default function SalariesPage() {
   }
 
   async function onDeactivateWorker(w: Worker) {
-    if (!confirm(`Remove ${displayWorkerName(w, isUrdu)} from the active list?`)) return;
+    if (!(await confirmAction({ title: `Remove ${displayWorkerName(w, isUrdu)} from the active list?` }))) return;
     try {
       await deactivateWorker(w._id);
       toast.success("Worker removed");

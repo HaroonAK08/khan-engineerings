@@ -15,6 +15,7 @@ const {
 } = require("../../utils/sameDay");
 const { resolveWeightKg, startOfLocalDay } = require("../../utils/product-weight");
 const { withNetLineTotal } = require("../../utils/builty-discount");
+const { memo } = require("../../utils/request-cache");
 
 function httpError(message, statusCode) {
   const err = new Error(message);
@@ -36,6 +37,11 @@ function assertNonNeg(value, label) {
 
 function roundKg(n) {
   return Math.round(n * 1000) / 1000;
+}
+
+/** User input reaching a RegExp must be escaped (ReDoS / accidental wildcards). */
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function roundMoney(n) {
@@ -123,27 +129,83 @@ function buildStages(family) {
   }));
 }
 
+/**
+ * Total material consumed, by type, across every non-cancelled batch.
+ *
+ * Computed in the database rather than by streaming every batch document into
+ * Node. The pipeline mirrors the previous JavaScript exactly:
+ *   - a batch with a non-empty `inputs[]` contributes the positive quantities
+ *     of inputs matching `materialType`;
+ *   - a batch without `inputs[]` falls back to the legacy scrap fields, and
+ *     only for scrap.
+ * Memoised per request: several callers ask for the same figure while building
+ * one inventory or finance response.
+ */
 async function sumNetConsumedForMaterial(materialType, excludeBatchId = null) {
-  const match = { status: { $ne: "cancelled" } };
-  if (excludeBatchId) match._id = { $ne: excludeBatchId };
+  const key = `production:consumed:${materialType}:${excludeBatchId || ""}`;
+  return memo(key, async () => {
+    const match = { status: { $ne: "cancelled" } };
+    if (excludeBatchId) match._id = { $ne: excludeBatchId };
 
-  const batches = await ProductionBatch.find(match)
-    .select("inputs inputScrapKg returnedScrapKg")
-    .lean();
+    const legacyFallback =
+      materialType === "scrap"
+        ? {
+            $cond: [
+              { $eq: [{ $ifNull: ["$inputScrapKg", null] }, null] },
+              0,
+              {
+                $max: [
+                  0,
+                  {
+                    $subtract: [
+                      { $ifNull: ["$inputScrapKg", 0] },
+                      { $ifNull: ["$returnedScrapKg", 0] },
+                    ],
+                  },
+                ],
+              },
+            ],
+          }
+        : 0;
 
-  let total = 0;
-  for (const b of batches) {
-    if (Array.isArray(b.inputs) && b.inputs.length > 0) {
-      for (const inp of b.inputs) {
-        if (inp.materialType === materialType && (inp.quantityKg || 0) > 0) {
-          total += inp.quantityKg || 0;
-        }
-      }
-    } else if (materialType === "scrap" && b.inputScrapKg != null) {
-      total += Math.max(0, (b.inputScrapKg || 0) - (b.returnedScrapKg || 0));
-    }
-  }
-  return roundKg(total);
+    const rows = await ProductionBatch.aggregate([
+      { $match: match },
+      {
+        $project: {
+          _id: 0,
+          kg: {
+            $cond: [
+              { $gt: [{ $size: { $ifNull: ["$inputs", []] } }, 0] },
+              {
+                $sum: {
+                  $map: {
+                    input: {
+                      $filter: {
+                        input: { $ifNull: ["$inputs", []] },
+                        as: "i",
+                        cond: {
+                          $and: [
+                            { $eq: ["$$i.materialType", materialType] },
+                            { $gt: [{ $ifNull: ["$$i.quantityKg", 0] }, 0] },
+                          ],
+                        },
+                      },
+                    },
+                    as: "i",
+                    in: { $ifNull: ["$$i.quantityKg", 0] },
+                  },
+                },
+              },
+              legacyFallback,
+            ],
+          },
+        },
+      },
+      { $group: { _id: null, total: { $sum: "$kg" } } },
+    ]);
+
+    return roundKg(rows[0]?.total || 0);
+  });
 }
 
 async function sumNetConsumedKg(excludeBatchId = null) {
@@ -374,7 +436,19 @@ async function create(data) {
   return populateBatch(batch._id);
 }
 
-async function list({ product, dateFrom, dateTo, q, status, currentStage, family } = {}) {
+/** Fields a client may sort the production list by. */
+const BATCH_SORT_FIELDS = {
+  productionDate: "productionDate",
+  batchNo: "batchNo",
+  status: "status",
+  family: "family",
+  createdAt: "createdAt",
+};
+
+const DEFAULT_PAGE_SIZE = 50;
+const MAX_PAGE_SIZE = 200;
+
+function buildBatchFilter({ product, dateFrom, dateTo, q, status, currentStage, family } = {}) {
   const filter = {};
   if (status) filter.status = status;
   if (currentStage) filter.currentStage = currentStage;
@@ -391,12 +465,66 @@ async function list({ product, dateFrom, dateTo, q, status, currentStage, family
       filter.productionDate.$lte = end;
     }
   }
-  if (q?.trim()) filter.batchNo = new RegExp(q.trim(), "i");
+  if (q?.trim()) filter.batchNo = new RegExp(escapeRegex(q.trim()), "i");
+  return filter;
+}
 
-  return ProductionBatch.find(filter)
+function buildBatchSort({ sortBy, sortDir } = {}) {
+  const field = BATCH_SORT_FIELDS[sortBy] || "productionDate";
+  const direction = String(sortDir).toLowerCase() === "asc" ? 1 : -1;
+  // createdAt is always the tiebreaker so paging can never repeat or skip a row.
+  return field === "createdAt"
+    ? { createdAt: direction, _id: direction }
+    : { [field]: direction, createdAt: direction, _id: direction };
+}
+
+/**
+ * Paginated production list.
+ *
+ * Returns `{ batches, page }`. `page` is additive — callers that only read
+ * `batches` keep working. Pass `all=true` to opt out of paging (used by the
+ * bulk day-level actions in production history, which operate on a whole day).
+ */
+async function list(query = {}) {
+  const filter = buildBatchFilter(query);
+  const sort = buildBatchSort(query);
+
+  const wantsAll = query.all === true || query.all === "true";
+  const requestedSize = Number(query.limit ?? query.pageSize);
+  const pageSize = wantsAll
+    ? 0
+    : Math.min(
+        MAX_PAGE_SIZE,
+        Math.max(1, Number.isFinite(requestedSize) && requestedSize > 0 ? requestedSize : DEFAULT_PAGE_SIZE)
+      );
+  const requestedPage = Number(query.page);
+  const page = Number.isFinite(requestedPage) && requestedPage > 0 ? Math.floor(requestedPage) : 1;
+
+  const cursor = ProductionBatch.find(filter)
     .populate("outputs.product", "name sku family")
     .populate("product", "name sku")
-    .sort({ productionDate: -1, createdAt: -1 });
+    .sort(sort);
+
+  if (!wantsAll) cursor.skip((page - 1) * pageSize).limit(pageSize);
+
+  const [batches, total] = await Promise.all([
+    cursor.exec(),
+    ProductionBatch.countDocuments(filter),
+  ]);
+
+  const effectiveSize = wantsAll ? total || batches.length : pageSize;
+  return {
+    batches,
+    page: {
+      page: wantsAll ? 1 : page,
+      pageSize: effectiveSize,
+      total,
+      totalPages: effectiveSize > 0 ? Math.max(1, Math.ceil(total / effectiveSize)) : 1,
+      hasMore: wantsAll ? false : page * pageSize < total,
+      returned: batches.length,
+      all: wantsAll,
+    },
+  };
 }
 
 async function getById(id) {

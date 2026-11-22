@@ -8,11 +8,15 @@ import { History, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
 import { useTallyChecks } from "@/hooks/use-tally-checks";
 import { thisMonthRange } from "@/lib/date-range";
+import { confirmAction } from "@/lib/confirm-action";
+import { TablePagination } from "@/components/data/table-pagination";
 import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
 import {
   customerName,
   deleteBuilty,
-  listBuilties,
+  listBuiltiesPage,
+  type BuiltyPage,
+  type ListBuiltiesParams,
   paymentStatusLabel,
   type BuiltyRow,
 } from "@/lib/sales-api";
@@ -41,40 +45,68 @@ export default function BuiltyPage() {
   const [q, setQ] = useState(() => searchParams.get("q") || "");
   const [paymentStatus, setPaymentStatus] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [pageInfo, setPageInfo] = useState<BuiltyPage | undefined>(undefined);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params: {
-        q?: string;
-        paymentStatus?: string;
-        dateFrom: string;
-        dateTo: string;
-      } = {
-        dateFrom: month.from,
-        dateTo: month.to,
-      };
-      if (q.trim()) params.q = q.trim();
-      if (paymentStatus) params.paymentStatus = paymentStatus;
-      setRows(await listBuilties(params));
-    } catch (err) {
-      toast.error(apiError(err, t("builty.loadFailed")));
-    } finally {
-      setLoading(false);
-    }
-  }, [q, paymentStatus, month.from, month.to, t]);
+  const load = useCallback(
+    async (signal?: AbortSignal) => {
+      setLoading(true);
+      try {
+        const params: ListBuiltiesParams = {
+          dateFrom: month.from,
+          dateTo: month.to,
+          page,
+          limit: pageSize,
+        };
+        if (q.trim()) params.q = q.trim();
+        if (paymentStatus) params.paymentStatus = paymentStatus;
+        const result = await listBuiltiesPage(params, signal);
+        if (signal?.aborted) return;
+        setRows(result.rows);
+        setPageInfo(result.page);
+      } catch (err) {
+        // A cancelled request is expected when the filter changes — not an error.
+        if (signal?.aborted || (err as { code?: string })?.code === "ERR_CANCELED") return;
+        toast.error(apiError(err, t("builty.loadFailed")));
+      } finally {
+        if (!signal?.aborted) setLoading(false);
+      }
+    },
+    [q, paymentStatus, month.from, month.to, page, pageSize, t]
+  );
 
   useEffect(() => {
-    const timer = setTimeout(load, 200);
-    return () => clearTimeout(timer);
+    // Debounce typing, and cancel the in-flight request when the filter changes
+    // so a slow earlier response cannot overwrite a newer one.
+    const controller = new AbortController();
+    const timer = setTimeout(() => void load(controller.signal), 200);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [load]);
+
+  // A narrower filter must not strand the user on a page that no longer exists.
+  useEffect(() => {
+    setPage(1);
+  }, [q, paymentStatus]);
 
   useEffect(() => {
     setQ(searchParams.get("q") || "");
   }, [searchParams]);
 
   async function onDelete(row: BuiltyRow) {
-    if (!confirm(t("builty.confirmDelete"))) return;
+    if (
+      !(await confirmAction({
+        title: t("builty.confirmDelete"),
+        consequences: [
+          t("confirm.builty.stockReturned"),
+          t("confirm.builty.ledgerRemoved"),
+        ],
+      }))
+    )
+      return;
     setDeletingId(row._id);
     try {
       await deleteBuilty(row._id);
@@ -249,6 +281,16 @@ export default function BuiltyPage() {
               </TableBody>
             </Table>
           )}
+
+          <TablePagination
+            className="mt-3"
+            page={pageInfo}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setPage(1);
+            }}
+          />
         </CardContent>
       </Card>
     </div>

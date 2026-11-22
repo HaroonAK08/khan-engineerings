@@ -136,7 +136,9 @@ export default function SalesReportsHubPage() {
 
   const byGroup = report?.byGroup || [];
   const records = report?.records || [];
-  const byProduct = report?.byProduct || [];
+  // Memoised so the `|| []` fallback does not produce a fresh array on every
+  // render, which was defeating the two useMemos below (docs/audit/05, FE-008).
+  const byProduct = useMemo(() => report?.byProduct || [], [report]);
   const drilledGroup = Boolean(groupId) && !partyId;
   const drilledParty = Boolean(partyId);
 

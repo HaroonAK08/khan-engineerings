@@ -8,6 +8,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { ArrowLeft, ChevronRight, Loader2, Plus, Search } from "lucide-react";
 import { apiError, formatDate, formatMoney, withSameDayConfirm } from "@/lib/materials-api";
+import { confirmAction } from "@/lib/confirm-action";
 import {
   createPartyGroup,
   customerGroupId,
@@ -348,7 +349,7 @@ export function PartyGroupsPanel() {
   }
 
   async function onDelete(g: PartyGroup) {
-    if (!confirm(t("pgroup.confirmDelete"))) return;
+    if (!(await confirmAction({ title: t("pgroup.confirmDelete") }))) return;
     setDeletingId(g._id);
     try {
       await deletePartyGroup(g._id);

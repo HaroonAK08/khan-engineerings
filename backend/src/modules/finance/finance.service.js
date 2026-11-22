@@ -17,6 +17,11 @@ const {
 const mongoose = require("mongoose");
 const { withNetLineTotal } = require("../../utils/builty-discount");
 const {
+  mapWithConcurrency,
+  SEGMENT_CONCURRENCY,
+} = require("../../utils/concurrency");
+const { memo } = require("../../utils/request-cache");
+const {
   dayRange,
   wantsConfirmDuplicate,
   sameDayDuplicateError,
@@ -313,14 +318,23 @@ async function getMonthly(query = {}) {
   const months = Number(query.months) > 0 ? Math.min(Number(query.months), 24) : 12;
   const start = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
 
+  // Each month's overview is independent, so they are resolved concurrently and
+  // mapped afterwards in the original order.
+  const windows = Array.from({ length: months }, (_, i) => ({
+    from: new Date(start.getFullYear(), start.getMonth() + i, 1),
+    to: new Date(start.getFullYear(), start.getMonth() + i + 1, 0, 23, 59, 59, 999),
+  }));
+  const overviews = await mapWithConcurrency(windows, SEGMENT_CONCURRENCY, (w) =>
+    getOverview({
+      dateFrom: w.from.toISOString().slice(0, 10),
+      dateTo: w.to.toISOString().slice(0, 10),
+    })
+  );
+
   const series = [];
   for (let i = 0; i < months; i += 1) {
-    const from = new Date(start.getFullYear(), start.getMonth() + i, 1);
-    const to = new Date(start.getFullYear(), start.getMonth() + i + 1, 0, 23, 59, 59, 999);
-    const overview = await getOverview({
-      dateFrom: from.toISOString().slice(0, 10),
-      dateTo: to.toISOString().slice(0, 10),
-    });
+    const from = windows[i].from;
+    const overview = overviews[i];
     series.push({
       year: from.getFullYear(),
       month: from.getMonth() + 1,
@@ -909,7 +923,17 @@ async function getExpenseBreakdown(query = {}) {
   };
 }
 
+/**
+ * Blended purchase rate per kg (spend / kg), for the period with an all-time
+ * fallback. Memoised per request — a twelve-month report asks for the same
+ * month windows repeatedly while building per-family and per-party views.
+ */
 async function getAvgMaterialRates(from, to) {
+  const key = `finance:matRates:${from ? new Date(from).getTime() : ""}:${to ? new Date(to).getTime() : ""}`;
+  return memo(key, () => computeAvgMaterialRates(from, to));
+}
+
+async function computeAvgMaterialRates(from, to) {
   const match = {};
   if (from || to) Object.assign(match, dateMatch("purchaseDate", from, to));
 
@@ -937,7 +961,11 @@ async function getAvgMaterialRates(from, to) {
 
   const period = await ratesFor(match);
   const needsFallback = (!period.scrap || !period.daig);
-  const allTime = needsFallback ? await ratesFor({}) : period;
+  // The all-time fallback is the same for every window, so it is shared across
+  // the month segments of one request rather than recomputed per segment.
+  const allTime = needsFallback
+    ? await memo("finance:matRates:allTime", () => ratesFor({}))
+    : period;
   return {
     scrap: period.scrap || allTime.scrap || 0,
     daig: period.daig || allTime.daig || 0,
@@ -977,16 +1005,16 @@ async function getProductionMargin(query = {}) {
     return computeProductionMarginForPeriod(query);
   }
 
-  const parts = [];
-  for (const seg of segments) {
-    parts.push(
-      await computeProductionMarginForPeriod({
-        ...query,
-        dateFrom: toDateInput(seg.from),
-        dateTo: toDateInput(seg.to),
-      })
-    );
-  }
+  // Segments are independent, so they are computed concurrently (bounded by the
+  // connection pool). mapWithConcurrency preserves input order, so the merge
+  // below folds them in exactly the same sequence as the previous serial loop.
+  const parts = await mapWithConcurrency(segments, SEGMENT_CONCURRENCY, (seg) =>
+    computeProductionMarginForPeriod({
+      ...query,
+      dateFrom: toDateInput(seg.from),
+      dateTo: toDateInput(seg.to),
+    })
+  );
   return mergeProductionMarginReports(parts, { from, to });
 }
 
@@ -2641,6 +2669,12 @@ function isSalesmanGroupName(name) {
 
 /** Sold kg on Power Engineering (salesman) channel parties in the period. */
 async function getSalesmanSoldKg(from, to) {
+  return memo(`finance:salesmanSoldKg:${from ? new Date(from).getTime() : ""}:${to ? new Date(to).getTime() : ""}`, () =>
+    computeSalesmanSoldKg(from, to)
+  );
+}
+
+async function computeSalesmanSoldKg(from, to) {
   const Product = require("../products/product.model");
   const products = await Product.find({}).select("family weightKg").lean();
   const productMap = new Map(products.map((p) => [String(p._id), p]));
@@ -2703,16 +2737,14 @@ async function getPartySalesMargin(query = {}) {
     return computePartySalesMarginForPeriod(query);
   }
 
-  const parts = [];
-  for (const seg of segments) {
-    parts.push(
-      await computePartySalesMarginForPeriod({
-        ...query,
-        dateFrom: toDateInput(seg.from),
-        dateTo: toDateInput(seg.to),
-      })
-    );
-  }
+  // See getProductionMargin: concurrent, order-preserving, merged identically.
+  const parts = await mapWithConcurrency(segments, SEGMENT_CONCURRENCY, (seg) =>
+    computePartySalesMarginForPeriod({
+      ...query,
+      dateFrom: toDateInput(seg.from),
+      dateTo: toDateInput(seg.to),
+    })
+  );
   return mergePartySalesMarginReports(parts, { from, to });
 }
 
@@ -3595,6 +3627,12 @@ function electricityIntensityWeight(hubKg, drumKg, hubIntensity, drumIntensity) 
 }
 
 async function sumElectricityInRange(from, to) {
+  return memo(`finance:electricity:${from ? new Date(from).getTime() : ""}:${to ? new Date(to).getTime() : ""}`, () =>
+    computeElectricityInRange(from, to)
+  );
+}
+
+async function computeElectricityInRange(from, to) {
   const rows = await BatchExpense.aggregate([
     {
       $match: {
@@ -3616,8 +3654,21 @@ async function sumElectricityInRange(from, to) {
   };
 }
 
-/** Finished hub/drum kg for a window — same net-material rule as production margin. */
+/**
+ * Finished hub/drum kg for a window — same net-material rule as production margin.
+ *
+ * Memoised per request. The electricity accrual asks for the same month windows
+ * from several places (current segment, previous-month fallback, per-segment
+ * range resolution), and each call previously re-read every batch in the window
+ * plus its products.
+ */
 async function getFamilyFinishedKg(from, to) {
+  return memo(`finance:familyFinishedKg:${from ? new Date(from).getTime() : ""}:${to ? new Date(to).getTime() : ""}`, () =>
+    computeFamilyFinishedKg(from, to)
+  );
+}
+
+async function computeFamilyFinishedKg(from, to) {
   const Product = require("../products/product.model");
   const batches = await ProductionBatch.find({
     status: { $ne: "cancelled" },
@@ -3846,25 +3897,34 @@ async function resolveElectricityAccrualForRange({
   let anyEstimated = false;
   let lastEstimate = null;
 
-  for (const seg of segments) {
-    const [bill, kg] = await Promise.all([
-      sumElectricityInRange(seg.from, seg.to),
-      getFamilyFinishedKg(seg.from, seg.to),
-    ]);
-    const weight = electricityIntensityWeight(
-      kg.hubFinishedKg,
-      kg.drumFinishedKg,
-      hubIntensity,
-      drumIntensity
-    );
-    const resolved = await resolveElectricityAccrual({
-      actualAmount: bill.amount,
-      currentWeight: weight,
-      hubIntensity,
-      drumIntensity,
-      periodFrom: seg.from,
-      dateFromStr: toDateInput(seg.from),
-    });
+  // Resolve every segment concurrently, then fold them below in the original
+  // order so the running rounded total and `lastEstimate` are unchanged.
+  const resolvedSegments = await mapWithConcurrency(
+    segments,
+    SEGMENT_CONCURRENCY,
+    async (seg) => {
+      const [bill, kg] = await Promise.all([
+        sumElectricityInRange(seg.from, seg.to),
+        getFamilyFinishedKg(seg.from, seg.to),
+      ]);
+      const weight = electricityIntensityWeight(
+        kg.hubFinishedKg,
+        kg.drumFinishedKg,
+        hubIntensity,
+        drumIntensity
+      );
+      return resolveElectricityAccrual({
+        actualAmount: bill.amount,
+        currentWeight: weight,
+        hubIntensity,
+        drumIntensity,
+        periodFrom: seg.from,
+        dateFromStr: toDateInput(seg.from),
+      });
+    }
+  );
+
+  for (const resolved of resolvedSegments) {
     amount = roundMoney(amount + (resolved.amount || 0));
     actualBill = roundMoney(actualBill + (resolved.actualBill || 0));
     if (resolved.source === "actual") anyActual = true;

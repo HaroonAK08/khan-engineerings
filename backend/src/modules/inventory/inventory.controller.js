@@ -30,8 +30,8 @@ async function alerts(req, res, next) {
 
 async function movements(req, res, next) {
   try {
-    const movements = await inventoryService.listMovements(req.query);
-    res.json({ movements });
+    const { movements, page } = await inventoryService.listMovements(req.query);
+    res.json({ movements, page });
   } catch (err) {
     next(err);
   }

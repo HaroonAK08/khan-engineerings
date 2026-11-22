@@ -7,6 +7,7 @@ import { Loader2, Pencil, Trash2 } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
 import { useTallyChecks } from "@/hooks/use-tally-checks";
 import { api } from "@/lib/api";
+import { confirmAction } from "@/lib/confirm-action";
 import {
   apiError,
   deletePurchase,
@@ -144,8 +145,8 @@ export default function HistoryPage() {
     try {
       const [builties, batches, purchases, expenses, movements, claimsRes] =
         await Promise.allSettled([
-          listBuilties(rangeParams),
-          listBatches(rangeParams),
+          listBuilties({ ...rangeParams, all: true }),
+          listBatches({ ...rangeParams, all: true }),
           listPurchases(rangeParams),
           listFactoryExpenses(rangeParams),
           listMovements({ reason: "adjustment", ...rangeParams }),
@@ -259,7 +260,7 @@ export default function HistoryPage() {
 
   async function onDelete(row: HistoryRow) {
     if (!row.canDelete) return;
-    if (!confirm(t("history.confirmDelete"))) return;
+    if (!(await confirmAction({ title: t("history.confirmDelete") }))) return;
     const rawId = row.id.slice(row.id.indexOf("-") + 1);
     setDeletingId(row.id);
     try {

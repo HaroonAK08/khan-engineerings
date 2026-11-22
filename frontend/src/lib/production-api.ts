@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { cachedGet, invalidateReference, referenceKey } from "@/lib/reference-cache";
 import type {
   BatchCosts,
   BatchExpense,
@@ -14,11 +15,16 @@ export async function listProducts(params?: {
   active?: string;
   family?: string;
 }) {
-  const { data } = await api.get<{ products: Product[] }>("/products", { params });
-  return data.products;
+  // Reference data — shared across screens and the voice resolver.
+  return cachedGet(referenceKey("products", params), async () => {
+    const { data } = await api.get<{ products: Product[] }>("/products", { params });
+    return data.products;
+  });
 }
 
 export async function createProduct(body: Partial<Product>) {
+  // Writes change this list — drop the shared reference cache.
+  invalidateReference("products");
   const { data } = await api.post<{ product: Product }>("/products", body);
   if (typeof window !== "undefined") {
     const { scheduleVoiceModelRetrain } = await import("@/lib/voice/voice-model");
@@ -28,6 +34,8 @@ export async function createProduct(body: Partial<Product>) {
 }
 
 export async function updateProduct(id: string, body: Partial<Product>) {
+  // Writes change this list — drop the shared reference cache.
+  invalidateReference("products");
   const { data } = await api.patch<{ product: Product }>(`/products/${id}`, body);
   if (typeof window !== "undefined") {
     const { scheduleVoiceModelRetrain } = await import("@/lib/voice/voice-model");
@@ -37,6 +45,8 @@ export async function updateProduct(id: string, body: Partial<Product>) {
 }
 
 export async function deleteProduct(id: string) {
+  // Writes change this list — drop the shared reference cache.
+  invalidateReference("products");
   await api.delete(`/products/${id}`);
   if (typeof window !== "undefined") {
     const { scheduleVoiceModelRetrain } = await import("@/lib/voice/voice-model");
@@ -44,7 +54,17 @@ export async function deleteProduct(id: string) {
   }
 }
 
-export async function listBatches(params?: {
+export type PageMeta = {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  hasMore: boolean;
+  returned: number;
+  all?: boolean;
+};
+
+export type ListBatchesParams = {
   product?: string;
   dateFrom?: string;
   dateTo?: string;
@@ -52,9 +72,30 @@ export async function listBatches(params?: {
   status?: string;
   currentStage?: string;
   family?: string;
-}) {
-  const { data } = await api.get<{ batches: ProductionBatch[] }>("/production", { params });
-  return data.batches;
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortDir?: "asc" | "desc";
+  /** Opt out of paging — used by day-level bulk actions. */
+  all?: boolean;
+};
+
+/**
+ * Paginated production list. Returns rows plus the page metadata the server
+ * now sends, so the UI can show "N of M" instead of a silently clipped list.
+ */
+export async function listBatchesPage(params?: ListBatchesParams, signal?: AbortSignal) {
+  const { data } = await api.get<{ batches: ProductionBatch[]; page?: PageMeta }>(
+    "/production",
+    { params, signal }
+  );
+  return { batches: data.batches, page: data.page };
+}
+
+/** Rows only — kept for callers that do not care about paging. */
+export async function listBatches(params?: ListBatchesParams, signal?: AbortSignal) {
+  const { batches } = await listBatchesPage(params, signal);
+  return batches;
 }
 
 export async function getBatch(id: string) {
