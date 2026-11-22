@@ -702,7 +702,7 @@ const en = {
   "claims.col.invoice": "Invoice",
   "claims.col.items": "Items",
   "claims.col.refund": "Party credit",
-  "claims.col.mfgLoss": "Mfg loss",
+  "claims.col.mfgLoss": "Net loss",
   "claims.col.status": "Status",
 
   "exp.eyebrow": "Expenses",
@@ -3196,7 +3196,7 @@ const ur: Record<MessageKey, string> = {
   "claims.col.invoice": "انوائس",
   "claims.col.items": "آئٹمز",
   "claims.col.refund": "پارٹی کریڈٹ",
-  "claims.col.mfgLoss": "مینوفیکچرنگ نقصان",
+  "claims.col.mfgLoss": "خالص نقصان",
   "claims.col.status": "حالت",
 
   "exp.eyebrow": "اخراجات",

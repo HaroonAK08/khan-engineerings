@@ -1310,6 +1310,14 @@ function mergeProductionMarginReports(parts, { from, to }) {
     summary.sellValue > 0
       ? roundMoney((summary.profit / summary.sellValue) * 100)
       : null;
+  // Segments are merged by summing raw totals, so recompute the derived per-kg
+  // ratios from the combined figures instead of leaving a single segment's value.
+  for (const totals of Object.values(byFamily)) {
+    totals.costPerKg =
+      totals.finishedKg > 0 ? roundMoney(totals.totalCost / totals.finishedKg) : null;
+    totals.overheadPerKg =
+      totals.finishedKg > 0 ? roundMoney(totals.overhead / totals.finishedKg) : null;
+  }
   summary.hubCostPerKg = byFamily.hub.costPerKg;
   summary.drumCostPerKg = byFamily.drum.costPerKg;
   summary.hubOverheadPerKg = byFamily.hub.overheadPerKg;
@@ -2103,22 +2111,12 @@ async function computeProductionMarginForPeriod(query = {}) {
   byFamily.drum.sellValue = periodSalesAgg.drumSales;
   byFamily.hub.unitsSold = periodSalesAgg.hubUnits;
   byFamily.drum.unitsSold = periodSalesAgg.drumUnits;
-  byFamily.hub.costPerKg =
-    byFamily.hub.finishedKg > 0
-      ? roundMoney(byFamily.hub.totalCost / byFamily.hub.finishedKg)
-      : null;
-  byFamily.drum.costPerKg =
-    byFamily.drum.finishedKg > 0
-      ? roundMoney(byFamily.drum.totalCost / byFamily.drum.finishedKg)
-      : null;
-  byFamily.hub.overheadPerKg =
-    byFamily.hub.finishedKg > 0
-      ? roundMoney(byFamily.hub.overhead / byFamily.hub.finishedKg)
-      : null;
-  byFamily.drum.overheadPerKg =
-    byFamily.drum.finishedKg > 0
-      ? roundMoney(byFamily.drum.overhead / byFamily.drum.finishedKg)
-      : null;
+  for (const totals of Object.values(byFamily)) {
+    totals.costPerKg =
+      totals.finishedKg > 0 ? roundMoney(totals.totalCost / totals.finishedKg) : null;
+    totals.overheadPerKg =
+      totals.finishedKg > 0 ? roundMoney(totals.overhead / totals.finishedKg) : null;
+  }
 
   // P/L on sold goods: sold revenue − sold COGS.
   // Period production uses actual cost/pc. Units sold without matching production

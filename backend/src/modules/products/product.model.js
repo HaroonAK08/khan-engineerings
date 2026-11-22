@@ -35,8 +35,14 @@ const productSchema = new mongoose.Schema(
       ],
       default: [],
     },
-    /** Weighted moving average make-cost; updated when batches finish (Phase B+) */
+    /** Full make-cost per piece = rawMaterialCost + otherCost. Refreshed on production. */
     standardCost: { type: Number, min: 0, default: 0 },
+    /** Metal cost per piece: weightKg x average purchase rate for its materialType */
+    rawMaterialCost: { type: Number, min: 0, default: 0 },
+    /** Everything except metal (labour, electricity, finishing, factory overhead) */
+    otherCost: { type: Number, min: 0, default: 0 },
+    /** When the cost fields were last recomputed */
+    costUpdatedAt: { type: Date, default: null },
     /** Price per kg entered by the user; sellingPrice is always derived from weightKg * pricePerKg */
     pricePerKg: { type: Number, min: 0, default: 0 },
     sellingPrice: { type: Number, min: 0, default: 0 },

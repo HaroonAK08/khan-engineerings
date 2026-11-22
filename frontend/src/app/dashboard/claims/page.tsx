@@ -61,6 +61,12 @@ type PartySoldProduct = {
   unitPrice: number;
   ratePerKg: number;
   pricingMode?: string;
+  standardCost?: number;
+  rawMaterialCost?: number;
+  otherCost?: number;
+  materialType?: "scrap" | "daig";
+  materialRate?: number;
+  overheadPerKg?: number;
 };
 
 type PartyContext = {
@@ -118,6 +124,51 @@ function calcUnitPrice(product: Product | undefined, weightKg: number) {
 
 function lineSuggestedTotal(line: Line) {
   return Math.round((Number(line.quantity) || 0) * (Number(line.unitPrice) || 0) * 100) / 100;
+}
+
+function lineLossBreakdown(line: Line, product?: PartySoldProduct) {
+  const originalKg = lineOriginalKg(line);
+  const recoveredKg = Number(line.recoveredKg) || 0;
+  const lostKg = roundKg(Math.max(0, originalKg - recoveredKg));
+  const materialRate = Number(product?.materialRate) || 0;
+  const rawMaterialCost = originalKg * materialRate;
+  const recoveredMaterialValue = recoveredKg * materialRate;
+  const lostMaterialValue = lostKg * materialRate;
+  // Prefer the product's stored non-material cost; it comes from the same shared
+  // resolver the backend uses, so the preview matches what gets posted.
+  const storedOtherCost = (Number(line.quantity) || 0) * (Number(product?.otherCost) || 0);
+  const overheadPerKg = Number(product?.overheadPerKg) || 0;
+  let otherManufacturingLoss = storedOtherCost > 0 ? storedOtherCost : originalKg * overheadPerKg;
+  if (!(otherManufacturingLoss > 0)) {
+    const standardTotal = (Number(line.quantity) || 0) * (Number(product?.standardCost) || 0);
+    otherManufacturingLoss = Math.max(0, standardTotal - rawMaterialCost);
+  }
+  const manufacturingCost = rawMaterialCost + otherManufacturingLoss;
+  // Cost we cannot get back: the metal that did not return + all the processing
+  // work (labour, electricity, finishing) that is destroyed when the piece is melted.
+  const totalLoss = lostMaterialValue + otherManufacturingLoss;
+  const customerCredit = lineSuggestedTotal(line);
+  // The sale price already contains the manufacturing cost, so the margin is the
+  // only extra thing lost when we hand the money back.
+  const lostProfit = customerCredit - manufacturingCost;
+  // Actual money destroyed: metal that did not return + processing work lost.
+  // Profit is excluded - it was expected earnings, never cost we paid out.
+  const netCost = totalLoss;
+  return {
+    originalKg,
+    recoveredKg,
+    lostKg,
+    materialRate,
+    rawMaterialCost,
+    recoveredMaterialValue,
+    lostMaterialValue,
+    manufacturingCost,
+    otherManufacturingLoss,
+    customerCredit,
+    lostProfit: Math.round(lostProfit * 100) / 100,
+    netCost: Math.round(netCost * 100) / 100,
+    totalLoss: Math.round(totalLoss * 100) / 100,
+  };
 }
 
 export default function ClaimsPage() {
@@ -863,7 +914,7 @@ export default function ClaimsPage() {
                       </p>
                     </div>
                     {line.disposition === "rework" ? (
-                      <div className="flex flex-col gap-1.5">
+                      <div className="flex min-w-0 flex-col gap-1.5 xl:col-span-4">
                         <Label>
                           {t("claims.recoveredKg", {
                             material:
@@ -898,6 +949,31 @@ export default function ClaimsPage() {
                                 : t("claims.recoveredHint")}
                             </p>
                           );
+                        })()}
+                        {(() => {
+                          const product = partyContext?.products.find((p) => p.productId === line.product);
+                          const breakdown = lineLossBreakdown(line, product);
+                          return breakdown.totalLoss > 0 ? (
+                            <div className="mt-1 w-full rounded border border-destructive/20 bg-destructive/5 p-2 text-[11px] leading-4 text-muted-foreground">
+                              <div className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
+                                <span>Original material: {breakdown.originalKg} kg × {formatMoney(breakdown.materialRate)} = {formatMoney(breakdown.rawMaterialCost)}</span>
+                                <span>Recovered value: {breakdown.recoveredKg} kg = {formatMoney(breakdown.recoveredMaterialValue)}</span>
+                                <span>Lost material: {breakdown.lostKg} kg = {formatMoney(breakdown.lostMaterialValue)}</span>
+                                <span>Total manufacturing cost (raw + other): {formatMoney(breakdown.manufacturingCost)}</span>
+                                <span>Total other manufacturing cost (non-raw): {formatMoney(breakdown.otherManufacturingLoss)}</span>
+                                <span>Customer credit / selling value: {formatMoney(breakdown.customerCredit)}</span>
+                              </div>
+                              <div className="mt-2 border-t border-destructive/20 pt-1.5">
+                                <p>We sold it for {formatMoney(breakdown.customerCredit)} · it cost us {formatMoney(breakdown.manufacturingCost)} to make</p>
+                                <p className="text-destructive">1. Material lost ({breakdown.lostKg} kg did not come back): {formatMoney(breakdown.lostMaterialValue)}</p>
+                                <p className="text-destructive">2. Processing lost (labour, electricity, finishing): {formatMoney(breakdown.otherManufacturingLoss)}</p>
+                                <p className="mt-1 font-semibold text-destructive">Net loss: {formatMoney(breakdown.netCost)}</p>
+                                <p className="mt-1 text-[10px]">{breakdown.recoveredKg} kg metal worth {formatMoney(breakdown.recoveredMaterialValue)} returns to stock, so it is not a cost.</p>
+                                <p className="text-[10px]">Separately, {formatMoney(breakdown.lostProfit)} profit on this sale is no longer earned (credit {formatMoney(breakdown.customerCredit)} − cost {formatMoney(breakdown.manufacturingCost)}).</p>
+                                <p className="text-[10px] opacity-75">Costs shown are today&apos;s make-cost. Monthly profit reports use each month&apos;s own material and overhead rates.</p>
+                              </div>
+                            </div>
+                          ) : null;
                         })()}
                       </div>
                     ) : null}
@@ -957,8 +1033,21 @@ export default function ClaimsPage() {
           ) : (
             <div className="divide-y divide-border">
               {claims.map((c) => (
-                <div key={c._id} className="flex items-start gap-2 py-3">
-                  <div className="pt-1">
+                <div
+                  key={c._id}
+                  role="button"
+                  tabIndex={0}
+                  title={t("claims.edit")}
+                  className="flex cursor-pointer items-start gap-2 rounded-md py-3 transition-colors hover:bg-muted/40"
+                  onClick={() => startEdit(c)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      startEdit(c);
+                    }
+                  }}
+                >
+                  <div className="pt-1" onClick={(e) => e.stopPropagation()}>
                     <TallyCheck
                       checked={isChecked(c._id)}
                       onChange={(next) => setCheckedState(c._id, next)}
@@ -1021,7 +1110,7 @@ export default function ClaimsPage() {
                       ) : null}
                     </p>
                   </div>
-                  <div className="flex shrink-0 items-center gap-1">
+                  <div className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
                     <Button
                       type="button"
                       size="icon-sm"

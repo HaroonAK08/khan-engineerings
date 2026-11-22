@@ -193,6 +193,16 @@ async function avgMaterialRate(materialType) {
   return (rateRow[0].spend || 0) / kg;
 }
 
+/**
+ * Non-material cost per finished kg (labour, electricity, finishing, overhead),
+ * shared with product costing so claims and product costs never disagree.
+ */
+async function overheadPerKgByFamily() {
+  const { getCostRates } = require("../products/product-cost");
+  const rates = await getCostRates();
+  return rates.overhead || {};
+}
+
 async function partyProductSales(customerId) {
   const builties = await Builty.find({ customer: customerId })
     .sort({ builtyDate: 1, createdAt: 1 })
@@ -231,9 +241,10 @@ async function partyContext(customerId, { excludeClaimId } = {}) {
   const customer = await Customer.findById(customerId).select("name phone").lean();
   if (!customer) throw httpError("Party not found", 404);
 
-  const [soldMap, claimedMap] = await Promise.all([
+  const [soldMap, claimedMap, overheadRates] = await Promise.all([
     partyProductSales(customerId),
     partyClaimedQty(customerId, excludeClaimId),
+    overheadPerKgByFamily(),
   ]);
   const productIds = [...new Set([...soldMap.keys(), ...claimedMap.keys()])];
   const products = productIds.length
@@ -262,6 +273,12 @@ async function partyContext(customerId, { excludeClaimId } = {}) {
       weightKg,
       unitPrice: soldUnitPrice(lastLine, product || {}, weightKg),
       ratePerKg: Number(lastLine?.ratePerKg) || Number(product?.pricePerKg) || 0,
+      standardCost: Number(product?.standardCost) || 0,
+      rawMaterialCost: Number(product?.rawMaterialCost) || 0,
+      otherCost: Number(product?.otherCost) || 0,
+      materialType: product?.materialType || (product?.family === "drum" ? "daig" : "scrap"),
+      materialRate: await avgMaterialRate(product?.materialType || (product?.family === "drum" ? "daig" : "scrap")),
+      overheadPerKg: Number(overheadRates[product?.family]) || 0,
       pricingMode: lastLine?.pricingMode || "rate_kg",
     });
   }
@@ -538,6 +555,7 @@ async function buildClaimItems(customerId, data, { builty = null, excludeClaimId
 
 async function computeReworkManufacturingLoss(items) {
   let totalLoss = 0;
+  const overheadRates = await overheadPerKgByFamily();
 
   for (const item of items) {
     if (item.disposition !== "rework") {
@@ -558,12 +576,18 @@ async function computeReworkManufacturingLoss(items) {
     const originalKg = roundKg(perUnitKg * qty);
     const recoveredKg = recoveredMetalKg(item, originalKg);
     const lostKg = roundKg(Math.max(0, originalKg - recoveredKg));
-    const materialType = product.family === "drum" ? "daig" : "scrap";
+    const materialType =
+      product.materialType || (product.family === "drum" ? "daig" : "scrap");
     const rate = await avgMaterialRate(materialType);
     const originalMetalValue = roundMoney(originalKg * rate);
     const lostMetalValue = roundMoney(lostKg * rate);
-    const fullMfgCost = roundMoney(qty * (Number(product.standardCost) || 0));
-    const overheadLoss = roundMoney(Math.max(0, fullMfgCost - originalMetalValue));
+    // All processing done on the piece is lost once it is melted back down.
+    const perKg = Number(overheadRates[product.family]) || 0;
+    let overheadLoss = roundMoney(originalKg * perKg);
+    if (!(overheadLoss > 0)) {
+      const fullMfgCost = roundMoney(qty * (Number(product.standardCost) || 0));
+      overheadLoss = roundMoney(Math.max(0, fullMfgCost - originalMetalValue));
+    }
     const loss = roundMoney(overheadLoss + lostMetalValue);
     item.mfgLossAmount = loss;
     totalLoss = roundMoney(totalLoss + loss);
@@ -809,6 +833,7 @@ async function summarizePeriod(from, to) {
 }
 
 module.exports = {
+  computeReworkManufacturingLoss,
   list,
   getById,
   create,

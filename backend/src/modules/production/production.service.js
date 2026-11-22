@@ -576,65 +576,27 @@ async function advanceStage(id) {
 }
 
 async function updateProductStandardCosts(batch) {
-  const BatchExpense = require("../expenses/expense.model");
-  const expenses = await BatchExpense.find({ batch: batch._id });
-  const operatingCost = expenses.reduce((s, e) => s + e.amount, 0);
+  // Costs come from the shared resolver, not from expenses linked to this batch:
+  // expenses are entered as factory overhead (batch: null), so a per-batch sum is
+  // always zero and would leave standardCost as metal-only. See product-cost.js.
+  const { getCostRates, applyProductCost } = require("../products/product-cost");
+  const rates = await getCostRates();
 
-  let materialCost = 0;
-  for (const inp of batch.inputs || []) {
-    if (inp.materialType !== "scrap" && inp.materialType !== "daig") continue;
-    const rateRow = await Purchase.aggregate([
-      { $match: { materialType: inp.materialType } },
-      {
-        $group: {
-          _id: null,
-          spend: { $sum: { $add: ["$totalAmount", { $ifNull: ["$freightAmount", 0] }] } },
-          kg: { $sum: "$quantityKg" },
-        },
-      },
-    ]);
-    const kg = rateRow[0]?.kg || 0;
-    const avg = kg > 0 ? (rateRow[0].spend || 0) / kg : 0;
-    materialCost += (inp.quantityKg || 0) * avg;
+  const productIds = new Set();
+  for (const line of batch.outputProgress || []) {
+    if ((line.finishedQty || 0) > 0 && line.product) productIds.add(String(line.product));
   }
-  const totalCost = materialCost + operatingCost;
+  if (productIds.size === 0) {
+    for (const out of batch.outputs || []) {
+      if ((out.quantity || 0) > 0 && out.product) productIds.add(String(out.product));
+    }
+  }
+  if (productIds.size === 0 && batch.product) productIds.add(String(batch.product));
 
-  const lines = [];
-  for (const p of batch.outputProgress || []) {
-    if ((p.finishedQty || 0) <= 0) continue;
-    const product = await Product.findById(p.product);
+  for (const productId of productIds) {
+    const product = await Product.findById(productId);
     if (!product) continue;
-    const weight = (product.weightKg || 0) * p.finishedQty;
-    lines.push({ product, finishedQty: p.finishedQty, weight });
-  }
-  const weightSum = lines.reduce((s, l) => s + l.weight, 0);
-  const pieceSum = lines.reduce((s, l) => s + l.finishedQty, 0);
-
-  for (const line of lines) {
-    const share =
-      weightSum > 0 ? line.weight / weightSum : pieceSum > 0 ? line.finishedQty / pieceSum : 0;
-    const costShare = totalCost * share;
-    const unitCost = line.finishedQty > 0 ? costShare / line.finishedQty : 0;
-    const prevQty = Number(line.product._standardCostQty) || 0;
-    // Weighted moving average using finished pieces as weights stored loosely via recalculation:
-    // newAvg = (oldCost * oldImpliedQty + unitCost * finishedQty) / (oldImpliedQty + finishedQty)
-    // Without stored qty history, blend 50/50 if standardCost exists else set unitCost.
-    const old = Number(line.product.standardCost) || 0;
-    const newAvg =
-      old > 0
-        ? roundMoney((old * line.finishedQty + unitCost * line.finishedQty) / (line.finishedQty * 2))
-        : roundMoney(unitCost);
-    // Better: weight by finishedQty vs previous equal weight assumption
-    line.product.standardCost =
-      old > 0 ? roundMoney((old + unitCost) / 2) : roundMoney(unitCost);
-    // Prefer proper WMA with finished qty only for this batch contribution stored:
-    line.product.standardCost = roundMoney(
-      old > 0
-        ? (old * Math.max(line.finishedQty, 1) + unitCost * line.finishedQty) /
-            (Math.max(line.finishedQty, 1) + line.finishedQty)
-        : unitCost
-    );
-    await line.product.save();
+    await applyProductCost(product, rates);
   }
 }
 
