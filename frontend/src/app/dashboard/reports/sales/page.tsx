@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { queryKeys, useResource, policyForRange } from "@/lib/query";
+
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
@@ -49,8 +51,6 @@ export default function SalesReportsHubPage() {
   const [partyId, setPartyId] = useState("");
   const [view, setView] = useState<ReportViewMode>("whole");
   const [groups, setGroups] = useState<PartyGroup[]>([]);
-  const [report, setReport] = useState<SalesReport | null>(null);
-  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<"pdf" | null>(null);
 
   useEffect(() => {
@@ -68,29 +68,14 @@ export default function SalesReportsHubPage() {
     return items;
   }, [groups, t]);
 
-  const load = useCallback(async () => {
-    if (!hydrated) return;
-    setLoading(true);
-    try {
-      setReport(
-        await getSalesReport({
-          dateFrom,
-          dateTo,
-          groupId: groupId || undefined,
-          customerId: partyId || undefined,
-        })
-      );
-    } catch (err) {
-      toast.error(apiError(err, t("salesReportsHub.loadFailed")));
-    } finally {
-      setLoading(false);
-    }
-  }, [dateFrom, dateTo, hydrated, groupId, partyId, t]);
-
-  useEffect(() => {
-    const timer = setTimeout(load, 200);
-    return () => clearTimeout(timer);
-  }, [load]);
+  const params = { dateFrom, dateTo, groupId: groupId || undefined, customerId: partyId || undefined };
+  const query = useResource(
+    queryKeys.reports.one("sales", params),
+    (signal) => getSalesReport(params, signal),
+    { enabled: hydrated, policy: policyForRange(dateTo), errorMessage: t("salesReportsHub.loadFailed") }
+  );
+  const report = query.data ?? null;
+  const loading = query.loading;
 
   async function onExport(format: "pdf") {
     setExporting(format);

@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { ReportsSubnav } from "@/components/layout/reports-subnav";
 import { ExportButtons } from "@/components/reports/export-buttons";
 import { apiError, formatMoney } from "@/lib/materials-api";
+import { useResource, queryKeys, policyForRange } from "@/lib/query";
 import { getCostReport } from "@/lib/production-api";
 import type { CostReport } from "@/types/production";
 import { downloadReportExport } from "@/lib/reports-api";
@@ -25,26 +26,18 @@ import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 export default function ExpenseReportsPage() {
   const { t } = useI18n();
   const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
-  const [report, setReport] = useState<CostReport | null>(null);
-  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<"pdf" | null>(null);
 
-  const load = useCallback(async () => {
-    if (!hydrated) return;
-    setLoading(true);
-    try {
-      setReport(await getCostReport({ dateFrom, dateTo }));
-    } catch (err) {
-      toast.error(apiError(err, t("expReports.loadFailed")));
-    } finally {
-      setLoading(false);
-    }
-  }, [dateFrom, dateTo, hydrated, t]);
+  // Cached per query key, so returning to this screen is instant and a
+  // superseded request can never overwrite newer data.
+  const query = useResource<CostReport | null>(
+    queryKeys.reports.one("costs", { dateFrom, dateTo }),
+    (signal) => getCostReport({ dateFrom, dateTo }, signal),
+    { enabled: hydrated, policy: policyForRange(dateTo), errorMessage: t("expReports.loadFailed") }
+  );
+  const report = query.data ?? null;
+  const loading = query.loading;
 
-  useEffect(() => {
-    const t = setTimeout(load, 200);
-    return () => clearTimeout(t);
-  }, [load]);
 
   async function onExport(format: "pdf") {
     setExporting(format);

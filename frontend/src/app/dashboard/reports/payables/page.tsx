@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
@@ -11,6 +11,7 @@ import {
   type ReportViewMode,
 } from "@/components/reports/report-view-toggle";
 import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
+import { useResource, queryKeys, policyForRange } from "@/lib/query";
 import {
   downloadReportExport,
   getPayablesReport,
@@ -34,29 +35,25 @@ export default function PayablesReportPage() {
   const { t } = useI18n();
   const { dateFrom, dateTo, hydrated, isAll } = usePersistedDateRange();
   const [view, setView] = useState<ReportViewMode>("party");
-  const [report, setReport] = useState<PayablesReport | null>(null);
-  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<"pdf" | null>(null);
 
-  const load = useCallback(async () => {
-    if (!hydrated) return;
-    setLoading(true);
-    try {
-      const params: { dateFrom?: string; dateTo?: string } = {};
-      if (dateFrom) params.dateFrom = dateFrom;
-      if (dateTo) params.dateTo = dateTo;
-      setReport(await getPayablesReport(params));
-    } catch (err) {
-      toast.error(apiError(err, t("payReports.loadFailed")));
-    } finally {
-      setLoading(false);
-    }
-  }, [dateFrom, dateTo, hydrated, t]);
+  const params = useMemo(() => {
+    const params: { dateFrom?: string; dateTo?: string } = {};
+    if (dateFrom) params.dateFrom = dateFrom;
+    if (dateTo) params.dateTo = dateTo;
+    return params;
+  }, [dateFrom, dateTo]);
 
-  useEffect(() => {
-    const timer = setTimeout(load, 200);
-    return () => clearTimeout(timer);
-  }, [load]);
+  // Cached per query key, so returning to this screen is instant and a
+  // superseded request can never overwrite newer data.
+  const query = useResource<PayablesReport | null>(
+    queryKeys.reports.one("payables", params),
+    (signal) => getPayablesReport(params, signal),
+    { enabled: hydrated, policy: policyForRange(dateTo), revalidateOnMount: true, errorMessage: t("payReports.loadFailed") }
+  );
+  const report = query.data ?? null;
+  const loading = query.loading;
+
 
   async function onExport(format: "pdf") {
     setExporting(format);

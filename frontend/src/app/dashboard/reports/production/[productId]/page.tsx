@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { queryKeys, useResource, policyForRange } from "@/lib/query";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -8,7 +10,7 @@ import { ArrowLeft, Loader2 } from "lucide-react";
 import { ReportsSubnav } from "@/components/layout/reports-subnav";
 import { ExportButtons } from "@/components/reports/export-buttons";
 import { apiError, formatDate, formatKg } from "@/lib/materials-api";
-import { getProductProductionReport, type ProductProductionReport } from "@/lib/production-api";
+import { getProductProductionReport } from "@/lib/production-api";
 import { downloadReportExport } from "@/lib/reports-api";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { Badge } from "@/components/ui/badge";
@@ -32,8 +34,6 @@ export default function ProductProductionReportPage() {
   const productId = params.productId;
   const { dateFrom, dateTo, setRange, hydrated } = usePersistedDateRange();
 
-  const [report, setReport] = useState<ProductProductionReport | null>(null);
-  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<"pdf" | null>(null);
 
   useEffect(() => {
@@ -42,28 +42,14 @@ export default function ProductProductionReportPage() {
     if (from || to) setRange(from || "", to || "");
   }, [searchParams, setRange]);
 
-  const load = useCallback(async () => {
-    if (!hydrated || !productId) return;
-    setLoading(true);
-    try {
-      setReport(
-        await getProductProductionReport(productId, {
-          dateFrom: dateFrom || undefined,
-          dateTo: dateTo || undefined,
-        })
-      );
-    } catch (err) {
-      toast.error(apiError(err, t("prodProductReport.loadFailed")));
-      setReport(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [productId, dateFrom, dateTo, hydrated, t]);
-
-  useEffect(() => {
-    const timer = setTimeout(load, 200);
-    return () => clearTimeout(timer);
-  }, [load]);
+  const reportParams = { productId, dateFrom: dateFrom || undefined, dateTo: dateTo || undefined };
+  const query = useResource(
+    queryKeys.reports.one("production-product", reportParams),
+    (signal) => getProductProductionReport(productId, reportParams, signal),
+    { enabled: hydrated && Boolean(productId), policy: policyForRange(dateTo), errorMessage: t("prodProductReport.loadFailed") }
+  );
+  const report = query.data ?? null;
+  const loading = query.loading;
 
   async function onExport(format: "pdf") {
     if (!productId) return;

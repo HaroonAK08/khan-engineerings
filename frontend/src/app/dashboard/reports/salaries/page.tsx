@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { queryKeys, useResource } from "@/lib/query";
+
+import { useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { ReportsSubnav } from "@/components/layout/reports-subnav";
-import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
+import { formatDate, formatMoney } from "@/lib/materials-api";
 import {
   listSalaryPayments,
   listWorkers,
@@ -42,46 +43,27 @@ function displayWorkerName(
   return w.name;
 }
 
+const EMPTY_WORKERS: Worker[] = [];
+const EMPTY_PAYMENTS: BatchExpense[] = [];
+
 export default function SalaryReportsPage() {
   const { t, isUrdu } = useI18n();
   const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
   const [workerId, setWorkerId] = useState("all");
-  const [workers, setWorkers] = useState<Worker[]>([]);
-  const [payments, setPayments] = useState<BatchExpense[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        setWorkers(await listWorkers());
-      } catch (err) {
-        toast.error(apiError(err, t("salReports.loadWorkersFailed")));
-      }
-    })();
-  }, [t]);
-
-  const load = useCallback(async () => {
-    if (!hydrated) return;
-    setLoading(true);
-    try {
-      const list = await listSalaryPayments({
-        dateFrom: dateFrom || undefined,
-        dateTo: dateTo || undefined,
-        workerId: workerId === "all" ? undefined : workerId,
-      });
-      setPayments(list.payments);
-    } catch (err) {
-      toast.error(apiError(err, t("salReports.loadFailed")));
-      setPayments([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [dateFrom, dateTo, hydrated, workerId, t]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => void load(), 200);
-    return () => clearTimeout(timer);
-  }, [load]);
+  const workerQuery = useResource(queryKeys.workers.list(), () => listWorkers(), {
+    errorMessage: t("salReports.loadWorkersFailed"),
+  });
+  const params = {
+    dateFrom: dateFrom || undefined,
+    dateTo: dateTo || undefined,
+    workerId: workerId === "all" ? undefined : workerId,
+  };
+  const query = useResource(queryKeys.expenses.salaries(params),
+    (signal) => listSalaryPayments(params, signal),
+    { enabled: hydrated, errorMessage: t("salReports.loadFailed") });
+  const workers = workerQuery.data ?? EMPTY_WORKERS;
+  const payments = query.data?.payments ?? EMPTY_PAYMENTS;
+  const loading = !hydrated || query.loading;
 
   const periodTotal = useMemo(
     () => payments.reduce((s, e) => s + e.amount, 0),

@@ -1,7 +1,13 @@
 export { queryKeys, invalidationGroups, type InvalidationGroup } from "./keys";
 export { cachePolicy, policyForRange } from "./cache-policy";
 export { createQueryClient } from "./client";
-export { useAppQuery, useAppMutation, useInvalidate, type Fetcher } from "./hooks";
+export {
+  useAppQuery,
+  useAppMutation,
+  useInvalidate,
+  useResource,
+  type Fetcher,
+} from "./hooks";
 export {
   useProductionMargin,
   usePartySalesMargin,

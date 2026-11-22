@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
@@ -11,6 +11,7 @@ import {
   type ReportViewMode,
 } from "@/components/reports/report-view-toggle";
 import { apiError, formatDate, formatMoney, listSuppliers } from "@/lib/materials-api";
+import { useResource, queryKeys, policyForRange } from "@/lib/query";
 import {
   downloadReportExport,
   getPaidReport,
@@ -45,8 +46,6 @@ export default function PaidReportPage() {
   const [supplierId, setSupplierId] = useState("");
   const [view, setView] = useState<ReportViewMode>("party");
   const [suppliers, setSuppliers] = useState<Array<{ _id: string; name: string }>>([]);
-  const [report, setReport] = useState<PaidReport | null>(null);
-  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<"pdf" | null>(null);
 
   useEffect(() => {
@@ -63,26 +62,24 @@ export default function PaidReportPage() {
     return items;
   }, [suppliers, t]);
 
-  const load = useCallback(async () => {
-    if (!hydrated) return;
-    setLoading(true);
-    try {
-      const params: { dateFrom?: string; dateTo?: string; supplierId?: string } = {};
-      if (dateFrom) params.dateFrom = dateFrom;
-      if (dateTo) params.dateTo = dateTo;
-      if (supplierId) params.supplierId = supplierId;
-      setReport(await getPaidReport(params));
-    } catch (err) {
-      toast.error(apiError(err, t("paidReports.loadFailed")));
-    } finally {
-      setLoading(false);
-    }
-  }, [dateFrom, dateTo, hydrated, supplierId, t]);
+  const params = useMemo(() => {
+    const params: { dateFrom?: string; dateTo?: string; supplierId?: string } = {};
+    if (dateFrom) params.dateFrom = dateFrom;
+    if (dateTo) params.dateTo = dateTo;
+    if (supplierId) params.supplierId = supplierId;
+    return params;
+  }, [dateFrom, dateTo, supplierId]);
 
-  useEffect(() => {
-    const timer = setTimeout(load, 200);
-    return () => clearTimeout(timer);
-  }, [load]);
+  // Cached per query key, so returning to this screen is instant and a
+  // superseded request can never overwrite newer data.
+  const query = useResource<PaidReport | null>(
+    queryKeys.reports.one("paid", params),
+    (signal) => getPaidReport(params, signal),
+    { enabled: hydrated, policy: policyForRange(dateTo), errorMessage: t("paidReports.loadFailed") }
+  );
+  const report = query.data ?? null;
+  const loading = query.loading;
+
 
   async function onExport(format: "pdf") {
     setExporting(format);

@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { queryKeys, useResource, cachePolicy } from "@/lib/query";
+
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { ReportsSubnav } from "@/components/layout/reports-subnav";
@@ -9,8 +11,7 @@ import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
 import {
   downloadReportExport,
   getMonthlyReceivablesReport,
-  type MonthlyReceivablesReport,
-} from "@/lib/reports-api";
+  } from "@/lib/reports-api";
 import { listPartyGroups, type PartyGroup } from "@/lib/sales-api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -46,8 +47,6 @@ export default function MonthlyReceivablesPage() {
   const [asOfDate, setAsOfDate] = useState(todayInput());
   const [groupId, setGroupId] = useState("");
   const [groups, setGroups] = useState<PartyGroup[]>([]);
-  const [report, setReport] = useState<MonthlyReceivablesReport | null>(null);
-  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<"pdf" | null>(null);
 
   useEffect(() => {
@@ -65,28 +64,14 @@ export default function MonthlyReceivablesPage() {
     return items;
   }, [groups, t]);
 
-  const load = useCallback(async () => {
-    if (!asOfDate) return;
-    setLoading(true);
-    try {
-      setReport(
-        await getMonthlyReceivablesReport({
-          date: asOfDate,
-          groupId: groupId || undefined,
-        })
-      );
-    } catch (err) {
-      toast.error(apiError(err, t("monthlyRecv.loadFailed")));
-      setReport(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [asOfDate, groupId, t]);
-
-  useEffect(() => {
-    const timer = setTimeout(load, 150);
-    return () => clearTimeout(timer);
-  }, [load]);
+  const params = { date: asOfDate, groupId: groupId || undefined };
+  const query = useResource(
+    queryKeys.reports.one("monthly-receivables", params),
+    (signal) => getMonthlyReceivablesReport(params, signal),
+    { enabled: Boolean(asOfDate), policy: cachePolicy.financial, errorMessage: t("monthlyRecv.loadFailed") }
+  );
+  const report = query.data ?? null;
+  const loading = query.loading;
 
   async function onExport(format: "pdf") {
     setExporting(format);

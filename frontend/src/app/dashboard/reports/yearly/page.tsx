@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { queryKeys, useResource, cachePolicy } from "@/lib/query";
+
+import { useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
@@ -125,9 +127,7 @@ export default function YearlyCalendarReportPage() {
   const [singleDate, setSingleDate] = useState(todayInput());
   const [dateFrom, setDateFrom] = useState(yearRange(currentYear()).from);
   const [dateTo, setDateTo] = useState(yearRange(currentYear()).to);
-  const [report, setReport] = useState<YearlyCalendarReport | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<"pdf" | null>(null);
 
   const showSearch = mode !== "cash";
@@ -143,33 +143,14 @@ export default function YearlyCalendarReportPage() {
     }
   }
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const next = await getYearlyCalendarReport({
-        year,
-        mode,
-        dateMode,
-        date: dateMode === "single" ? singleDate : undefined,
-        dateFrom: dateMode === "range" ? dateFrom : undefined,
-        dateTo: dateMode === "range" ? dateTo : undefined,
-        family: mode === "inventory" ? inventoryFamily : undefined,
-      });
-      setReport(blankFutureSingleMonths(next));
-    } catch (err) {
-      setReport(null);
-      toast.error(apiError(err, t("yearlyReports.loadFailed")));
-    } finally {
-      setLoading(false);
-    }
-  }, [year, mode, inventoryFamily, dateMode, singleDate, dateFrom, dateTo, t]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      void load();
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [load]);
+  const params = { year, mode, dateMode, date: dateMode === "single" ? singleDate : undefined, dateFrom: dateMode === "range" ? dateFrom : undefined, dateTo: dateMode === "range" ? dateTo : undefined, family: mode === "inventory" ? inventoryFamily : undefined };
+  const query = useResource(
+    queryKeys.reports.one("yearly", params),
+    (signal) => getYearlyCalendarReport(params, signal).then(blankFutureSingleMonths),
+    { enabled: true, policy: cachePolicy.financial, revalidateOnMount: mode === "supplier", errorMessage: t("yearlyReports.loadFailed") }
+  );
+  const report = query.data ?? null;
+  const loading = query.loading;
 
   async function onExport() {
     setExporting("pdf");

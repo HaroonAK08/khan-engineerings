@@ -88,11 +88,11 @@ export async function deleteAssetItem(id: string) {
   await api.delete(`/assets/items/${id}`);
 }
 
-export async function getAssetsSummary() {
+export async function getAssetsSummary(signal?: AbortSignal) {
   const { data } = await api.get<{
     categories: AssetCategory[];
     grandTotal: number;
     itemCount: number;
-  }>("/assets/summary");
+  }>("/assets/summary", { signal });
   return data;
 }

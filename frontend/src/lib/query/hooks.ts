@@ -9,7 +9,9 @@ import {
   type UseQueryOptions,
 } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { useEffect } from "react";
 import { apiError } from "@/lib/materials-api";
+import { cachePolicy } from "./cache-policy";
 import { invalidationGroups, type InvalidationGroup } from "./keys";
 
 /**
@@ -125,5 +127,64 @@ export function useInvalidate() {
         )
       )
     );
+  };
+}
+
+
+type ResourceOptions = {
+  /** Skip the fetch until prerequisites are ready (e.g. a hydrated date range). */
+  enabled?: boolean;
+  /** Cache policy from `cachePolicy` / `policyForRange`. Defaults to `list`. */
+  policy?: { staleTime: number; gcTime: number };
+  /** Toast text when the fetch fails. Omit to stay silent. */
+  errorMessage?: string;
+  /** For reports whose GET also reconciles balances on the server. */
+  revalidateOnMount?: boolean;
+};
+
+/**
+ * Drop-in replacement for the hand-rolled `useState` + `useEffect` fetch that
+ * most screens were built with.
+ *
+ * Returns the same shape those screens already use — `data`, `loading`,
+ * `refetch` — so migrating a page is a small, mechanical edit rather than a
+ * rewrite. What it adds:
+ *
+ *   - the result is cached per query key, so returning to a screen is instant
+ *   - concurrent callers of the same key share one request
+ *   - a superseded request can never overwrite newer data, because React Query
+ *     scopes each result to its own key
+ *   - `loading` is true only on the FIRST load; a background refresh leaves the
+ *     previous data on screen instead of flashing a spinner
+ *
+ * Writes anywhere in the app invalidate this automatically — see
+ * lib/data-changed.ts — so screens do not need to re-fetch by hand after a
+ * mutation.
+ */
+export function useResource<T>(
+  key: QueryKey,
+  fetcher: (signal: AbortSignal) => Promise<T>,
+  options: ResourceOptions = {}
+) {
+  const { enabled = true, policy, errorMessage, revalidateOnMount } = options;
+
+  const query = useAppQuery<T>(key, fetcher, {
+    enabled,
+    ...(policy ?? cachePolicy.list),
+    ...(revalidateOnMount ? { refetchOnMount: "always" } : {}),
+  });
+
+  const { error } = query;
+  useEffect(() => {
+    if (error && errorMessage) toast.error(apiError(error, errorMessage));
+  }, [error, errorMessage]);
+
+  return {
+    data: query.data,
+    /** First load only — a background refresh keeps the old data visible. */
+    loading: query.isPending && query.data === undefined && enabled,
+    isFetching: query.isFetching,
+    error: query.error,
+    refetch: query.refetch,
   };
 }

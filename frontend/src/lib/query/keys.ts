@@ -22,6 +22,7 @@ function params(value: Params) {
 }
 
 export const queryKeys = {
+  httpRead: (generation: number, uri: string) => ["http-read", generation, uri] as const,
   auth: {
     all: ["auth"] as const,
     me: () => ["auth", "me"] as const,
@@ -115,10 +116,35 @@ export const queryKeys = {
 
   reports: {
     all: ["reports"] as const,
+    /** Generic accessor for the many single-fetch report screens. */
+    one: (name: string, p?: Params) => ["reports", name, params(p)] as const,
     receivables: (p?: Params) => ["reports", "receivables", params(p)] as const,
     payables: (p?: Params) => ["reports", "payables", params(p)] as const,
     position: (p?: Params) => ["reports", "position", params(p)] as const,
     yearly: (p?: Params) => ["reports", "yearly", params(p)] as const,
+  },
+
+  assets: {
+    all: ["assets"] as const,
+    categories: () => ["assets", "categories"] as const,
+    items: (p?: Params) => ["assets", "items", params(p)] as const,
+    summary: () => ["assets", "summary"] as const,
+  },
+
+  salesmen: {
+    all: ["salesmen"] as const,
+    list: (p?: Params) => ["salesmen", "list", params(p)] as const,
+    detail: (id: string, p?: Params) => ["salesmen", "detail", id, params(p)] as const,
+  },
+
+  notes: {
+    all: ["notes"] as const,
+    list: () => ["notes", "list"] as const,
+  },
+
+  history: {
+    all: ["history"] as const,
+    timeline: (p?: Params) => ["history", "timeline", params(p)] as const,
   },
 
   settings: {
@@ -126,6 +152,8 @@ export const queryKeys = {
     taxSplit: () => ["settings", "tax-split"] as const,
     waste: () => ["settings", "waste"] as const,
   },
+  /** For one-off screens that do not warrant their own domain. */
+  screen: (name: string, p?: Params) => ["screen", name, params(p)] as const,
 } as const;
 
 /**

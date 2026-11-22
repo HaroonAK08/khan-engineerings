@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -19,11 +19,10 @@ import {
 import { useI18n } from "@/hooks/use-i18n";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 import {
-  getPartySalesMargin,
-  getProductionMargin,
   type PartySalesMarginParty,
   type ProductionMarginProduct,
 } from "@/lib/finance-api";
+import { queryKeys, usePartySalesMargin, useProductionMargin, useResource } from "@/lib/query";
 import { listProducts } from "@/lib/production-api";
 import { listCustomers, type Customer } from "@/lib/sales-api";
 import { apiError, formatMoney } from "@/lib/materials-api";
@@ -171,39 +170,25 @@ export default function RankingReportPage() {
   const [family, setFamily] = useState<Family>("all");
   const [partySort, setPartySort] = useState<PartySort>("pct");
   const [productSort, setProductSort] = useState<ProductSort>("pct");
-  const [parties, setParties] = useState<PartyRow[]>([]);
-  const [products, setProducts] = useState<ProductRow[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const load = useCallback(async () => {
-    if (!hydrated) return;
-    setLoading(true);
-    try {
-      const [partyReport, productReport, customers, catalog] = await Promise.all([
-        getPartySalesMargin({ dateFrom, dateTo, taxSplit: taxMode }),
-        getProductionMargin({ dateFrom, dateTo, taxSplit: taxMode }),
-        listCustomers({ active: "true" }),
-        listProducts({ active: "true" }),
-      ]);
-      const activeParties = (partyReport.parties || []).map(toPartyRow);
-      const activeProducts = (productReport.products || []).map(toProductRow);
-      setParties(mergeAllParties(activeParties, customers));
-      setProducts(mergeAllProducts(activeProducts, catalog));
-    } catch (err) {
-      setParties([]);
-      setProducts([]);
-      toast.error(apiError(err, t("ranking.loadFailed")));
-    } finally {
-      setLoading(false);
-    }
-  }, [dateFrom, dateTo, hydrated, taxMode, t]);
-
+  const params = { dateFrom, dateTo, taxSplit: taxMode };
+  const party = usePartySalesMargin(params, hydrated);
+  const production = useProductionMargin(params, hydrated);
+  const catalog = useResource(
+    queryKeys.reports.one("ranking-catalog"),
+    () => Promise.all([listCustomers({ active: "true" }), listProducts({ active: "true" })]),
+    { enabled: hydrated }
+  );
+  const parties = useMemo(() => party.data && catalog.data
+    ? mergeAllParties((party.data.parties || []).map(toPartyRow), catalog.data[0])
+    : [], [party.data, catalog.data]);
+  const products = useMemo(() => production.data && catalog.data
+    ? mergeAllProducts((production.data.products || []).map(toProductRow), catalog.data[1])
+    : [], [production.data, catalog.data]);
+  const loading = !hydrated || party.isPending || production.isPending || catalog.loading;
+  const loadError = party.error ?? production.error ?? catalog.error;
   useEffect(() => {
-    const timer = setTimeout(() => {
-      void load();
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [load]);
+    if (loadError) toast.error(apiError(loadError, t("ranking.loadFailed")));
+  }, [loadError, t]);
 
   const rankedParties = useMemo(() => {
     const value =

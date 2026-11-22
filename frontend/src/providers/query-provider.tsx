@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { createQueryClient } from "@/lib/query";
+import { createQueryClient } from "@/lib/query/client";
+import { api } from "@/lib/api";
+import { installReadCache } from "@/lib/query/read-cache";
 import { onDataChanged } from "@/lib/data-changed";
 
 /**
@@ -18,15 +20,18 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
   // users during SSR.
   const [queryClient] = useState(createQueryClient);
 
-  // Any successful write anywhere in the app invalidates every cached query, so
-  // a screen can never show figures that predate a change the user just made.
-  useEffect(
-    () =>
-      onDataChanged(() => {
-        void queryClient.invalidateQueries();
-      }),
-    [queryClient]
-  );
+  useLayoutEffect(() => {
+    const uninstall = installReadCache(api, queryClient);
+    const unsubscribe = onDataChanged(() => {
+      // Cancel observed reads before revalidating, including initial requests.
+      void queryClient.cancelQueries({ type: "active" });
+      void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "http-read" });
+    });
+    return () => {
+      unsubscribe();
+      uninstall();
+    };
+  }, [queryClient]);
 
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }

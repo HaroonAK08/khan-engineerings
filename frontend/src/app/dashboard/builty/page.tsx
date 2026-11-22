@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -8,6 +8,7 @@ import { History, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
 import { useTallyChecks } from "@/hooks/use-tally-checks";
 import { thisMonthRange } from "@/lib/date-range";
+import { queryKeys, useResource } from "@/lib/query";
 import { confirmAction } from "@/lib/confirm-action";
 import { TablePagination } from "@/components/data/table-pagination";
 import { apiError, formatDate, formatMoney } from "@/lib/materials-api";
@@ -15,7 +16,6 @@ import {
   customerName,
   deleteBuilty,
   listBuiltiesPage,
-  type BuiltyPage,
   type ListBuiltiesParams,
   paymentStatusLabel,
   type BuiltyRow,
@@ -40,60 +40,34 @@ export default function BuiltyPage() {
   const searchParams = useSearchParams();
   const month = useMemo(() => thisMonthRange(), []);
   const { isChecked, setCheckedState } = useTallyChecks("builty-list");
-  const [rows, setRows] = useState<BuiltyRow[]>([]);
-  const [loading, setLoading] = useState(true);
   const [q, setQ] = useState(() => searchParams.get("q") || "");
   const [paymentStatus, setPaymentStatus] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
-  const [pageInfo, setPageInfo] = useState<BuiltyPage | undefined>(undefined);
-
-  const load = useCallback(
-    async (signal?: AbortSignal) => {
-      setLoading(true);
-      try {
-        const params: ListBuiltiesParams = {
-          dateFrom: month.from,
-          dateTo: month.to,
-          page,
-          limit: pageSize,
-        };
-        if (q.trim()) params.q = q.trim();
-        if (paymentStatus) params.paymentStatus = paymentStatus;
-        const result = await listBuiltiesPage(params, signal);
-        if (signal?.aborted) return;
-        setRows(result.rows);
-        setPageInfo(result.page);
-      } catch (err) {
-        // A cancelled request is expected when the filter changes — not an error.
-        if (signal?.aborted || (err as { code?: string })?.code === "ERR_CANCELED") return;
-        toast.error(apiError(err, t("builty.loadFailed")));
-      } finally {
-        if (!signal?.aborted) setLoading(false);
-      }
-    },
-    [q, paymentStatus, month.from, month.to, page, pageSize, t]
-  );
-
+  const [search, setSearch] = useState(q.trim());
   useEffect(() => {
-    // Debounce typing, and cancel the in-flight request when the filter changes
-    // so a slow earlier response cannot overwrite a newer one.
-    const controller = new AbortController();
-    const timer = setTimeout(() => void load(controller.signal), 200);
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [load]);
-
-  // A narrower filter must not strand the user on a page that no longer exists.
-  useEffect(() => {
-    setPage(1);
-  }, [q, paymentStatus]);
+    const timer = setTimeout(() => setSearch(q.trim()), 200);
+    return () => clearTimeout(timer);
+  }, [q]);
+  const params: ListBuiltiesParams = {
+    dateFrom: month.from,
+    dateTo: month.to,
+    page,
+    limit: pageSize,
+    q: search || undefined,
+    paymentStatus: paymentStatus || undefined,
+  };
+  const query = useResource(queryKeys.builty.list(params),
+    (signal) => listBuiltiesPage(params, signal),
+    { errorMessage: t("builty.loadFailed") });
+  const rows = query.data?.rows ?? [];
+  const pageInfo = query.data?.page;
+  const loading = query.loading;
 
   useEffect(() => {
     setQ(searchParams.get("q") || "");
+    setPage(1);
   }, [searchParams]);
 
   async function onDelete(row: BuiltyRow) {
@@ -111,7 +85,7 @@ export default function BuiltyPage() {
     try {
       await deleteBuilty(row._id);
       toast.success(t("builty.deleted"));
-      await load();
+      // The successful write invalidates the list; the provider refetches it.
     } catch (err) {
       toast.error(apiError(err, t("builty.deleteFailed")));
     } finally {
@@ -152,12 +126,12 @@ export default function BuiltyPage() {
             <Input
               placeholder={t("builty.search")}
               value={q}
-              onChange={(e) => setQ(e.target.value)}
+              onChange={(e) => { setQ(e.target.value); setPage(1); }}
             />
             <select
               className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
               value={paymentStatus}
-              onChange={(e) => setPaymentStatus(e.target.value)}
+              onChange={(e) => { setPaymentStatus(e.target.value); setPage(1); }}
             >
               <option value="">{t("builty.allPayments")}</option>
               <option value="unpaid">{t("orders.unpaid")}</option>

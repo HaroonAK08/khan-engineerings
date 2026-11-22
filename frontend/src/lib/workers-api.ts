@@ -99,7 +99,7 @@ export async function listSalaryPayments(params?: {
   dateTo?: string;
   workerId?: string;
   scope?: ExpenseScope;
-}) {
+}, signal?: AbortSignal) {
   const { data } = await api.get<{
     payments: BatchExpense[];
     salaryPeriod?: {
@@ -108,6 +108,6 @@ export async function listSalaryPayments(params?: {
       paymentFrom: string | null;
       paymentTo: string | null;
     } | null;
-  }>("/workers/payments", { params });
+  }>("/workers/payments", { signal, params });
   return data;
 }

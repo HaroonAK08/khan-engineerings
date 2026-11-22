@@ -189,8 +189,8 @@ export async function getProductionReport(params?: {
   dateFrom?: string;
   dateTo?: string;
   family?: string;
-}) {
-  const { data } = await api.get<{ report: ProductionReport }>("/production/reports", { params });
+}, signal?: AbortSignal) {
+  const { data } = await api.get<{ report: ProductionReport }>("/production/reports", { signal, params });
   return data.report;
 }
 
@@ -233,11 +233,11 @@ export type ProductProductionReport = {
 
 export async function getProductProductionReport(
   productId: string,
-  params?: { dateFrom?: string; dateTo?: string }
+  params?: { dateFrom?: string; dateTo?: string }, signal?: AbortSignal
 ) {
   const { data } = await api.get<{ report: ProductProductionReport }>(
     `/production/reports/products/${productId}`,
-    { params }
+    { signal, params }
   );
   return data.report;
 }
@@ -284,8 +284,8 @@ export async function getCostReport(params?: {
   dateFrom?: string;
   dateTo?: string;
   batch?: string;
-}) {
-  const { data } = await api.get<{ report: CostReport }>("/production/cost-reports", { params });
+}, signal?: AbortSignal) {
+  const { data } = await api.get<{ report: CostReport }>("/production/cost-reports", { signal, params });
   return data.report;
 }
 

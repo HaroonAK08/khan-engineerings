@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
@@ -16,7 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useI18n } from "@/hooks/use-i18n";
-import { getYearProgress, type YearProgressReport } from "@/lib/finance-api";
+import { queryKeys, useAppQuery, useYearProgress } from "@/lib/query";
 import { getAssetsSummary } from "@/lib/assets-api";
 import { apiError, formatKg, formatMoney } from "@/lib/materials-api";
 
@@ -47,30 +47,15 @@ const MONTH_LABELS = [
 export default function YearProgressPage() {
   const { t } = useI18n();
   const [year, setYear] = useState(String(currentYear()));
-  const [report, setReport] = useState<YearProgressReport | null>(null);
-  const [assetsTotal, setAssetsTotal] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      setReport(await getYearProgress({ year: Number(year) }));
-      try {
-        const summary = await getAssetsSummary();
-        setAssetsTotal(summary.grandTotal);
-      } catch {
-        setAssetsTotal(null);
-      }
-    } catch (err) {
-      toast.error(apiError(err, t("yearProgress.loadFailed")));
-    } finally {
-      setLoading(false);
-    }
-  }, [year, t]);
-
+  const query = useYearProgress(Number(year));
+  const report = query.data ?? null;
+  const assets = useAppQuery(queryKeys.assets.summary(), getAssetsSummary);
+  const assetsTotal = assets.data?.grandTotal ?? null;
+  const loading = query.isPending || assets.isPending;
+  const loadError = query.error;
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (loadError) toast.error(apiError(loadError, t("yearProgress.loadFailed")));
+  }, [loadError, t]);
 
   const yearItems = useMemo(
     () => Object.fromEntries(yearOptions().map((y) => [String(y), String(y)])),

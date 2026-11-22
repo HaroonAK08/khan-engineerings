@@ -165,8 +165,8 @@ export async function getReceivablesReport(params?: {
   dateTo?: string;
   groupId?: string;
   customerId?: string;
-}) {
-  const { data } = await api.get<{ report: ReceivablesReport }>("/reports/receivables", {
+}, signal?: AbortSignal) {
+  const { data } = await api.get<{ report: ReceivablesReport }>("/reports/receivables", { signal,
     params,
   });
   return data.report;
@@ -198,10 +198,10 @@ export async function getMonthlyReceivablesReport(params?: {
   date?: string;
   year?: string | number;
   groupId?: string;
-}) {
+}, signal?: AbortSignal) {
   const { data } = await api.get<{ report: MonthlyReceivablesReport }>(
     "/reports/monthly-receivables",
-    { params }
+    { signal, params }
   );
   return data.report;
 }
@@ -259,8 +259,8 @@ export async function getReceivedReport(params?: {
   dateTo?: string;
   groupId?: string;
   customerId?: string;
-}) {
-  const { data } = await api.get<{ report: ReceivedReport }>("/reports/received", {
+}, signal?: AbortSignal) {
+  const { data } = await api.get<{ report: ReceivedReport }>("/reports/received", { signal,
     params,
   });
   return data.report;
@@ -305,13 +305,13 @@ export async function getPaidReport(params?: {
   dateFrom?: string;
   dateTo?: string;
   supplierId?: string;
-}) {
-  const { data } = await api.get<{ report: PaidReport }>("/reports/paid", { params });
+}, signal?: AbortSignal) {
+  const { data } = await api.get<{ report: PaidReport }>("/reports/paid", { signal, params });
   return data.report;
 }
 
-export async function getPayablesReport(params?: { dateFrom?: string; dateTo?: string }) {
-  const { data } = await api.get<{ report: PayablesReport }>("/reports/payables", { params });
+export async function getPayablesReport(params?: { dateFrom?: string; dateTo?: string }, signal?: AbortSignal) {
+  const { data } = await api.get<{ report: PayablesReport }>("/reports/payables", { signal, params });
   return data.report;
 }
 
@@ -370,8 +370,8 @@ export type PositionReport = {
   };
 };
 
-export async function getPositionReport(params?: { dateFrom?: string; dateTo?: string }) {
-  const { data } = await api.get<{ report: PositionReport }>("/reports/position", { params });
+export async function getPositionReport(params?: { dateFrom?: string; dateTo?: string }, signal?: AbortSignal) {
+  const { data } = await api.get<{ report: PositionReport }>("/reports/position", { signal, params });
   return data.report;
 }
 
@@ -652,8 +652,8 @@ export async function getYearlyCalendarReport(params?: {
   dateFrom?: string;
   dateTo?: string;
   family?: YearlyInventoryFamily;
-}) {
-  const { data } = await api.get<{ report: YearlyCalendarReport }>("/reports/yearly", {
+}, signal?: AbortSignal) {
+  const { data } = await api.get<{ report: YearlyCalendarReport }>("/reports/yearly", { signal,
     params,
     timeout: 60_000,
   });

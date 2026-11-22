@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { queryKeys, useResource, policyForRange } from "@/lib/query";
+
+import { useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
@@ -17,7 +19,6 @@ import {
   formatKg,
   getPurchaseReport,
 } from "@/lib/materials-api";
-import type { PurchaseReport } from "@/types/materials";
 import { downloadReportExport } from "@/lib/reports-api";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { Button } from "@/components/ui/button";
@@ -39,32 +40,16 @@ export default function PurchaseReportsPage() {
   const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
   const [supplierId, setSupplierId] = useState("");
   const [view, setView] = useState<ReportViewMode>("party");
-  const [report, setReport] = useState<PurchaseReport | null>(null);
-  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<"pdf" | null>(null);
 
-  const load = useCallback(async () => {
-    if (!hydrated) return;
-    setLoading(true);
-    try {
-      setReport(
-        await getPurchaseReport({
-          dateFrom,
-          dateTo,
-          supplier: supplierId || undefined,
-        })
-      );
-    } catch (err) {
-      toast.error(apiError(err, t("purchReports.loadFailed")));
-    } finally {
-      setLoading(false);
-    }
-  }, [dateFrom, dateTo, hydrated, supplierId, t]);
-
-  useEffect(() => {
-    const timer = setTimeout(load, 200);
-    return () => clearTimeout(timer);
-  }, [load]);
+  const params = { dateFrom, dateTo, supplier: supplierId || undefined };
+  const query = useResource(
+    queryKeys.reports.one("purchases", params),
+    (signal) => getPurchaseReport(params, signal),
+    { enabled: hydrated, policy: policyForRange(dateTo), errorMessage: t("purchReports.loadFailed") }
+  );
+  const report = query.data ?? null;
+  const loading = query.loading;
 
   async function onExport(format: "pdf") {
     setExporting(format);

@@ -156,8 +156,8 @@ export async function getPurchaseReport(params?: {
   dateFrom?: string;
   dateTo?: string;
   supplier?: string;
-}) {
-  const { data } = await api.get<{ report: PurchaseReport }>("/purchases/reports", { params });
+}, signal?: AbortSignal) {
+  const { data } = await api.get<{ report: PurchaseReport }>("/purchases/reports", { signal, params });
   return data.report;
 }
 

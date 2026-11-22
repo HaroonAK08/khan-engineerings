@@ -36,12 +36,12 @@ export function usePartySalesMargin(params: MarginParams, enabled = true) {
   );
 }
 
-/** Rolling monthly series. Historical months cannot change on their own. */
+/** Rolling monthly series includes the still-open current month. */
 export function useFinanceMonthly(months: number, enabled = true) {
   return useAppQuery<MonthlyPoint[]>(
     queryKeys.finance.monthly({ months }),
     (signal) => getFinanceMonthly({ months }, signal),
-    { enabled, ...cachePolicy.historical }
+    { enabled, ...cachePolicy.financial }
   );
 }
 

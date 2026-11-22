@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -10,6 +10,7 @@ import { ReportsSubnav } from "@/components/layout/reports-subnav";
 import { ExportButtons } from "@/components/reports/export-buttons";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 import { apiError, formatKg, formatMoney } from "@/lib/materials-api";
+import { useResource, queryKeys, policyForRange } from "@/lib/query";
 import { getProductionReport } from "@/lib/production-api";
 import type { ProductionReport } from "@/types/production";
 import { downloadReportExport } from "@/lib/reports-api";
@@ -29,8 +30,6 @@ export default function ProductionReportsHubPage() {
   const { t } = useI18n();
   const searchParams = useSearchParams();
   const { dateFrom, dateTo, setRange, hydrated } = usePersistedDateRange();
-  const [report, setReport] = useState<ProductionReport | null>(null);
-  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<"pdf" | null>(null);
 
   useEffect(() => {
@@ -39,22 +38,16 @@ export default function ProductionReportsHubPage() {
     if (from || to) setRange(from || "", to || "");
   }, [searchParams, setRange]);
 
-  const load = useCallback(async () => {
-    if (!hydrated) return;
-    setLoading(true);
-    try {
-      setReport(await getProductionReport({ dateFrom, dateTo }));
-    } catch (err) {
-      toast.error(apiError(err, t("prodReportsHub.loadFailed")));
-    } finally {
-      setLoading(false);
-    }
-  }, [dateFrom, dateTo, hydrated, t]);
+  // Cached per query key, so returning to this screen is instant and a
+  // superseded request can never overwrite newer data.
+  const query = useResource<ProductionReport | null>(
+    queryKeys.reports.one("production", { dateFrom, dateTo }),
+    (signal) => getProductionReport({ dateFrom, dateTo }, signal),
+    { enabled: hydrated, policy: policyForRange(dateTo), errorMessage: t("prodReportsHub.loadFailed") }
+  );
+  const report = query.data ?? null;
+  const loading = query.loading;
 
-  useEffect(() => {
-    const t = setTimeout(load, 200);
-    return () => clearTimeout(t);
-  }, [load]);
 
   const hubProducts = useMemo(
     () => (report?.byProduct || []).filter((p) => (p.family || "hub") === "hub"),

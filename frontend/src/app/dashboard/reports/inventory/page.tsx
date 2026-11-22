@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useId, useState } from "react";
+import { useInventoryReport } from "@/lib/query";
+
+import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { ReportsSubnav } from "@/components/layout/reports-subnav";
@@ -21,7 +23,7 @@ import { useI18n } from "@/hooks/use-i18n";
 import { usePersistedDateRange } from "@/hooks/use-persisted-date-range";
 import { todayInput } from "@/lib/date-range";
 import { apiError, formatKg } from "@/lib/materials-api";
-import { getLiveInventoryReport, type InventoryReport } from "@/lib/inventory-api";
+import { type InventoryReport } from "@/lib/inventory-api";
 import { downloadReportExport } from "@/lib/reports-api";
 import { cn } from "@/lib/utils";
 
@@ -86,8 +88,6 @@ export default function InventoryReportsHubPage() {
   const [mode, setModeState] = useState<DateMode>("range");
   const [asOf, setAsOfState] = useState(todayInput);
   const [modeHydrated, setModeHydrated] = useState(false);
-  const [report, setReport] = useState<InventoryReport | null>(null);
-  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<"pdf" | null>(null);
 
   useEffect(() => {
@@ -123,38 +123,16 @@ export default function InventoryReportsHubPage() {
   const isToday = asOf === todayInput();
   const stockAsOf = mode === "asOf" ? asOf : dateTo || todayInput();
 
-  const load = useCallback(async () => {
-    if (!hydrated) return;
-    setLoading(true);
-    try {
-      if (mode === "asOf") {
-        setReport(
-          await getLiveInventoryReport({
-            asOf,
-            dateFrom: asOf,
-            dateTo: asOf,
-          })
-        );
-      } else {
-        setReport(
-          await getLiveInventoryReport({
-            asOf: dateTo || todayInput(),
-            dateFrom: dateFrom || undefined,
-            dateTo: dateTo || undefined,
-          })
-        );
-      }
-    } catch (err) {
-      toast.error(apiError(err, t("invReportsHub.loadFailed")));
-    } finally {
-      setLoading(false);
-    }
-  }, [asOf, dateFrom, dateTo, hydrated, mode, t]);
-
+  const params = mode === "asOf"
+    ? { asOf, dateFrom: asOf, dateTo: asOf }
+    : { asOf: dateTo || todayInput(), dateFrom: dateFrom || undefined, dateTo: dateTo || undefined };
+  const query = useInventoryReport(params, hydrated);
+  const report = query.data ?? null;
+  const loading = !hydrated || query.isPending;
+  const loadError = query.error;
   useEffect(() => {
-    const timer = setTimeout(load, 200);
-    return () => clearTimeout(timer);
-  }, [load]);
+    if (loadError) toast.error(apiError(loadError, t("invReportsHub.loadFailed")));
+  }, [loadError, t]);
 
   async function onExport(format: "pdf") {
     setExporting(format);

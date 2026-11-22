@@ -113,14 +113,14 @@ export async function getFinishedStock(params?: {
   return data;
 }
 
-export async function getInventoryAlerts() {
+export async function getInventoryAlerts(signal?: AbortSignal) {
   const { data } = await api.get<{
     alerts: {
       finished: FinishedStockItem[];
       raw: { material: string; availableKg: number; message: string } | null;
       count: number;
     };
-  }>("/inventory/alerts");
+  }>("/inventory/alerts", { signal });
   return data.alerts;
 }
 

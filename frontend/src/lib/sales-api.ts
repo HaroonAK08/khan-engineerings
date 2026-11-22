@@ -747,8 +747,8 @@ export async function getSalesReport(params?: {
   dateTo?: string;
   groupId?: string;
   customerId?: string;
-}) {
-  const { data } = await api.get<{ report: SalesReport }>("/builty/reports", { params });
+}, signal?: AbortSignal) {
+  const { data } = await api.get<{ report: SalesReport }>("/builty/reports", { signal, params });
   return data.report;
 }
 
