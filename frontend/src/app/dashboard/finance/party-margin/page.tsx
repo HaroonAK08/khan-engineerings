@@ -1,17 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { FinanceSubnav } from "@/components/layout/finance-subnav";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { apiError, formatDate, formatKg, formatMoney } from "@/lib/materials-api";
 import {
-  getPartySalesMargin,
   type PartySalesMarginGroup,
   type PartySalesMarginParty,
-  type PartySalesMarginReport,
 } from "@/lib/finance-api";
+import { usePartySalesMargin } from "@/lib/query";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -315,27 +314,19 @@ function MarginTableHeads({ showParty }: { showParty: boolean }) {
 export default function PartySalesMarginPage() {
   const { t } = useI18n();
   const { dateFrom, dateTo, hydrated } = usePersistedDateRange();
-  const [report, setReport] = useState<PartySalesMarginReport | null>(null);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [channel, setChannel] = useState<"all" | "salesman" | "direct">("all");
 
-  const load = useCallback(async () => {
-    if (!hydrated) return;
-    setLoading(true);
-    try {
-      setReport(await getPartySalesMargin({ dateFrom, dateTo }));
-    } catch (err) {
-      toast.error(apiError(err, t("partyMargin.loadFailed")));
-    } finally {
-      setLoading(false);
-    }
-  }, [dateFrom, dateTo, hydrated, t]);
+  // Cached and cancellable: revisiting this range serves from cache instead of
+  // re-running the report, and changing the range aborts the previous request
+  // so a slower earlier response cannot overwrite a newer one.
+  const query = usePartySalesMargin({ dateFrom, dateTo }, hydrated);
+  const report = query.data ?? null;
+  const loading = !hydrated || (query.isPending && !report);
 
   useEffect(() => {
-    const timer = setTimeout(load, 200);
-    return () => clearTimeout(timer);
-  }, [load]);
+    if (query.error) toast.error(apiError(query.error, t("partyMargin.loadFailed")));
+  }, [query.error, t]);
 
   const parties = useMemo(() => {
     let list = report?.parties || [];

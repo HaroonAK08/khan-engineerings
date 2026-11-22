@@ -108,13 +108,25 @@ export async function getFinanceOverview(params?: { dateFrom?: string; dateTo?: 
   return data.overview;
 }
 
-export async function getFinanceMonthly(params?: { months?: number }) {
-  const { data } = await api.get<{ months: MonthlyPoint[] }>("/finance/monthly", { params });
+export async function getFinanceMonthly(
+  params?: { months?: number },
+  signal?: AbortSignal
+) {
+  const { data } = await api.get<{ months: MonthlyPoint[] }>("/finance/monthly", {
+    params,
+    signal,
+  });
   return data.months;
 }
 
-export async function getYearProgress(params?: { year?: number }) {
-  const { data } = await api.get<YearProgressReport>("/finance/year-progress", { params });
+export async function getYearProgress(
+  params?: { year?: number },
+  signal?: AbortSignal
+) {
+  const { data } = await api.get<YearProgressReport>("/finance/year-progress", {
+    params,
+    signal,
+  });
   return data;
 }
 

@@ -4,8 +4,19 @@
     {
       "src": "api/index.js",
       "use": "@vercel/node",
-      "config": { "maxDuration": 60, "memory": 1024 }
+      "config": {
+        "maxDuration": 60,
+        "memory": 1024
+      }
     }
   ],
-  "routes": [{ "src": "/(.*)", "dest": "/api/index.js" }]
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/api/index.js"
+    }
+  ],
+  "regions": [
+    "bom1"
+  ]
 }

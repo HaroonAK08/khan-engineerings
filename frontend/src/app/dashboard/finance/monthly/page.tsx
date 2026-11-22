@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect } from "react";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { FinanceSubnav } from "@/components/layout/finance-subnav";
 import { apiError, formatMoney } from "@/lib/materials-api";
-import { getFinanceMonthly, type MonthlyPoint } from "@/lib/finance-api";
+import { useFinanceMonthly } from "@/lib/query";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -20,23 +20,13 @@ import { useI18n } from "@/hooks/use-i18n";
 
 export default function FinanceMonthlyPage() {
   const { t } = useI18n();
-  const [months, setMonths] = useState<MonthlyPoint[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      setMonths(await getFinanceMonthly({ months: 12 }));
-    } catch (err) {
-      toast.error(apiError(err, t("financeMonthly.loadFailed")));
-    } finally {
-      setLoading(false);
-    }
-  }, [t]);
+  const query = useFinanceMonthly(12);
+  const months = query.data ?? [];
+  const loading = query.isPending && months.length === 0;
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (query.error) toast.error(apiError(query.error, t("financeMonthly.loadFailed")));
+  }, [query.error, t]);
 
   const maxRev = Math.max(1, ...months.map((m) => m.revenue));
   const maxCash = Math.max(1, ...months.map((m) => Math.max(m.cashIn, m.cashOut)));
