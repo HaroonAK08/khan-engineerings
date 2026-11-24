@@ -1,0 +1,33 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Cloud backup setup</title><style>body{font:16px system-ui;padding:28px;background:#f7f4ed;color:#172b43}h1{font-size:22px}label{display:block;margin-top:14px;font-weight:600}input{display:block;width:100%;box-sizing:border-box;padding:10px;margin-top:5px;border:1px solid #bbb;border-radius:4px}button{padding:10px 16px;margin:22px 8px 0 0;border:0;border-radius:4px;cursor:pointer}button[type=submit]{background:#176b55;color:#fff}#local{background:#ddd}#error{color:#a22;min-height:20px}</style></head><body>
+<h1>Desktop setup and recovery</h1>
+<p>Use local records or restore a backup. Recovery keeps the previous database on this computer.</p>
+<form id="form">
+<label>Action<select name="mode" id="mode"><option value="local">Use local records only</option><option value="cloud">Keep local records and enable cloud backup</option><option value="recover">Restore the latest cloud backup</option><option value="import">Import a setup archive file</option></select></label>
+<div id="cloud" hidden>
+<label>Cloud API origin<input name="cloudApiUrl" type="url" placeholder="https://your-api-domain.com"></label>
+<label>Backup access token<input name="token" type="password" autocomplete="off"></label>
+<label>Backup device ID<input name="deviceId"></label>
+<label>Encryption recovery key<input name="encryptionKey" type="password" autocomplete="off"></label>
+</div>
+<p id="error" role="status"></p><button type="submit">Continue</button><button id="local" type="button">Cancel</button>
+</form>
+<script>
+const form = document.querySelector('#form');
+const mode = document.querySelector('#mode');
+const status = document.querySelector('#error');
+mode.onchange = () => { document.querySelector('#cloud').hidden = !['cloud', 'recover'].includes(mode.value); };
+form.onsubmit = async (event) => {
+  event.preventDefault();
+  const values = Object.fromEntries(new FormData(form));
+  const buttons = [...form.querySelectorAll('button')];
+  buttons.forEach(button => button.disabled = true);
+  status.textContent = 'Working…';
+  try {
+    const result = await window.khanDesktop.submitSetup(values);
+    status.textContent = result.error || 'Setup complete';
+  } catch { status.textContent = 'Setup could not complete'; }
+  finally { buttons.forEach(button => button.disabled = false); }
+};
+document.querySelector('#local').onclick = () => window.khanDesktop.cancelSetup();
+</script></body></html>

@@ -22,6 +22,7 @@ const settingsRoutes = require("./modules/settings/settings.routes");
 const assetRoutes = require("./modules/assets/asset.routes");
 const personalBanksRoutes = require("./modules/personal-banks/personal-banks.routes");
 const notesRoutes = require("./modules/notes/note.routes");
+const syncRoutes = require("./modules/sync/sync.routes");
 const { notFound, errorHandler } = require("./middleware/errorHandler");
 const { requestCache } = require("./utils/request-cache");
 
@@ -86,6 +87,7 @@ app.use("/api/settings", settingsRoutes);
 app.use("/api/assets", assetRoutes);
 app.use("/api/personal-banks", personalBanksRoutes);
 app.use("/api/notes", notesRoutes);
+app.use("/api/sync", syncRoutes);
 app.use("/api/customers", customerRoutes);
 app.use("/api/party-groups", partyGroupRoutes);
 app.use("/api/salesmen", salesmanRoutes);

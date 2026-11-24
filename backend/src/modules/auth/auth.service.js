@@ -62,7 +62,8 @@ async function login(body) {
 
   if (USE_PIN_LOGIN) {
     const pin = String(body.pin ?? body.password ?? "").trim();
-    if (!/^\d{4}$/.test(pin) || pin !== APP_PIN) {
+    const localHash = process.env.DESKTOP_LOCAL_PIN_HASH;
+    if (!/^\d{4}$/.test(pin) || !(localHash ? await bcrypt.compare(pin, localHash) : pin === APP_PIN)) {
       const err = new Error("Wrong code");
       err.statusCode = 401;
       throw err;
