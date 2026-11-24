@@ -6,6 +6,7 @@
   "main": "main.cjs",
   "scripts": {
     "start": "node launch.cjs",
+    "test": "node --test test/*.test.cjs",
     "window": "electron .",
     "import-data": "node import-cloud-data.cjs",
     "pack:resources": "node prepare-pack.cjs",
@@ -14,7 +15,7 @@
     "dist:linux": "node prepare-pack.cjs && electron-builder --linux AppImage --publish never"
   },
   "devDependencies": {
-    "electron": "^33.4.0",
+    "electron": "^40.0.0",
     "electron-builder": "^25.1.8"
   },
   "build": {
@@ -30,7 +31,13 @@
       "splash.html",
       "env.cjs",
       "mongo.cjs",
-      "import-cloud-data.cjs"
+      "import-cloud-data.cjs",
+      "sync-protocol.cjs",
+      "sync-worker.cjs",
+      "secure-store.cjs",
+      "setup.cjs",
+      "setup.html",
+      "backup-local.cjs"
     ],
     "extraResources": [
       {

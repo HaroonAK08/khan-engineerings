@@ -56,6 +56,7 @@ const SimpleCalculator = dynamic(
   { ssr: false }
 );
 import { QuickNotes } from "./quick-notes";
+import { DesktopSyncStatus } from "./desktop-sync-status";
 
 function currentTitleKey(pathname: string | null): MessageKey {
   if (!pathname) return "nav.dashboard";
@@ -125,6 +126,7 @@ export function Topbar() {
         <QuickNotes />
         <ChequePromiseDueBell />
         <VoiceHeaderControl />
+        <DesktopSyncStatus />
         {user && (
           <Badge
             variant="secondary"

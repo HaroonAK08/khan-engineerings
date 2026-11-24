@@ -126,15 +126,6 @@ async function main() {
     throw new Error("MongoDB is not running. Start mongod, then try again.");
   }
 
-  const imported = spawnSync(process.execPath, [path.join(__dirname, "import-cloud-data.cjs")], {
-    cwd: __dirname,
-    encoding: "utf8",
-  });
-  if (imported.stdout) logLine(imported.stdout.trim());
-  if (imported.status !== 0) {
-    logLine(imported.stderr || "Cloud import skipped or failed");
-  }
-
   const built = spawnSync(process.execPath, [path.join(__dirname, "ensure-frontend-build.cjs")], {
     cwd: __dirname,
     stdio: "inherit",
@@ -165,13 +156,14 @@ async function main() {
         ...process.env,
         NODE_ENV: "production",
         PORT: String(WEB_PORT),
+        BACKEND_URL: `http://127.0.0.1:${API_PORT}`,
+        KE_DESKTOP_BUILD: "1",
         NEXT_PUBLIC_API_URL: API_URL,
       },
       name: "ui",
     }
   );
   await waitForHttp(`http://127.0.0.1:${WEB_PORT}`);
-
   const url = `http://127.0.0.1:${WEB_PORT}`;
   logLine(`Khan Engineerings is ready at ${url}`);
   openBrowser(url);

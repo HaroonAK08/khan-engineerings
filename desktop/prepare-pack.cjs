@@ -111,6 +111,7 @@ async function main() {
   console.log("Building frontend…");
   run("npm", ["run", "build"], FRONTEND, {
     NEXT_OUTPUT: "standalone",
+    BACKEND_URL: "http://127.0.0.1:5000",
     NEXT_PUBLIC_API_URL: "http://127.0.0.1:5000/api",
   });
 
